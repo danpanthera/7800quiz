@@ -21,6 +21,9 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.11.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
+    // Chỉ thực sự áp dụng ở app/build.gradle.kts khi google-services.json tồn tại
+    // (xem điều kiện ở đó) — nhờ vậy build vẫn chạy được khi chưa cấu hình Firebase.
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 include(":app")

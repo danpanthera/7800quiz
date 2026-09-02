@@ -1,0 +1,17 @@
+# Mẫu file ký release cho Android — copy thành "key.properties" (cùng thư mục
+# này, tức apps/mobile/android/key.properties) rồi điền giá trị thật.
+#
+# File "key.properties" (không có .example) đã nằm trong .gitignore —
+# TUYỆT ĐỐI không commit vào git.
+#
+# Tạo keystore (chỉ làm 1 lần, lưu keystore.jks ở nơi an toàn NGOÀI repo):
+#   keytool -genkeypair -v -keystore ~/keys/7800quiz.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias 7800quiz
+#
+# Khi CHƯA có file key.properties, `flutter build apk --release` vẫn chạy
+# được — build.gradle.kts tự fallback sang ký bằng debug key.
+
+storeFile=/Users/ten-may-cua-sep/keys/7800quiz.jks
+storePassword=doi-mat-khau-nay
+keyAlias=7800quiz
+keyPassword=doi-mat-khau-nay

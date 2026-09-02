@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chỉ áp dụng cho build debug/profile — CHO PHÉP cleartext HTTP (http://, ws://)
+  để test app trên điện thoại thật qua LAN nội bộ (--dart-define-from-file=env/lan.json)
+  trong lúc backend dev chưa có HTTPS. Build release KHÔNG có file này, vẫn bị
+  Android 9+ chặn cleartext mặc định — release bắt buộc dùng domain HTTPS thật
+  (https://quiz.vbalaichau.com).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

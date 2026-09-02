@@ -1,8 +1,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Khai tường minh (không dựa vào manifest-merger từ firebase_messaging) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
-        android:label="mobile_7800quiz"
+        android:label="7800Quiz"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false">
+        <!-- allowBackup=false: chặn Android auto-restore gây InvalidKeyException
+             cho flutter_secure_storage (key mã hoá không restore được giữa 2
+             thiết bị) — phù hợp app nội bộ ngân hàng, không cần backup dữ liệu app. -->
+
+        <!-- Kênh thông báo mặc định cho FCM khi app ở background/terminated —
+             phải khớp channel id đã tạo trong notification_service.dart -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="7800quiz_channel"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
