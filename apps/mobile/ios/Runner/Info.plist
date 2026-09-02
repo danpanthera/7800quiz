@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Mobile 7800quiz</string>
+	<string>7800Quiz</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,6 +26,23 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Sử dụng Face ID / Touch ID để đăng nhập nhanh vào 7800Quiz</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Kết nối tới máy chủ 7800Quiz trong mạng nội bộ ngân hàng</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Cho phép cleartext HTTP tới *.local / IP mạng riêng (LAN nội bộ khi
+		     test trên máy thật) mà KHÔNG nới lỏng HTTPS ra Internet công cộng.
+		     An toàn hơn NSAllowsArbitraryLoads. Build release dùng domain HTTPS
+		     thật (https://quiz.vbalaichau.com) nên không cần ngoại lệ gì thêm. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -53,11 +70,12 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- Chỉ Portrait trên iPhone — tránh xoay ngang giữa lúc đang làm bài thi.
+	     iPad giữ nguyên đa hướng (~ipad key bên dưới) vì máy tính bảng thường
+	     được cầm/đặt theo nhiều tư thế khác nhau. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
