@@ -1,11 +1,17 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/auth_provider.dart';
-
-const _baseUrl = String.fromEnvironment('API_URL', defaultValue: 'http://localhost:13010/api');
+import 'env.dart';
 
 final dioProvider = Provider<Dio>((ref) {
-  final dio = Dio(BaseOptions(baseUrl: _baseUrl, connectTimeout: const Duration(seconds: 10)));
+  final dio = Dio(BaseOptions(
+    baseUrl: Env.apiUrl,
+    connectTimeout: const Duration(seconds: 10),
+    // Trước đây chỉ có connectTimeout — mất mạng SAU khi đã connect (ví dụ
+    // server treo giữa chừng lúc chấm điểm) sẽ không bao giờ timeout.
+    receiveTimeout: const Duration(seconds: 15),
+    sendTimeout: const Duration(seconds: 15),
+  ));
 
   dio.interceptors.add(InterceptorsWrapper(
     onRequest: (options, handler) {

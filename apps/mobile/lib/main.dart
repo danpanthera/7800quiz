@@ -1,7 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/app_bootstrap.dart';
+import 'core/notification_service.dart';
 import 'router.dart';
 
 void main() async {
@@ -13,10 +17,30 @@ void main() async {
   ));
 
   try {
+    // TODO(Firebase — hoãn theo quyết định 2026-09-02): khi cấu hình Firebase
+    // thật, chạy `flutterfire configure` (sinh lib/firebase_options.dart) rồi
+    // đổi dòng dưới thành:
+    //   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    // Hiện tại initializeApp() không tham số, dựa hoàn toàn vào file cấu hình
+    // native (google-services.json / GoogleService-Info.plist). Thiếu file
+    // native trên Android/iOS thật sẽ khiến dòng này throw — bị bắt ở catch
+    // bên dưới, mọi tính năng push tự tắt (guard ở
+    // notification_service.dart: `if (Firebase.apps.isEmpty) return;`).
     await Firebase.initializeApp();
-  } catch (_) {}
 
-  runApp(const ProviderScope(child: App()));
+    // Bắt buộc đăng ký TRƯỚC runApp() — nếu đăng ký muộn (như trước đây, ở
+    // cuối NotificationService.init()) thì app sẽ KHÔNG nhận được message
+    // khi ở trạng thái terminated (chưa từng mở), vì Firebase cần handler
+    // này sẵn sàng trước khi engine Dart khởi động lại ở isolate nền.
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  } catch (e, st) {
+    // Trước đây `catch (_) {}` nuốt lỗi hoàn toàn — không cách nào biết vì
+    // sao push không hoạt động khi debug trên máy thật.
+    debugPrint('[Firebase] Chưa cấu hình hoặc khởi tạo lỗi — push notification sẽ tắt: $e');
+    if (kDebugMode) debugPrintStack(stackTrace: st);
+  }
+
+  runApp(const ProviderScope(child: AppBootstrap(child: App())));
 }
 
 class App extends ConsumerWidget {

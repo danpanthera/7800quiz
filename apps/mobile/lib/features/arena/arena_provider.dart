@@ -1,12 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import '../../core/env.dart';
 import '../auth/auth_provider.dart';
-
-// ─── Constants ─────────────────────────────────────────────────────────────
-
-const _wsUrl = String.fromEnvironment('API_URL', defaultValue: 'http://localhost:13010/api');
-
-String get _wsBase => _wsUrl.replaceAll('/api', '');
 
 // ─── Data models ───────────────────────────────────────────────────────────
 
@@ -190,18 +185,37 @@ class ArenaNotifier extends StateNotifier<ArenaState> {
   void _initSocket(String sessionId) {
     final token = _ref.read(authStateProvider).token;
     _socket = io.io(
-      _wsBase,
+      Env.wsUrl,
       io.OptionBuilder()
-          .setTransports(['websocket'])
+          // websocket trước, polling dự phòng khi mạng/proxy chặn WS thuần
+          // (một số Wi-Fi ngân hàng hoặc nginx thiếu header Upgrade).
+          .setTransports(['websocket', 'polling'])
           .setAuth({'token': token ?? ''})
+          .enableReconnection()
+          .setReconnectionAttempts(10)
+          .setReconnectionDelay(2000)
+          .setTimeout(10000)
           .build(),
     );
 
     _socket!.onConnect((_) {
+      state = state.copyWith(errorMessage: null);
       _socket!.emit('arena.join', {
         'joinCode': state.joinCode,
         'teamName': state.teamName,
       });
+    });
+
+    // Trước đây lỗi kết nối im lặng hoàn toàn — người chơi thấy màn hình
+    // lobby treo vĩnh viễn không rõ lý do.
+    _socket!.onConnectError((data) {
+      state = state.copyWith(errorMessage: 'Không kết nối được đấu trường. Đang thử lại...');
+    });
+    _socket!.onError((data) {
+      state = state.copyWith(errorMessage: 'Lỗi kết nối đấu trường: $data');
+    });
+    _socket!.onDisconnect((_) {
+      state = state.copyWith(errorMessage: 'Mất kết nối đấu trường. Đang thử kết nối lại...');
     });
 
     _socket!.on('arena.team_joined', (data) {

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../auth/auth_provider.dart';
 import '../../core/api_client.dart';
+import '../../core/api_error.dart';
 import '../../core/notification_service.dart';
 
 // ─── App metadata ─────────────────────────────────────────────────────────────
@@ -69,7 +70,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Khởi tạo push notification sau khi login thành công
       await ref.read(notificationServiceProvider).init();
     } on DioException catch (e) {
-      setState(() => _error = e.response?.data?['message'] ?? 'Đăng nhập thất bại');
+      // apiErrorMessage phân biệt lỗi mạng (mất kết nối, timeout — response
+      // luôn null nên trước đây luôn hiện chung chung "Đăng nhập thất bại")
+      // với lỗi máy chủ trả về (sai mật khẩu, tài khoản khoá...).
+      setState(() => _error = apiErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -138,7 +142,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
         await ref.read(notificationServiceProvider).init();
       } on DioException catch (e) {
-        setState(() { _error = e.response?.data?['message'] ?? 'Đăng nhập thất bại'; _loading = false; });
+        setState(() { _error = apiErrorMessage(e); _loading = false; });
       }
     }
   }

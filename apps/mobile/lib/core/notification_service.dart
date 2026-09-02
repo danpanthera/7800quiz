@@ -1,16 +1,24 @@
+import 'dart:io' show Platform;
+
 import 'package:dio/dio.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_client.dart';
+import '../router.dart';
 
 // ─── Background handler (top-level function — bắt buộc) ──────────────────────
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Xử lý notification khi app ở background/terminated
-  // Firebase tự hiện notification — không cần làm gì thêm ở đây
+  // Chạy trên isolate nền riêng biệt — KHÔNG kế thừa việc khởi tạo Firebase
+  // đã làm trong main() (đó là isolate khác). Phải tự init lại ở đây, nếu
+  // không mọi gọi tới Firebase.* trong handler sẽ throw "no Firebase App".
+  await Firebase.initializeApp();
+  // Firebase tự hiện notification hệ thống khi có payload `notification` —
+  // không cần tự show local notification ở đây.
 }
 
 // ─── Local Notifications setup ────────────────────────────────────────────────
@@ -30,9 +38,17 @@ class NotificationService {
   final Ref _ref;
   NotificationService(this._ref);
 
+  // init() giờ được gọi cả sau login (login_screen) lẫn khi app khởi động
+  // lại với token đã lưu (app_bootstrap.dart) — cần idempotent để không
+  // đăng ký listener/channel trùng lặp.
+  bool _initialized = false;
+
   Future<void> init() async {
-    // Guard: Firebase chưa được cấu hình (không có google-services.json) → bỏ qua
+    if (_initialized) return;
+    // Guard: Firebase chưa được cấu hình (không có google-services.json /
+    // GoogleService-Info.plist) → bỏ qua, toàn bộ tính năng push tự tắt.
     if (Firebase.apps.isEmpty) return;
+    _initialized = true;
 
     // 1. Khởi tạo local notifications
     await _localNotifications.initialize(
@@ -59,6 +75,8 @@ class NotificationService {
       sound: true,
     );
 
+    // Chỉ chặn khi user từ chối hẳn — `notDetermined`/`provisional` vẫn nên
+    // thử lấy token (iOS provisional cho phép gửi âm thầm không cần hỏi).
     if (settings.authorizationStatus == AuthorizationStatus.denied) return;
 
     // 3. Lấy và đăng ký FCM token
@@ -70,14 +88,31 @@ class NotificationService {
     // 4. Xử lý notification khi app ở foreground
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // 5. Xử lý khi user tap notification (app ở background)
+    // 5. Xử lý khi user tap notification (app đang chạy nền, chưa terminated)
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
-    // 6. Background handler
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    // 6. App bị mở LẠI TỪ ĐẦU do tap notification lúc terminated —
+    // onMessageOpenedApp ở trên không bắt được trường hợp này.
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) _handleNotificationTap(initialMessage);
+
+    // Background handler đã đăng ký sớm trong main() (trước runApp) — không
+    // đăng ký lại ở đây để tránh nhầm lẫn về nơi handler thực sự chạy.
   }
 
   Future<void> _registerToken() async {
+    // iOS/macOS: FCM cần APNS token sẵn sàng TRƯỚC khi getToken() mới trả về
+    // giá trị hợp lệ — bỏ qua bước này là nguyên nhân phổ biến khiến
+    // getToken() trả null hoặc throw trên thiết bị iOS thật.
+    if (!kIsWeb && (Platform.isIOS || Platform.isMacOS)) {
+      String? apnsToken;
+      for (var attempt = 0; attempt < 3 && apnsToken == null; attempt++) {
+        apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        if (apnsToken == null) await Future.delayed(const Duration(seconds: 1));
+      }
+      if (apnsToken == null) return; // Chưa có APNS token — thử lại ở onTokenRefresh
+    }
+
     final token = await FirebaseMessaging.instance.getToken();
     if (token != null) await _sendTokenToServer(token);
   }
@@ -118,8 +153,16 @@ class NotificationService {
   }
 
   void _handleNotificationTap(RemoteMessage message) {
-    // TODO: Navigate đến màn hình quiz tương ứng
-    // Dùng GoRouter để navigate: context.go('/quizzes/${message.data['sessionId']}')
+    // Payload từ server (notifications.service.ts) chỉ có `sessionId` (id của
+    // ExamSession) + `type: 'EXAM_OPENED'` — không có quizId trực tiếp nên
+    // KHÔNG thể điều hướng thẳng vào /quizzes/:id (route đó cần quizId thật).
+    // Đưa về danh sách bài được giao — an toàn, người dùng tự chọn đúng bài.
+    try {
+      _ref.read(routerProvider).go('/quizzes');
+    } catch (_) {
+      // Router chưa gắn vào cây widget (app vừa khởi động, frame đầu chưa
+      // build xong) — bỏ qua, người dùng vẫn thấy app ở màn hình mặc định.
+    }
   }
 }
 

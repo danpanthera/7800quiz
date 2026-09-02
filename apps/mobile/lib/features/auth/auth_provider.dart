@@ -162,8 +162,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 }
 
+/// Tách riêng để test override được (xem test/widget_test.dart) và để cấu
+/// hình bảo mật native ở một chỗ duy nhất.
+///
+/// - Android: `encryptedSharedPreferences: true` — mặc định của package chỉ
+///   dùng EncryptedSharedPreferences khi App Bundle build, còn lại rơi về
+///   SharedPreferences thường; bật tường minh để luôn mã hoá.
+/// - iOS: `first_unlock` (thay mặc định `unlocked`) — SyncManager cần đọc
+///   được token để đồng bộ nền ngay sau khi máy khởi động lại nhưng TRƯỚC
+///   khi người dùng mở khoá màn hình lần đầu.
+///
+/// Không có rủi ro migration dữ liệu cũ: đây là lần đầu app chạy trên
+/// Android/iOS thật (trước đó chỉ có Web/macOS), nên bật ngay từ đầu là thời
+/// điểm duy nhất không làm ai bị đăng xuất ngoài ý muốn.
+final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
+  return const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
+});
+
 final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(const FlutterSecureStorage());
+  return AuthNotifier(ref.watch(secureStorageProvider));
 });
 
 /// ChangeNotifier dùng cho GoRouter.refreshListenable
