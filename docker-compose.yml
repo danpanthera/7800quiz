@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quiz7800_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: quiz7800
+    ports:
+      - "15433:5432"  # dải port riêng cho 7800quiz trên máy dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: quiz7800_api
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quiz7800?schema=public
+    ports:
+      - "13010:13010"  # dải port riêng cho 7800quiz trên máy dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: quiz7800_admin
+    restart: unless-stopped
+    ports:
+      - "15173:80"  # dải port riêng cho 7800quiz trên máy dev
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

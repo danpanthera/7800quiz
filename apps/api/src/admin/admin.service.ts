@@ -1,0 +1,1363 @@
+import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { AssignmentStatus, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import * as XLSX from 'xlsx';
+import * as bcrypt from 'bcrypt';
+
+type NSpellChecker = { correct(word: string): boolean; suggest(word: string): string[] };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const nspellLib = require('nspell') as (dict: { aff: Buffer; dic: Buffer }) => NSpellChecker;
+
+// Lazily initialized spell checker
+let _spellChecker: NSpellChecker | null = null;
+async function getSpellChecker(): Promise<NSpellChecker> {
+  if (!_spellChecker) {
+    const dict = await import('dictionary-vi');
+    _spellChecker = nspellLib(dict.default);
+  }
+  return _spellChecker;
+}
+
+// ── Duplicate detection helpers ─────────────────────────────────────────
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\sàáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỷỹỵ]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenize(text: string): Set<string> {
+  return new Set(normalizeText(text).split(' ').filter((w) => w.length > 1));
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  const intersection = [...a].filter((w) => b.has(w)).length;
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+@Injectable()
+export class AdminService {
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
+
+  private normalizeUserAD(userAD?: string | null): string | null {
+    const normalized = userAD?.trim();
+    return normalized || null;
+  }
+
+  private getLoginUsername(cbCode: string, userAD?: string | null): string {
+    return this.normalizeUserAD(userAD) ?? cbCode;
+  }
+
+  private async ensureUserADIsAvailable(userAD: string | null, canBoId?: string) {
+    if (!userAD) return;
+    const existing = await this.prisma.canBo.findFirst({
+      where: {
+        userAD: { equals: userAD, mode: 'insensitive' },
+        ...(canBoId ? { id: { not: canBoId } } : {}),
+      },
+      select: { cbCode: true },
+    });
+    if (existing) throw new ConflictException(`User AD "${userAD}" đã thuộc về cán bộ ${existing.cbCode}`);
+  }
+
+  private async syncCanBoUser(
+    tx: Prisma.TransactionClient,
+    canBo: { cbCode: string; fullName: string; email: string | null; departmentId: string | null; isActive: boolean; userAD: string | null },
+    previousCbCode?: string,
+    previousUserAD?: string | null,
+  ) {
+    const username = this.getLoginUsername(canBo.cbCode, canBo.userAD);
+    const previousUsername = this.getLoginUsername(previousCbCode ?? canBo.cbCode, previousUserAD);
+    const userWithUsername = await tx.user.findUnique({ where: { username } });
+    const previousUser = previousUsername === username
+      ? userWithUsername
+      : await tx.user.findUnique({ where: { username: previousUsername } });
+
+    if (userWithUsername && previousUser && userWithUsername.id !== previousUser.id) {
+      throw new ConflictException(`User AD "${username}" đang được dùng bởi một tài khoản khác`);
+    }
+
+    const user = userWithUsername ?? previousUser;
+    if (!user) {
+      await tx.user.create({
+        data: {
+          username,
+          fullName: canBo.fullName,
+          email: canBo.email ?? undefined,
+          passwordHash: await bcrypt.hash('Abcd@1234', 10),
+          role: 'STAFF',
+          isActive: canBo.isActive,
+          mustChangePassword: true,
+          departmentId: canBo.departmentId ?? undefined,
+        },
+      });
+      return;
+    }
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        username,
+        fullName: canBo.fullName,
+        email: canBo.email ?? undefined,
+        isActive: canBo.isActive,
+        departmentId: canBo.departmentId ?? undefined,
+      },
+    });
+  }
+
+  // ── Subjects (Lĩnh vực) ──────────────────────────────────────────────
+  getSubjects() {
+    return this.prisma.subject.findMany({
+      include: { _count: { select: { questions: true } } },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createSubject(data: { name: string; description?: string }) {
+    const existing = await this.prisma.subject.findUnique({ where: { name: data.name } });
+    if (existing) throw new ConflictException(`Lĩnh vực "${data.name}" đã tồn tại`);
+    return this.prisma.subject.create({ data });
+  }
+
+  updateSubject(id: string, data: { name?: string; description?: string }) {
+    return this.prisma.subject.update({ where: { id }, data });
+  }
+
+  deleteSubject(id: string) {
+    return this.prisma.subject.delete({ where: { id } });
+  }
+
+  // ── Questions (Ngân hàng câu hỏi) ────────────────────────────────────
+  getBankQuestions(subjectId?: string) {
+    return this.prisma.question.findMany({
+      where: { isBank: true, ...(subjectId ? { subjectId } : {}) },
+      include: {
+        options: { orderBy: { orderIndex: 'asc' } },
+        subject: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  createBankQuestion(data: {
+    content: string; explanation?: string; subjectId?: string;
+    points?: number; questionType?: string;
+    options: { content: string; isCorrect: boolean; orderIndex: number }[];
+  }) {
+    const { options, questionType, ...rest } = data;
+    return this.prisma.question.create({
+      data: {
+        ...rest,
+        isBank: true,
+        questionType: (questionType as any) ?? 'SINGLE',
+        orderIndex: 0,
+        options: { create: options },
+      },
+      include: { options: true },
+    });
+  }
+
+  updateBankQuestion(id: string, data: {
+    content?: string; explanation?: string; subjectId?: string; points?: number;
+  }) {
+    return this.prisma.question.update({ where: { id }, data });
+  }
+
+  deleteBankQuestion(id: string) {
+    return this.prisma.question.delete({ where: { id } });
+  }
+
+  // ── Duplicate detection ───────────────────────────────────────────────
+  async checkDuplicates(texts: string[]): Promise<{
+    index: number;
+    text: string;
+    matches: { id: string; content: string; score: number; level: 'exact' | 'high' | 'medium' }[];
+  }[]> {
+    const existing = await this.prisma.question.findMany({
+      where: { isBank: true },
+      select: { id: true, content: true },
+    });
+
+    return texts.map((text, index) => {
+      const queryTokens = tokenize(text);
+      const queryNorm = normalizeText(text);
+      const matches: { id: string; content: string; score: number; level: 'exact' | 'high' | 'medium' }[] = [];
+
+      for (const q of existing) {
+        const existNorm = normalizeText(q.content);
+        if (queryNorm === existNorm) {
+          matches.push({ id: q.id, content: q.content, score: 1, level: 'exact' });
+          continue;
+        }
+        const score = jaccardSimilarity(queryTokens, tokenize(q.content));
+        if (score >= 0.85) matches.push({ id: q.id, content: q.content, score, level: 'high' });
+        else if (score >= 0.65) matches.push({ id: q.id, content: q.content, score, level: 'medium' });
+      }
+
+      // Sort by score desc, top 3
+      matches.sort((a, b) => b.score - a.score);
+      return { index, text, matches: matches.slice(0, 3) };
+    });
+  }
+
+  // ── Spell check (Vietnamese) ──────────────────────────────────────────
+  async checkSpelling(texts: string[]): Promise<{
+    rowIndex: number;
+    warnings: { word: string; suggestions: string[] }[];
+  }[]> {
+    const checker = await getSpellChecker();
+    return texts.map((text, rowIndex) => {
+      const words = normalizeText(text).split(' ').filter((w) => w.length > 1);
+      const warnings: { word: string; suggestions: string[] }[] = [];
+      const seen = new Set<string>();
+      for (const word of words) {
+        if (seen.has(word)) continue;
+        seen.add(word);
+        if (!checker.correct(word)) {
+          warnings.push({ word, suggestions: checker.suggest(word).slice(0, 3) });
+        }
+      }
+      return { rowIndex, warnings };
+    });
+  }
+  // ── Import Excel ──────────────────────────────────────────────────────
+  async importQuestionsFromExcel(buffer: Buffer, subjectId: string, dryRun = false): Promise<{
+    preview?: {
+      rowNumber: number;
+      content: string;
+      optionTexts: (string | null)[];
+      correctIndex: number;
+      explanation: string | null;
+      duplicateLevel: 'exact' | 'high' | 'medium' | null;
+      duplicateMatch: { id: string; content: string; score: number } | null;
+      spellingWarnings: { word: string; suggestions: string[] }[];
+    }[];
+    imported: number;
+    skipped: number;
+    errors: string[];
+  }> {
+    if (!subjectId) throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
+
+    const wb = XLSX.read(buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+    // Parse all valid rows first
+    type ParsedRow = {
+      rowNumber: number;
+      content: string;
+      optionTexts: (string | null)[];
+      correctIndex: number;
+      explanation: string | null;
+    };
+    const parsed: ParsedRow[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const content = row[0]?.toString().trim();
+      if (!content) continue;
+
+      const optionTexts = [row[1], row[2], row[3], row[4]].map((v) => v?.toString().trim() ?? null);
+      const validOptions = optionTexts.filter(Boolean);
+      if (validOptions.length < 2) { errors.push(`Dòng ${i + 1}: Không đủ đáp án`); continue; }
+
+      const correctRaw = Number(row[5]);
+      if (!correctRaw || correctRaw < 1 || correctRaw > 4) {
+        errors.push(`Dòng ${i + 1}: Đáp án đúng không hợp lệ (${row[5]})`); continue;
+      }
+      const correctIndex = correctRaw - 1;
+      if (correctIndex >= validOptions.length) {
+        errors.push(`Dòng ${i + 1}: Đáp án đúng vượt số lượng đáp án`); continue;
+      }
+
+      parsed.push({ rowNumber: i + 1, content, optionTexts, correctIndex, explanation: row[6]?.toString().trim() || null });
+    }
+
+    // Duplicate + spell check for all parsed rows
+    const contents = parsed.map((r) => r.content);
+    const [dupResults, spellResults] = await Promise.all([
+      this.checkDuplicates(contents),
+      this.checkSpelling(contents),
+    ]);
+
+    if (dryRun) {
+      const preview = parsed.map((row, idx) => {
+        const dup = dupResults[idx];
+        const topMatch = dup.matches[0] ?? null;
+        return {
+          rowNumber: row.rowNumber,
+          content: row.content,
+          optionTexts: row.optionTexts,
+          correctIndex: row.correctIndex,
+          explanation: row.explanation,
+          duplicateLevel: topMatch?.level ?? null,
+          duplicateMatch: topMatch ? { id: topMatch.id, content: topMatch.content, score: topMatch.score } : null,
+          spellingWarnings: spellResults[idx]?.warnings ?? [],
+        };
+      });
+      return { preview, imported: 0, skipped: 0, errors };
+    }
+
+    // Actual import — skip exact/high duplicates
+    let imported = 0, skipped = 0;
+    for (let idx = 0; idx < parsed.length; idx++) {
+      const row = parsed[idx];
+      const topDup = dupResults[idx].matches[0];
+      if (topDup && (topDup.level === 'exact' || topDup.level === 'high')) {
+        skipped++;
+        continue;
+      }
+      try {
+        await this.prisma.question.create({
+          data: {
+            content: row.content,
+            explanation: row.explanation,
+            subjectId,
+            isBank: true,
+            questionType: 'SINGLE',
+            orderIndex: 0,
+            options: {
+              create: row.optionTexts
+                .map((text, i) => text ? { content: text, isCorrect: i === row.correctIndex, orderIndex: i + 1 } : null)
+                .filter(Boolean) as any,
+            },
+          },
+        });
+        imported++;
+      } catch {
+        errors.push(`Dòng ${row.rowNumber}: Lỗi khi lưu`);
+      }
+    }
+    return { imported, skipped, errors };
+  }
+
+  // ── Questions (for quiz) ──────────────────────────────────────────────
+  getQuestions() {
+    return this.prisma.question.findMany({
+      where: { isBank: false },
+      include: {
+        options: { orderBy: { orderIndex: 'asc' } },
+        subject: { select: { id: true, name: true } },
+      },
+      orderBy: { orderIndex: 'asc' },
+    });
+  }
+
+  deleteQuestion(id: string) {
+    return this.prisma.question.delete({ where: { id } });
+  }
+
+  // ── Quizzes (full CRUD) ───────────────────────────────────────────────
+  getQuizzes() {
+    return this.prisma.quiz.findMany({
+      include: {
+        _count: { select: { assignments: true, questions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getQuiz(id: string) {
+    const quiz = await this.prisma.quiz.findUniqueOrThrow({ where: { id } });
+    const questions = await this.prisma.question.findMany({
+      where: { quizId: id },
+      include: { options: { orderBy: { orderIndex: 'asc' } } },
+      orderBy: { orderIndex: 'asc' },
+    });
+    return { ...quiz, questions };
+  }
+
+  createQuiz(data: {
+    title: string; description?: string; topic?: string;
+    durationMin: number; passScore?: number;
+  }) {
+    return this.prisma.quiz.create({ data });
+  }
+
+  updateQuiz(id: string, data: {
+    title?: string; description?: string; topic?: string;
+    durationMin?: number; passScore?: number; isActive?: boolean;
+  }) {
+    return this.prisma.quiz.update({ where: { id }, data });
+  }
+
+  async deleteQuiz(id: string) {
+    const quiz = await this.prisma.quiz.findUniqueOrThrow({
+      where: { id },
+      include: { _count: { select: { assignments: true, examSessions: true } } },
+    });
+    if (quiz._count.assignments > 0 || quiz._count.examSessions > 0)
+      throw new BadRequestException('Không thể xóa bộ đề đã được phân công hoặc có đợt thi. Hãy xóa phân công trước.');
+
+    // Cascade delete arena sessions (ArenaTeam/ArenaRound/ArenaBuzz are cascaded by DB)
+    await this.prisma.arenaSession.deleteMany({ where: { quizId: id } });
+
+    // Cascade delete: submission_answers → submissions → quiz_versions → quiz
+    const versions = await this.prisma.quizVersion.findMany({ where: { quizId: id }, select: { id: true } });
+    const versionIds = versions.map((v) => v.id);
+    if (versionIds.length > 0) {
+      const submissions = await this.prisma.submission.findMany({
+        where: { quizVersionId: { in: versionIds } },
+        select: { id: true },
+      });
+      const submissionIds = submissions.map((s) => s.id);
+      if (submissionIds.length > 0) {
+        await this.prisma.submissionAnswer.deleteMany({ where: { submissionId: { in: submissionIds } } });
+        await this.prisma.submission.deleteMany({ where: { id: { in: submissionIds } } });
+      }
+      await this.prisma.quizVersion.deleteMany({ where: { quizId: id } });
+    }
+    return this.prisma.quiz.delete({ where: { id } });
+  }
+
+  // ── Pick random questions from bank ──────────────────────────────────
+  async pickRandomToQuiz(quizId: string, params: {
+    subjectId?: string;
+    count?: number;
+    subjectSlots?: { subjectId?: string; count: number }[];
+    replaceAll?: boolean;
+  }) {
+    const { replaceAll } = params;
+
+    // Normalize: convert legacy (subjectId + count) to subjectSlots format
+    const slots: { subjectId?: string; count: number }[] =
+      params.subjectSlots?.length
+        ? params.subjectSlots
+        : [{ subjectId: params.subjectId, count: params.count ?? 0 }];
+
+    const pickedAll: Array<{ subjectId: string | null; content: string; explanation: string | null; questionType: any; points: number; options: { content: string; isCorrect: boolean; orderIndex: number }[] }> = [];
+
+    for (const slot of slots) {
+      const { subjectId, count } = slot;
+      if (!count || count <= 0) continue;
+
+      const bankQuestions = await this.prisma.question.findMany({
+        where: { isBank: true, ...(subjectId ? { subjectId } : {}) },
+        include: { options: { orderBy: { orderIndex: 'asc' } } },
+      });
+
+      if (bankQuestions.length === 0)
+        throw new BadRequestException(`Lĩnh vực không có câu hỏi trong ngân hàng`);
+      if (count > bankQuestions.length)
+        throw new BadRequestException(`Chỉ có ${bankQuestions.length} câu trong ngân hàng cho lĩnh vực này`);
+
+      // Fisher-Yates shuffle
+      const shuffled = [...bankQuestions];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      pickedAll.push(...shuffled.slice(0, count));
+    }
+
+    if (pickedAll.length === 0) throw new BadRequestException('Không có câu hỏi nào được chọn');
+
+    if (replaceAll) {
+      await this.prisma.question.deleteMany({ where: { quizId, isBank: false } });
+    }
+
+    const maxOrder = await this.prisma.question.aggregate({ where: { quizId }, _max: { orderIndex: true } });
+    let orderIdx = (maxOrder._max.orderIndex ?? 0) + 1;
+
+    for (const q of pickedAll) {
+      await this.prisma.question.create({
+        data: {
+          quizId,
+          subjectId: q.subjectId,
+          content: q.content,
+          explanation: q.explanation,
+          questionType: q.questionType,
+          points: q.points,
+          orderIndex: orderIdx++,
+          isBank: false,
+          options: {
+            create: q.options.map((o) => ({
+              content: o.content,
+              isCorrect: o.isCorrect,
+              orderIndex: o.orderIndex,
+            })),
+          },
+        },
+      });
+    }
+
+    return { added: pickedAll.length, quizId };
+  }
+
+  // ── Assignments ──────────────────────────────────────────────────────
+  private readonly assignmentInclude = {
+    quiz: { select: { id: true, title: true } },
+    user: { select: { id: true, fullName: true } },
+    canBo: { select: { id: true, fullName: true, cbCode: true, department: { select: { id: true, name: true, code: true, parentId: true } } } },
+    department: { select: { id: true, name: true } },
+  } as const;
+
+  getAssignments() {
+    return this.prisma.assignment.findMany({
+      include: this.assignmentInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  createAssignment(data: { quizId: string; userId?: string; canBoId?: string; departmentId?: string; startAt?: string; endAt?: string; status?: AssignmentStatus }) {
+    const { startAt, endAt, ...rest } = data;
+    return this.prisma.assignment.create({
+      data: { ...rest, startAt: startAt ? new Date(startAt) : undefined, endAt: endAt ? new Date(endAt) : undefined },
+      include: this.assignmentInclude,
+    });
+  }
+
+  updateAssignment(id: string, data: { quizId?: string; canBoId?: string; departmentId?: string; userId?: string; startAt?: string | null; endAt?: string | null; status?: AssignmentStatus }) {
+    const { startAt, endAt, ...rest } = data;
+    // Khi đổi đối tượng, xoá liên kết cũ
+    const clearFields: any = {};
+    if ('canBoId' in data && data.canBoId) { clearFields.departmentId = null; clearFields.userId = null; }
+    if ('departmentId' in data && data.departmentId) { clearFields.canBoId = null; clearFields.userId = null; }
+    return this.prisma.assignment.update({
+      where: { id },
+      data: { ...rest, ...clearFields, startAt: startAt ? new Date(startAt) : null, endAt: endAt ? new Date(endAt) : null },
+      include: this.assignmentInclude,
+    });
+  }
+
+  deleteAssignment(id: string) {
+    return this.prisma.assignment.delete({ where: { id } });
+  }
+
+  // ── Reports ──────────────────────────────────────────────────────────
+  async getReports() {
+    const rows = await this.prisma.submission.findMany({
+      include: {
+        user: {
+          select: {
+            fullName: true,
+            department: {
+              select: {
+                id: true,
+                name: true,
+                parentId: true,
+                parent: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        quizVersion: { include: { quiz: { select: { title: true } } } },
+      },
+      orderBy: { submittedAt: 'desc' },
+    });
+    return rows.map((s) => ({
+      id: s.id,
+      userId: s.userId,
+      fullName: s.user?.fullName ?? '',
+      departmentId: s.user?.department?.id ?? null,
+      department: s.user?.department?.name ?? '',
+      parentDepartmentId: s.user?.department?.parentId ?? null,
+      parentDepartment: s.user?.department?.parent?.name ?? null,
+      quizTitle: s.quizVersion?.quiz?.title ?? '',
+      score: s.score,
+      status: s.status,
+      submittedAt: s.submittedAt,
+    }));
+  }
+
+  async deleteReport(id: string) {
+    await this.prisma.submissionAnswer.deleteMany({ where: { submissionId: id } });
+    await this.prisma.auditLog.deleteMany({ where: { entityId: id } });
+    return this.prisma.submission.delete({ where: { id } });
+  }
+
+  // ── Users ────────────────────────────────────────────────────────────
+  getUsers() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true, username: true, fullName: true, email: true, role: true, isActive: true,
+        departmentId: true,
+        department: { select: { id: true, name: true, code: true, parentId: true, parent: { select: { id: true, name: true, code: true } } } },
+      },
+      orderBy: { fullName: 'asc' },
+    });
+  }
+
+  async createAssignmentsBulk(data: {
+    quizId: string;
+    canBoIds?: string[] | 'all';
+    userIds?: string[] | 'all'; // backward compat
+    status?: AssignmentStatus;
+    startAt?: string;
+    endAt?: string;
+  }) {
+    const base = {
+      quizId: data.quizId,
+      status: data.status ?? AssignmentStatus.ACTIVE,
+      startAt: data.startAt ? new Date(data.startAt) : undefined,
+      endAt: data.endAt ? new Date(data.endAt) : undefined,
+    };
+
+    // canBoIds path (primary)
+    if (data.canBoIds !== undefined) {
+      const ids = data.canBoIds === 'all'
+        ? (await this.prisma.canBo.findMany({ where: { isActive: true }, select: { id: true } })).map(c => c.id)
+        : data.canBoIds;
+      const result = await this.prisma.assignment.createMany({
+        data: ids.map(canBoId => ({ ...base, canBoId })),
+        skipDuplicates: true,
+      });
+      return { count: result.count };
+    }
+
+    // userIds path (backward compat)
+    const ids = data.userIds === 'all'
+      ? (await this.prisma.user.findMany({ where: { isActive: true }, select: { id: true } })).map(u => u.id)
+      : (data.userIds ?? []);
+    const result = await this.prisma.assignment.createMany({
+      data: ids.map(userId => ({ ...base, userId })),
+      skipDuplicates: true,
+    });
+    return { count: result.count };
+  }
+
+  // ── Academic Years ───────────────────────────────────────────────────
+  getAcademicYears() {
+    return this.prisma.academicYear.findMany({
+      include: { _count: { select: { classes: true } } },
+      orderBy: { startYear: 'desc' },
+    });
+  }
+
+  createAcademicYear(data: { name: string; startYear: number; endYear: number; isActive?: boolean }) {
+    return this.prisma.academicYear.create({ data });
+  }
+
+  async updateAcademicYear(id: string, data: { name?: string; startYear?: number; endYear?: number; isActive?: boolean }) {
+    // Nếu set active thì deactivate các năm còn lại
+    if (data.isActive) {
+      await this.prisma.academicYear.updateMany({ where: { isActive: true }, data: { isActive: false } });
+    }
+    return this.prisma.academicYear.update({ where: { id }, data });
+  }
+
+  deleteAcademicYear(id: string) {
+    return this.prisma.academicYear.delete({ where: { id } });
+  }
+
+  // ── Classes ──────────────────────────────────────────────────────────
+  getClasses(academicYearId?: string) {
+    return this.prisma.class.findMany({
+      where: academicYearId ? { academicYearId } : undefined,
+      include: {
+        academicYear: { select: { name: true } },
+        _count: { select: { members: true, examSessions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getClass(id: string) {
+    const cls = await this.prisma.class.findUniqueOrThrow({
+      where: { id },
+      include: {
+        academicYear: { select: { name: true } },
+        members: {
+          include: {
+            user: { select: { id: true, fullName: true, username: true, email: true, department: { select: { name: true } } } },
+          },
+          orderBy: { joinedAt: 'asc' },
+        },
+        examSessions: {
+          include: { quiz: { select: { title: true } } },
+          orderBy: { startAt: 'desc' },
+        },
+      },
+    });
+    return cls;
+  }
+
+  async createClass(data: { name: string; code: string; description?: string; academicYearId?: string; departmentId?: string }) {
+    const existing = await this.prisma.class.findUnique({ where: { code: data.code } });
+    if (existing) throw new ConflictException(`Mã lớp "${data.code}" đã tồn tại`);
+    return this.prisma.class.create({ data });
+  }
+
+  updateClass(id: string, data: { name?: string; code?: string; description?: string; academicYearId?: string }) {
+    return this.prisma.class.update({ where: { id }, data });
+  }
+
+  deleteClass(id: string) {
+    return this.prisma.class.delete({ where: { id } });
+  }
+
+  // ── Class Members ────────────────────────────────────────────────────
+  async addClassMember(classId: string, userId: string) {
+    const existing = await this.prisma.classMember.findUnique({ where: { classId_userId: { classId, userId } } });
+    if (existing) throw new ConflictException('Học viên đã có trong lớp');
+    return this.prisma.classMember.create({ data: { classId, userId } });
+  }
+
+  removeClassMember(classId: string, userId: string) {
+    return this.prisma.classMember.delete({ where: { classId_userId: { classId, userId } } });
+  }
+
+  async addClassMembersbulk(classId: string, userIds: string[]) {
+    const existing = await this.prisma.classMember.findMany({ where: { classId, userId: { in: userIds } }, select: { userId: true } });
+    const existingIds = new Set(existing.map((m) => m.userId));
+    const newIds = userIds.filter((id) => !existingIds.has(id));
+    if (newIds.length === 0) return { added: 0 };
+    await this.prisma.classMember.createMany({ data: newIds.map((userId) => ({ classId, userId })) });
+    return { added: newIds.length, skipped: existingIds.size };
+  }
+
+  // ── Exam Sessions ────────────────────────────────────────────────────
+  getExamSessions(classId?: string) {
+    return this.prisma.examSession.findMany({
+      where: classId ? { classId } : undefined,
+      include: {
+        quiz: { select: { id: true, title: true, durationMin: true } },
+        class: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { startAt: 'desc' },
+    });
+  }
+
+  async getExamSession(id: string) {
+    return this.prisma.examSession.findUniqueOrThrow({
+      where: { id },
+      include: {
+        quiz: { select: { id: true, title: true, durationMin: true, passScore: true } },
+        class: {
+          include: {
+            members: {
+              include: { user: { select: { id: true, fullName: true, username: true } } },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  createExamSession(data: {
+    name: string; quizId: string; classId: string;
+    startAt: string; endAt: string;
+    maxAttempts?: number; scoringPolicy?: string;
+    durationMin?: number; shuffleQuestions?: boolean;
+    shuffleOptions?: boolean; showResultAfter?: string;
+    allowReview?: boolean;
+  }) {
+    return this.prisma.examSession.create({ data: data as any });
+  }
+
+  async updateExamSession(id: string, data: Partial<{
+    name: string; startAt: string; endAt: string;
+    maxAttempts: number; scoringPolicy: string;
+    durationMin: number; shuffleQuestions: boolean;
+    shuffleOptions: boolean; showResultAfter: string;
+    allowReview: boolean; status: string;
+  }>) {
+    const session = await this.prisma.examSession.update({ where: { id }, data: data as any,
+      include: { quiz: { select: { title: true } }, class: { select: { members: { select: { userId: true } } } } },
+    });
+    // Gửi push notification khi mở đợt thi
+    if (data.status === 'OPEN') {
+      const memberIds = session.class.members.map((m: { userId: string }) => m.userId);
+      await this.notifications.sendToUsers(
+        memberIds,
+        '📝 Đợt thi mới đã mở',
+        `"${session.quiz.title}" — ${session.name} đang chờ bạn!`,
+        { sessionId: session.id, type: 'EXAM_OPENED' },
+      );
+    }
+    return session;
+  }
+
+  deleteExamSession(id: string) {
+    return this.prisma.examSession.delete({ where: { id } });
+  }
+
+  // ── Departments ──────────────────────────────────────────────────────
+  getDepartments() {
+    return this.prisma.department.findMany({
+      include: {
+        parent: { select: { id: true, name: true, code: true } },
+        _count: { select: { children: true, canBo: true } },
+      },
+      orderBy: { code: 'asc' },
+    });
+  }
+
+  // ── Cán bộ (Staff Management) ─────────────────────────────────────────
+  async getCanBo(search?: string, departmentId?: string, unitId?: string) {
+    let deptIds: string[] | undefined;
+    if (unitId) {
+      const children = await this.prisma.department.findMany({
+        where: { parentId: unitId },
+        select: { id: true },
+      });
+      deptIds = [unitId, ...children.map((c) => c.id)];
+    } else if (departmentId) {
+      deptIds = [departmentId];
+    }
+
+    return this.prisma.canBo.findMany({
+      where: {
+        ...(deptIds ? { departmentId: { in: deptIds } } : {}),
+        ...(search ? {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { cbCode: { contains: search, mode: 'insensitive' } },
+            { userAD: { contains: search, mode: 'insensitive' } },
+            { username: { contains: search, mode: 'insensitive' } },
+          ],
+        } : {}),
+      },
+      include: {
+        department: {
+          select: {
+            id: true, name: true, code: true,
+            parent: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+      orderBy: { cbCode: 'asc' },
+    });
+  }
+
+  async createCanBo(data: {
+    cbCode: string; fullName: string; username?: string; email?: string;
+    phoneNumber?: string; userAD?: string; userIPCAS?: string; maCbtd?: string;
+    cccd?: string; ngayCapCmt?: string; noiCapCmt?: string; ngaySinh?: string;
+    gioiTinh?: string; departmentId?: string; position?: string;
+    isPartyMember?: boolean; isUnionMember?: boolean; isYouthUnionMember?: boolean;
+    isItStaff?: boolean; isActive?: boolean;
+  }) {
+    const existing = await this.prisma.canBo.findUnique({ where: { cbCode: data.cbCode } });
+    if (existing) throw new ConflictException(`Mã CB "${data.cbCode}" đã tồn tại`);
+    const { ngaySinh, username: _username, userAD: rawUserAD, ...rest } = data;
+    const userAD = this.normalizeUserAD(rawUserAD);
+    await this.ensureUserADIsAvailable(userAD);
+    return this.prisma.$transaction(async (tx) => {
+      const canBo = await tx.canBo.create({
+        data: {
+          ...rest,
+          userAD,
+          username: this.getLoginUsername(data.cbCode, userAD),
+          ngaySinh: ngaySinh ? new Date(ngaySinh) : undefined,
+        },
+      });
+      await this.syncCanBoUser(tx, canBo);
+      return tx.canBo.findUniqueOrThrow({
+        where: { id: canBo.id },
+        include: { department: { select: { id: true, name: true, code: true } } },
+      });
+    });
+  }
+
+  async updateCanBo(id: string, data: any) {
+    const existing = await this.prisma.canBo.findUniqueOrThrow({ where: { id } });
+    const { ngaySinh, username: _username, userAD: rawUserAD, ...rest } = data;
+    const userAD = rawUserAD === undefined ? existing.userAD : this.normalizeUserAD(rawUserAD);
+    await this.ensureUserADIsAvailable(userAD, id);
+    return this.prisma.$transaction(async (tx) => {
+      const canBo = await tx.canBo.update({
+        where: { id },
+        data: {
+          ...rest,
+          userAD,
+          username: this.getLoginUsername(rest.cbCode ?? existing.cbCode, userAD),
+          ngaySinh: ngaySinh ? new Date(ngaySinh) : undefined,
+        },
+      });
+      await this.syncCanBoUser(tx, canBo, existing.cbCode, existing.userAD);
+      return tx.canBo.findUniqueOrThrow({
+        where: { id },
+        include: { department: { select: { id: true, name: true, code: true } } },
+      });
+    });
+  }
+
+  deleteCanBo(id: string) {
+    return this.prisma.canBo.delete({ where: { id } });
+  }
+
+  async bulkDeleteCanBo(ids: string[]): Promise<{ deleted: number }> {
+    const result = await this.prisma.canBo.deleteMany({ where: { id: { in: ids } } });
+    return { deleted: result.count };
+  }
+
+  async resetCanBoPasswords(ids: string[]) {
+    const canBoList = await this.prisma.canBo.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, cbCode: true, fullName: true, userAD: true },
+    });
+
+    let reset = 0;
+    const noAccount: string[] = [];
+    const details: { fullName: string; cbCode: string; ok: boolean }[] = [];
+
+    const hash = await bcrypt.hash('Abcd@1234', 10);
+
+    for (const cb of canBoList) {
+      const user = await this.prisma.user.findUnique({
+        where: { username: this.getLoginUsername(cb.cbCode, cb.userAD) },
+      });
+      if (!user) {
+        noAccount.push(cb.fullName);
+        details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: false });
+        continue;
+      }
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: hash, mustChangePassword: true },
+      });
+      reset++;
+      details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: true });
+    }
+
+    return { reset, noAccount: noAccount.length, details };
+  }
+
+  // ── Import cán bộ từ file gahr26 (CSV / XLS / XLSX) ──────────────────
+  async importCanBoFromGahr26(buffer: Buffer): Promise<{
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: string[];
+    rows: { empno: string; fullName: string; branchCode?: string; branchName?: string; deptName?: string; position?: string; userAD?: string; action: 'created' | 'updated' | 'skipped' | 'error'; note?: string }[];
+  }> {
+    // Đọc workbook (xlsx lib hỗ trợ cả csv, xls, xlsx)
+    const wb = XLSX.read(buffer, { type: 'buffer', raw: false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rawRowsOrig: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false });
+
+    if (rawRowsOrig.length === 0) throw new BadRequestException('File không có dữ liệu');
+
+    // Chuẩn hoá header: trim + uppercase để tránh lỗi khoảng trắng / chữ thường
+    const rawRows: Record<string, any>[] = rawRowsOrig.map(r => {
+      const norm: Record<string, any> = {};
+      for (const [k, v] of Object.entries(r)) {
+        norm[k.trim().toUpperCase()] = v;
+      }
+      return norm;
+    });
+
+    // Kiểm tra header bắt buộc
+    const required = ['BRCD', 'BRNM', 'EMPNO'];
+    const firstRow = rawRows[0];
+    for (const col of required) {
+      if (!(col in firstRow)) {
+        throw new BadRequestException(`File thiếu cột bắt buộc: ${col}. File phải có các cột BRCD, BRNM, EMPNO`);
+      }
+    }
+
+    // Cache phòng ban để giảm DB queries
+    const deptCache = new Map<string, string>(); // key = "BRCD::DEPTNM" → departmentId
+
+    const getOrCreateDepartment = async (brcd: string, brnm: string, deptnm?: string | null): Promise<string> => {
+      const branchKey = `branch::${brcd}`;
+      // 1. Tạo / lấy chi nhánh cấp 1 (BRCD → BRNM)
+      let branchId = deptCache.get(branchKey);
+      if (!branchId) {
+        // Ưu tiên tra cứu theo code, fallback theo tên để tránh tạo duplicate
+        let branch = await this.prisma.department.findUnique({ where: { code: brcd } });
+        if (!branch) {
+          branch = await this.prisma.department.findFirst({
+            where: { name: { equals: brnm, mode: 'insensitive' }, parentId: null },
+          });
+        }
+        if (!branch) {
+          branch = await this.prisma.department.create({ data: { code: brcd, name: brnm } });
+        } else if (branch.code !== brcd) {
+          // Đã tìm thấy theo tên — cache thêm theo code mới để tái sử dụng
+          deptCache.set(`branch::${branch.code}`, branch.id);
+        }
+        branchId = branch.id;
+        deptCache.set(branchKey, branchId);
+      }
+
+      if (!deptnm) return branchId;
+
+      // 2. Tạo / lấy phòng ban cấp 2: ưu tiên code, fallback theo tên trong cùng chi nhánh
+      const deptCode = `${brcd}::${deptnm}`;
+      let deptId = deptCache.get(deptCode);
+      if (!deptId) {
+        let dept = await this.prisma.department.findUnique({ where: { code: deptCode } });
+        if (!dept) {
+          dept = await this.prisma.department.findFirst({
+            where: { name: { equals: deptnm, mode: 'insensitive' }, parentId: branchId },
+          });
+        }
+        if (!dept) {
+          dept = await this.prisma.department.create({ data: { code: deptCode, name: deptnm, parentId: branchId } });
+        }
+        deptId = dept.id;
+        deptCache.set(deptCode, deptId);
+      }
+      return deptId;
+    };
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    const rows: { empno: string; fullName: string; branchCode?: string; branchName?: string; deptName?: string; position?: string; userAD?: string; action: 'created' | 'updated' | 'skipped' | 'error'; note?: string }[] = [];
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const lineNo = i + 2; // +2 vì row 1 là header
+
+      const empno = row['EMPNO']?.toString().trim();
+      const brcd = row['BRCD']?.toString().trim();
+      const brnm = row['BRNM']?.toString().trim();
+      const deptnm = row['DEPTNM']?.toString().trim() || null;
+      const position = row['POSITION']?.toString().trim() || null;
+      const sex = row['SEX']?.toString().trim() || null;
+      const birthdt = row['BIRTHDT']?.toString().trim() || null;
+      // Tên nhân viên: thử cột EMPNM, FULLNAME, NAME
+      const fullName = (row['EMPNM'] ?? row['FULLNAME'] ?? row['NAME'] ?? '')?.toString().trim();
+      // Cột AD (tên đăng nhập Active Directory) – thử nhiều tên cột phổ biến
+      const adValue = (row['AD'] ?? row['USERADM'] ?? row['USER_AD'] ?? row['ADUSER'])?.toString().trim() || null;
+      // Username đăng nhập: ưu tiên AD, fallback về EMPNO
+      const loginUsername = adValue || empno;
+
+      if (!empno) { errors.push(`Dòng ${lineNo}: EMPNO trống`); skipped++; continue; }
+      if (!brcd || !brnm) { errors.push(`Dòng ${lineNo}: BRCD hoặc BRNM trống`); skipped++; continue; }
+
+      // Chuẩn hoá giới tính
+      let gioiTinh: string | null = null;
+      if (sex) {
+        const s = sex.toUpperCase();
+        if (s === 'M' || s === 'MALE' || s === 'NAM' || s === '1') gioiTinh = 'Nam';
+        else if (s === 'F' || s === 'FEMALE' || s === 'NU' || s === 'NỮ' || s === '2') gioiTinh = 'Nữ';
+        else gioiTinh = sex;
+      }
+
+      // Parse ngày sinh (format YYYYMMDD hoặc YYYY-MM-DD hoặc DD/MM/YYYY)
+      let ngaySinh: Date | null = null;
+      if (birthdt) {
+        // YYYYMMDD (8 chữ số)
+        if (/^\d{8}$/.test(birthdt)) {
+          ngaySinh = new Date(`${birthdt.slice(0, 4)}-${birthdt.slice(4, 6)}-${birthdt.slice(6, 8)}`);
+        } else if (/^\d{4}-\d{2}-\d{2}/.test(birthdt)) {
+          ngaySinh = new Date(birthdt);
+        } else if (/^\d{2}\/\d{2}\/\d{4}/.test(birthdt)) {
+          const [d, m, y] = birthdt.split('/');
+          ngaySinh = new Date(`${y}-${m}-${d}`);
+        } else {
+          ngaySinh = new Date(birthdt);
+        }
+        if (isNaN(ngaySinh.getTime())) ngaySinh = null;
+      }
+
+      try {
+        const departmentId = await getOrCreateDepartment(brcd, brnm, deptnm);
+
+        const existing = await this.prisma.canBo.findUnique({ where: { cbCode: empno } });
+
+        const resolvedFullName = fullName || existing?.fullName || empno;
+        const data: any = {
+          fullName: resolvedFullName,
+          departmentId,
+          username: loginUsername,
+          ...(adValue !== null ? { userAD: adValue } : {}),
+          ...(position !== null ? { position } : {}),
+          ...(gioiTinh !== null ? { gioiTinh } : {}),
+          ...(ngaySinh !== null ? { ngaySinh } : {}),
+        };
+
+        if (existing) {
+          await this.prisma.canBo.update({ where: { cbCode: empno }, data });
+          updated++;
+          rows.push({ empno, fullName: data.fullName, branchCode: brcd, branchName: brnm, deptName: deptnm ?? undefined, position: position ?? undefined, userAD: adValue ?? undefined, action: 'updated' });
+        } else {
+          await this.prisma.canBo.create({ data: { cbCode: empno, ...data } });
+          created++;
+          rows.push({ empno, fullName: data.fullName, branchCode: brcd, branchName: brnm, deptName: deptnm ?? undefined, position: position ?? undefined, userAD: adValue ?? undefined, action: 'created' });
+        }
+
+        // Tạo / cập nhật User tương ứng (username = AD từ GAHR26, mk mặc định Abcd@1234)
+        // Tìm user: ưu tiên loginUsername (AD), fallback tương thích ngược theo empno cũ
+        let existingUser = await this.prisma.user.findFirst({
+          where: { OR: [{ username: loginUsername }, { username: empno }] },
+        });
+        if (!existingUser) {
+          const passwordHash = await bcrypt.hash('Abcd@1234', 10);
+          await this.prisma.user.create({
+            data: {
+              username: loginUsername,
+              fullName: resolvedFullName,
+              passwordHash,
+              role: 'STAFF',
+              isActive: true,
+              mustChangePassword: true,
+              departmentId,
+            },
+          });
+        } else if (existingUser.username !== loginUsername) {
+          // Migrate username cũ (empno) → loginUsername (AD)
+          await this.prisma.user.update({
+            where: { id: existingUser.id },
+            data: { username: loginUsername, fullName: resolvedFullName, departmentId },
+          });
+        } else {
+          // Cập nhật fullName và department nếu thay đổi
+          await this.prisma.user.update({
+            where: { id: existingUser.id },
+            data: { fullName: resolvedFullName, departmentId },
+          });
+        }
+      } catch (err: any) {
+        errors.push(`Dòng ${lineNo} (${empno}): ${err.message}`);
+        rows.push({ empno: empno ?? `dòng ${lineNo}`, fullName: '', action: 'error', note: err.message });
+      }
+    }
+
+    return { created, updated, skipped, errors, rows };
+  }
+
+
+  async getExamSessionGradebook(sessionId: string) {
+    const session = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: {
+        class: { include: { members: { include: { user: { select: { id: true, fullName: true, username: true } } } } } },
+        quiz: { select: { id: true, passScore: true } },
+      },
+    });
+
+    const submissions = await this.prisma.submission.findMany({
+      where: { quizId: session.quizId, user: { classMembers: { some: { classId: session.classId } } } },
+      select: { userId: true, score: true, isPassed: true, submittedAt: true, status: true },
+      orderBy: { submittedAt: 'asc' },
+    });
+
+    // Group by userId
+    const byUser: Record<string, typeof submissions> = {};
+    for (const s of submissions) {
+      if (!byUser[s.userId]) byUser[s.userId] = [];
+      byUser[s.userId].push(s);
+    }
+
+    return session.class.members.map(({ user }) => {
+      const attempts = byUser[user.id] ?? [];
+      const scores = attempts.map((a) => a.score ?? 0);
+      let finalScore: number | null = null;
+      if (scores.length > 0) {
+        switch (session.scoringPolicy) {
+          case 'FIRST': finalScore = scores[0]; break;
+          case 'LAST': finalScore = scores[scores.length - 1]; break;
+          case 'HIGHEST': finalScore = Math.max(...scores); break;
+          case 'AVERAGE': finalScore = scores.reduce((a, b) => a + b, 0) / scores.length; break;
+          default: finalScore = Math.max(...scores);
+        }
+      }
+      return {
+        user,
+        attempts: attempts.length,
+        finalScore,
+        isPassed: finalScore !== null ? finalScore >= (session.quiz.passScore ?? 0) : null,
+        lastSubmittedAt: attempts[attempts.length - 1]?.submittedAt ?? null,
+      };
+    });
+  }
+
+  // ── Leaderboard ──────────────────────────────────────────────────────
+  async getExamSessionLeaderboard(sessionId: string) {
+    const gradebook = await this.getExamSessionGradebook(sessionId);
+    return gradebook
+      .filter((g) => g.finalScore !== null)
+      .sort((a, b) => (b.finalScore ?? 0) - (a.finalScore ?? 0))
+      .map((g, idx) => ({ rank: idx + 1, ...g }));
+  }
+
+  // ── Attempt History ──────────────────────────────────────────────────
+  async getAttemptHistory(sessionId: string, userId: string) {
+    const session = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { quizId: true, scoringPolicy: true },
+    });
+
+    const submissions = await this.prisma.submission.findMany({
+      where: { quizId: session.quizId, userId },
+      select: {
+        id: true, score: true, isPassed: true, submittedAt: true, status: true,
+        answers: {
+          select: {
+            id: true, questionId: true, selectedOptionIds: true, answeredAt: true,
+          },
+        },
+      },
+      orderBy: { submittedAt: 'asc' },
+    });
+
+    return submissions.map((s, idx) => ({ attempt: idx + 1, ...s }));
+  }
+
+  // ── Export Gradebook Excel ───────────────────────────────────────────
+  async exportGradebook(sessionId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const session = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { name: true },
+    });
+
+    const gradebook = await this.getExamSessionGradebook(sessionId);
+    const sorted = [...gradebook].sort((a, b) => (b.finalScore ?? -1) - (a.finalScore ?? -1));
+
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1 — Bảng điểm đầy đủ
+    const rows = sorted.map((g, idx) => ({
+      'STT': idx + 1,
+      'Họ tên': g.user.fullName,
+      'Username': g.user.username,
+      'Số lần thi': g.attempts,
+      'Điểm': g.finalScore !== null ? +g.finalScore.toFixed(2) : '',
+      'Kết quả': g.isPassed === null ? 'Chưa thi' : g.isPassed ? 'Đạt' : 'Chưa đạt',
+      'Lần cuối nộp': g.lastSubmittedAt ? new Date(g.lastSubmittedAt).toLocaleString('vi-VN') : '',
+    }));
+    const ws1 = XLSX.utils.json_to_sheet(rows);
+    ws1['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Bảng điểm');
+
+    // Sheet 2 — Chưa làm
+    const notDone = sorted.filter((g) => g.attempts === 0).map((g, idx) => ({
+      'STT': idx + 1,
+      'Họ tên': g.user.fullName,
+      'Username': g.user.username,
+    }));
+    if (notDone.length > 0) {
+      const ws2 = XLSX.utils.json_to_sheet(notDone);
+      ws2['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Chưa làm');
+    }
+
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const safeName = session.name.replace(/[^a-zA-Z0-9À-ỹ\s]/g, '').trim().replace(/\s+/g, '_');
+    return { buffer: excelBuffer, filename: `BangDiem_${safeName}.xlsx` };
+  }
+
+  // ── Question Stats (Phân tích câu hỏi) ───────────────────────────────
+  async getQuestionStats(sessionId: string) {
+    const session = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { quizId: true, classId: true },
+    });
+
+    const [questions, members] = await Promise.all([
+      this.prisma.question.findMany({
+        where: { quizId: session.quizId },
+        include: { options: { orderBy: { orderIndex: 'asc' } } },
+        orderBy: { orderIndex: 'asc' },
+      }),
+      this.prisma.classMember.findMany({
+        where: { classId: session.classId },
+        select: { userId: true },
+      }),
+    ]);
+
+    const memberIds = members.map((m) => m.userId);
+    const submissions = await this.prisma.submission.findMany({
+      where: { quizId: session.quizId, userId: { in: memberIds } },
+      select: { answers: { select: { questionId: true, selectedOptionIds: true } } },
+    });
+
+    const questionOpts = new Map(questions.map((q) => [q.id, q.options]));
+    const stats = new Map(questions.map((q) => [q.id, { correct: 0, total: 0 }]));
+
+    for (const sub of submissions) {
+      for (const ans of sub.answers) {
+        const s = stats.get(ans.questionId);
+        if (!s) continue;
+        s.total++;
+        const selected = ans.selectedOptionIds as string[];
+        const correctIds = (questionOpts.get(ans.questionId) ?? [])
+          .filter((o) => o.isCorrect).map((o) => o.id);
+        const isCorrect =
+          selected.length === correctIds.length &&
+          correctIds.every((id) => selected.includes(id));
+        if (isCorrect) s.correct++;
+      }
+    }
+
+    return questions.map((q, idx) => {
+      const s = stats.get(q.id)!;
+      return {
+        index: idx + 1,
+        id: q.id,
+        content: q.content,
+        questionType: q.questionType,
+        options: questionOpts.get(q.id) ?? [],
+        totalAttempts: s.total,
+        correctCount: s.correct,
+        wrongCount: s.total - s.correct,
+        correctRate: s.total > 0 ? Math.round((s.correct / s.total) * 100) : null,
+      };
+    });
+  }
+
+  // ── Not Attempted (Chưa làm) ──────────────────────────────────────────
+  async getNotAttempted(sessionId: string) {
+    const session = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { quizId: true, classId: true },
+    });
+
+    const members = await this.prisma.classMember.findMany({
+      where: { classId: session.classId },
+      include: { user: { select: { id: true, fullName: true, username: true, email: true } } },
+    });
+
+    const attempted = await this.prisma.submission.findMany({
+      where: { quizId: session.quizId, userId: { in: members.map((m) => m.userId) } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+
+    const attemptedIds = new Set(attempted.map((s) => s.userId));
+    return members.filter((m) => !attemptedIds.has(m.userId)).map((m) => m.user);
+  }
+
+  // ── Certificate Data ──────────────────────────────────────────────────
+  async getCertificateData(sessionId: string, userId: string) {
+    const session = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: {
+        quiz: { select: { title: true, passScore: true } },
+        class: { select: { name: true } },
+      },
+    });
+
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { fullName: true, username: true },
+    });
+
+    const best = await this.prisma.submission.findFirst({
+      where: { quizId: session.quizId, userId, isPassed: true },
+      orderBy: { score: 'desc' },
+    });
+
+    if (!best) {
+      throw new NotFoundException('Học viên chưa đạt kết quả để cấp chứng nhận');
+    }
+
+    return {
+      studentName: user.fullName,
+      username: user.username,
+      quizTitle: session.quiz?.title ?? '',
+      sessionName: session.name,
+      className: session.class?.name ?? '',
+      score: best.score,
+      passScore: session.quiz?.passScore ?? 70,
+      submittedAt: best.submittedAt,
+      issuedAt: new Date().toISOString(),
+    };
+  }
+}
+

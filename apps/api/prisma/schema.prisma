@@ -1,0 +1,572 @@
+// Prisma schema for 7800Quiz — Internal Bank Quiz System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  email        String?
+  departmentId String?  @map("department_id")
+  role         UserRole @default(STAFF)
+  isActive            Boolean  @default(true) @map("is_active")
+  mustChangePassword  Boolean  @default(true) @map("must_change_password")
+  fcmToken     String?  @map("fcm_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  assignments  Assignment[]
+  submissions  Submission[]
+  auditLogs    AuditLog[]
+  classMembers ClassMember[]
+  userProgress UserProgress?
+
+  @@map("users")
+}
+
+enum UserRole {
+  STAFF
+  ADMIN
+  TRAINER
+
+  @@map("user_role")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parent      Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DepartmentHierarchy")
+  users       User[]
+  assignments Assignment[]
+  canBo       CanBo[]
+
+  @@map("departments")
+}
+
+model Quiz {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  topic       String?
+  durationMin Int      @map("duration_min") // thời gian làm bài (phút)
+  passScore   Int?     @map("pass_score")   // điểm đạt
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  versions      QuizVersion[]
+  assignments   Assignment[]
+  examSessions  ExamSession[]
+  questions     Question[]
+  arenaSessions ArenaSession[]
+
+  @@map("quizzes")
+}
+
+model QuizVersion {
+  id        String   @id @default(uuid())
+  quizId    String   @map("quiz_id")
+  version   Int      @default(1)
+  snapshot  Json     // toàn bộ nội dung quiz tại thời điểm version này
+  createdAt DateTime @default(now()) @map("created_at")
+
+  quiz        Quiz         @relation(fields: [quizId], references: [id])
+  submissions Submission[]
+
+  @@unique([quizId, version])
+  @@map("quiz_versions")
+}
+
+model Subject {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  questions Question[]
+
+  @@map("subjects")
+}
+
+model Question {
+  id           String       @id @default(uuid())
+  quizId       String?      @map("quiz_id")       // null nếu thuộc ngân hàng câu hỏi chung
+  subjectId    String?      @map("subject_id")    // lĩnh vực
+  content      String
+  explanation  String?                             // giải thích đáp án đúng
+  questionType QuestionType @default(SINGLE) @map("question_type")
+  orderIndex   Int          @default(0) @map("order_index")
+  points       Int          @default(1)
+  isBank       Boolean      @default(false) @map("is_bank") // true = thuộc ngân hàng câu hỏi
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  quiz    Quiz?            @relation(fields: [quizId], references: [id])
+  subject Subject?         @relation(fields: [subjectId], references: [id])
+  options QuestionOption[]
+  arenaRounds ArenaRound[]
+
+  @@map("questions")
+}
+
+enum QuestionType {
+  SINGLE   // chọn 1 đáp án
+  MULTIPLE // chọn nhiều đáp án
+
+  @@map("question_type")
+}
+
+model QuestionOption {
+  id         String   @id @default(uuid())
+  questionId String   @map("question_id")
+  content    String
+  isCorrect  Boolean  @default(false) @map("is_correct")
+  orderIndex Int      @map("order_index")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_options")
+}
+
+model Assignment {
+  id           String           @id @default(uuid())
+  quizId       String           @map("quiz_id")
+  userId       String?          @map("user_id")       // giao cho user account
+  canBoId      String?          @map("can_bo_id")     // giao cho cán bộ
+  departmentId String?          @map("department_id") // giao cho phòng ban
+  startAt      DateTime?        @map("start_at")
+  endAt        DateTime?        @map("end_at")
+  status       AssignmentStatus @default(ACTIVE)
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  quiz       Quiz        @relation(fields: [quizId], references: [id])
+  user       User?       @relation(fields: [userId], references: [id])
+  canBo      CanBo?      @relation(fields: [canBoId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@map("assignments")
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  CLOSED
+  DRAFT
+
+  @@map("assignment_status")
+}
+
+model Submission {
+  id              String           @id @default(uuid()) // UUID từ app — idempotent key
+  userId          String           @map("user_id")
+  quizId          String           @map("quiz_id")
+  quizVersionId   String           @map("quiz_version_id")
+  status          SubmissionStatus @default(PENDING_SYNC)
+  score           Float?
+  isPassed        Boolean?         @map("is_passed")
+  startedAt       DateTime?        @map("started_at")
+  submittedAt     DateTime?        @map("submitted_at")
+  syncedAt        DateTime?        @map("synced_at")
+  retryCount      Int              @default(0) @map("retry_count")
+  lastRetryAt     DateTime?        @map("last_retry_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  user        User               @relation(fields: [userId], references: [id])
+  quizVersion QuizVersion        @relation(fields: [quizVersionId], references: [id])
+  answers     SubmissionAnswer[]
+
+  @@map("submissions")
+}
+
+enum SubmissionStatus {
+  PENDING_SYNC // đang chờ đồng bộ
+  SYNCED       // đã đồng bộ lên server
+  GRADED       // đã chấm điểm
+  SYNC_ERROR   // lỗi khi sync
+
+  @@map("submission_status")
+}
+
+model SubmissionAnswer {
+  id           String   @id @default(uuid())
+  submissionId String   @map("submission_id")
+  questionId   String   @map("question_id")
+  selectedOptionIds Json @map("selected_option_ids") // array of option IDs
+  answeredAt   DateTime @map("answered_at")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("submission_answers")
+}
+
+model SyncOutbox {
+  id          String     @id @default(uuid())
+  entityType  String     @map("entity_type") // "submission"
+  entityId    String     @map("entity_id")
+  payload     Json
+  status      SyncStatus @default(PENDING)
+  retryCount  Int        @default(0) @map("retry_count")
+  lastTriedAt DateTime?  @map("last_tried_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  @@map("sync_outbox")
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+
+  @@map("sync_status")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String   // LOGIN, DOWNLOAD_QUIZ, START_QUIZ, SUBMIT, SYNC
+  entityId  String?  @map("entity_id")
+  meta      Json?
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ─── Sprint 1: Lớp học & Đợt thi ──────────────────────────────────────────
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  name      String   // vd: "Năm học 2026"
+  startYear Int      @map("start_year")
+  endYear   Int      @map("end_year")
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  classes Class[]
+
+  @@map("academic_years")
+}
+
+model Class {
+  id             String   @id @default(uuid())
+  name           String
+  code           String   @unique
+  description    String?
+  academicYearId String?  @map("academic_year_id")
+  departmentId   String?  @map("department_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear  AcademicYear?  @relation(fields: [academicYearId], references: [id])
+  members       ClassMember[]
+  examSessions  ExamSession[]
+
+  @@map("classes")
+}
+
+model ClassMember {
+  id       String   @id @default(uuid())
+  classId  String   @map("class_id")
+  userId   String   @map("user_id")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId])
+  @@map("class_members")
+}
+
+model ExamSession {
+  id               String              @id @default(uuid())
+  name             String
+  quizId           String              @map("quiz_id")
+  classId          String              @map("class_id")
+  startAt          DateTime            @map("start_at")
+  endAt            DateTime            @map("end_at")
+  maxAttempts      Int                 @default(1) @map("max_attempts")  // 0 = không giới hạn
+  scoringPolicy    ScoringPolicy       @default(HIGHEST) @map("scoring_policy")
+  durationMin      Int?                @map("duration_min")              // override thời gian quiz gốc
+  shuffleQuestions Boolean             @default(false) @map("shuffle_questions")
+  shuffleOptions   Boolean             @default(false) @map("shuffle_options")
+  showResultAfter  ShowResultPolicy    @default(IMMEDIATE) @map("show_result_after")
+  allowReview      Boolean             @default(true) @map("allow_review")
+  status           ExamSessionStatus   @default(DRAFT)
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  quiz  Quiz  @relation(fields: [quizId], references: [id])
+  class Class @relation(fields: [classId], references: [id])
+
+  @@map("exam_sessions")
+}
+
+enum ScoringPolicy {
+  FIRST    // lấy điểm lần nộp đầu tiên
+  HIGHEST  // lấy điểm cao nhất
+  AVERAGE  // lấy trung bình
+  LAST     // lấy điểm lần nộp cuối
+
+  @@map("scoring_policy")
+}
+
+enum ShowResultPolicy {
+  IMMEDIATE       // hiện ngay sau khi nộp
+  AFTER_DEADLINE  // chờ hết thời gian đợt thi
+  NEVER           // không hiện
+
+  @@map("show_result_policy")
+}
+
+enum ExamSessionStatus {
+  DRAFT   // chưa mở
+  OPEN    // đang mở
+  CLOSED  // đã đóng
+
+  @@map("exam_session_status")
+}
+
+// ─── Sprint 8: Chế độ Đấu trường ──────────────────────────────────────────
+
+model ArenaSession {
+  id               String        @id @default(uuid())
+  name             String
+  quizId           String        @map("quiz_id")
+  joinCode         String        @unique @map("join_code") // 6 ký tự [A-Z0-9]
+  hostMode         ArenaHostMode @default(MANUAL) @map("host_mode")
+  autoAdvanceSec   Int           @default(10) @map("auto_advance_sec")
+  status           ArenaStatus   @default(LOBBY)
+  currentRoundOrder Int          @default(0) @map("current_round_order")
+  // Điểm theo thứ tự đúng: [rank1, rank2, ..., rank9]
+  pointsForRank    Json          @default("[10,7,5,3,2,2,2,2,2]") @map("points_for_rank")
+  penaltyWrong     Int           @default(0) @map("penalty_wrong")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  quiz   Quiz        @relation(fields: [quizId], references: [id])
+  teams  ArenaTeam[]
+  rounds ArenaRound[]
+
+  @@map("arena_sessions")
+}
+
+enum ArenaStatus {
+  LOBBY    // chờ đội vào
+  RUNNING  // đang thi
+  FINISHED // kết thúc
+
+  @@map("arena_status")
+}
+
+enum ArenaHostMode {
+  MANUAL // MC bấm từng bước
+  AUTO   // tự động đếm ngược
+
+  @@map("arena_host_mode")
+}
+
+model ArenaTeam {
+  id             String       @id @default(uuid())
+  arenaSessionId String       @map("arena_session_id")
+  name           String
+  color          String       // hex color tự động assign
+  score          Int          @default(0)
+  rank           Int?         // điền sau khi kết thúc
+  joinedAt       DateTime     @default(now()) @map("joined_at")
+
+  arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  buzzes       ArenaBuzz[]
+
+  @@map("arena_teams")
+}
+
+model ArenaRound {
+  id             String           @id @default(uuid())
+  arenaSessionId String           @map("arena_session_id")
+  questionId     String           @map("question_id")
+  order          Int              // thứ tự câu trong phiên
+  status         ArenaRoundStatus @default(PENDING)
+  startedAt      DateTime?        @map("started_at")
+  revealedAt     DateTime?        @map("revealed_at")
+
+  arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  question     Question     @relation(fields: [questionId], references: [id])
+  buzzes       ArenaBuzz[]
+
+  @@unique([arenaSessionId, order])
+  @@map("arena_rounds")
+}
+
+enum ArenaRoundStatus {
+  PENDING  // chưa bắt đầu
+  ACTIVE   // đang hiển thị câu hỏi
+  REVEALED // đã reveal đáp án
+
+  @@map("arena_round_status")
+}
+
+model ArenaBuzz {
+  id                String   @id @default(uuid())
+  arenaRoundId      String   @map("arena_round_id")
+  teamId            String   @map("team_id")
+  selectedOptionIds Json     @map("selected_option_ids")
+  answeredAt        DateTime @map("answered_at") // server timestamp
+  isCorrect         Boolean  @map("is_correct")
+  pointsAwarded     Int      @default(0) @map("points_awarded")
+  correctRank       Int?     @map("correct_rank") // 1 = nhanh nhất đúng
+
+  arenaRound ArenaRound @relation(fields: [arenaRoundId], references: [id], onDelete: Cascade)
+  team       ArenaTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([arenaRoundId, teamId])
+  @@map("arena_buzzes")
+}
+
+model CanBo {
+  id                  String      @id @default(uuid())
+  cbCode              String      @unique @map("cb_code")
+  fullName            String      @map("full_name")
+  username            String?     @map("username")
+  email               String?
+  phoneNumber         String?     @map("phone_number")
+  userAD              String?     @map("user_ad")
+  userIPCAS           String?     @map("user_ipcas")
+  maCbtd              String?     @map("ma_cbtd")
+  cccd                String?
+  ngayCapCmt          String?     @map("ngay_cap_cmt")
+  noiCapCmt           String?     @map("noi_cap_cmt")
+  ngaySinh            DateTime?   @map("ngay_sinh")
+  gioiTinh            String?     @map("gioi_tinh")
+  departmentId        String?     @map("department_id")
+  position            String?
+  isPartyMember       Boolean     @default(false) @map("is_party_member")
+  isUnionMember       Boolean     @default(false) @map("is_union_member")
+  isYouthUnionMember  Boolean     @default(false) @map("is_youth_union_member")
+  isItStaff           Boolean     @default(false) @map("is_it_staff")
+  isActive            Boolean     @default(true)  @map("is_active")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt      @map("updated_at")
+
+  department Department? @relation(fields: [departmentId], references: [id])
+  assignments Assignment[]
+
+  @@map("can_bo")
+}
+
+// ─── Sprint 9: Gamification ────────────────────────────────────────────────
+
+model UserProgress {
+  id                 String    @id @default(uuid())
+  userId             String    @unique @map("user_id")
+  xp                 Int       @default(0)
+  level              Int       @default(1)
+  currentStreak      Int       @default(0) @map("current_streak")
+  maxStreak          Int       @default(0) @map("max_streak")
+  totalSubmissions   Int       @default(0) @map("total_submissions")
+  totalPassed        Int       @default(0) @map("total_passed")
+  totalArenaWins     Int       @default(0) @map("total_arena_wins")
+  lastActivityDate   DateTime? @map("last_activity_date") @db.Date
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xpTransactions XpTransaction[]
+  userBadges   UserBadge[]
+
+  @@map("user_progress")
+}
+
+model LevelDefinition {
+  id        String   @id @default(uuid())
+  level     Int      @unique
+  name      String
+  minXp     Int      @map("min_xp")
+  color     String   // hex color, vd: "#4CAF50"
+  iconSlug  String?  @map("icon_slug")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("level_definitions")
+}
+
+model XpTransaction {
+  id             String           @id @default(uuid())
+  userProgressId String           @map("user_progress_id")
+  userId         String           @map("user_id")
+  amount         Int
+  source         XpSource
+  referenceId    String?          @map("reference_id")
+  note           String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  userProgress UserProgress @relation(fields: [userProgressId], references: [id], onDelete: Cascade)
+
+  @@map("xp_transactions")
+}
+
+enum XpSource {
+  EXAM_PASS
+  EXAM_FAIL
+  EXAM_PERFECT
+  ARENA_PARTICIPATE
+  ARENA_WIN
+  STREAK_BONUS
+  BADGE_BONUS
+
+  @@map("xp_source")
+}
+
+model BadgeDefinition {
+  id            String        @id @default(uuid())
+  code          String        @unique
+  name          String
+  description   String
+  iconSlug      String        @map("icon_slug") // tên file SVG không có .svg
+  category      BadgeCategory
+  conditionJson Json          @map("condition_json")
+  xpBonus       Int           @default(0) @map("xp_bonus")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  userBadges UserBadge[]
+
+  @@map("badge_definitions")
+}
+
+enum BadgeCategory {
+  EXAM
+  STREAK
+  ARENA
+  PROGRESS
+  LEVEL
+
+  @@map("badge_category")
+}
+
+model UserBadge {
+  id                String   @id @default(uuid())
+  userProgressId    String   @map("user_progress_id")
+  userId            String   @map("user_id")
+  badgeDefinitionId String   @map("badge_definition_id")
+  awardedAt         DateTime @default(now()) @map("awarded_at")
+
+  userProgress    UserProgress    @relation(fields: [userProgressId], references: [id], onDelete: Cascade)
+  badgeDefinition BadgeDefinition @relation(fields: [badgeDefinitionId], references: [id])
+
+  @@unique([userId, badgeDefinitionId])
+  @@map("user_badges")
+}

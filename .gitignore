@@ -1,0 +1,35 @@
+node_modules/
+dist/
+.env
+*.local
+.DS_Store
+
+# Flutter
+apps/mobile/.dart_tool/
+apps/mobile/build/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+
+# Flutter native — Android (sẽ sinh ra khi scaffold platform)
+apps/mobile/android/local.properties
+apps/mobile/android/key.properties
+apps/mobile/android/.gradle/
+apps/mobile/android/app/google-services.json
+**/*.jks
+**/*.keystore
+
+# Flutter native — iOS / macOS
+apps/mobile/ios/Pods/
+apps/mobile/ios/.symlinks/
+apps/mobile/ios/Flutter/Generated.xcconfig
+apps/mobile/ios/Flutter/flutter_export_environment.sh
+apps/mobile/ios/Flutter/ephemeral/
+apps/mobile/ios/Runner/GoogleService-Info.plist
+apps/mobile/macos/Flutter/ephemeral/
+apps/mobile/macos/Pods/
+
+# Cấu hình môi trường theo máy (chứa IP LAN riêng từng máy dev)
+apps/mobile/env/lan.json
+
+# Prisma
+apps/api/prisma/migrations/dev.db
