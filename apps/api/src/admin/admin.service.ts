@@ -371,8 +371,13 @@ export class AdminService {
         continue;
       }
       const correctIndex = correctRaw - 1;
-      if (correctIndex >= validOptions.length) {
-        errors.push(`Dòng ${i + 1}: Đáp án đúng vượt số lượng đáp án`);
+      // correctIndex trỏ theo VỊ TRÍ CỘT CỐ ĐỊNH (0=B,1=C,2=D,3=E), không phải theo
+      // thứ tự trong validOptions đã nén — nếu so với validOptions.length sẽ từ chối
+      // nhầm khi có đáp án bỏ trống ở giữa (vd B,D có nội dung nhưng C trống).
+      if (!optionTexts[correctIndex]) {
+        errors.push(
+          `Dòng ${i + 1}: Đáp án đúng trỏ tới cột ${String.fromCharCode(66 + correctIndex)} đang để trống`,
+        );
         continue;
       }
 
