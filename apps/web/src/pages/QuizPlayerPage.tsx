@@ -128,7 +128,10 @@ export default function QuizPlayerPage() {
     mutationFn: () => api.post(`/me/attempts/${attemptId}/submit`).then((response) => response.data),
     onSuccess: async (result) => {
       if (attemptId) await deleteAttemptDraft(attemptId)
-      navigate(`/my/results/${result.id}`, { replace: true })
+      navigate(`/my/results/${result.id}`, {
+        replace: true,
+        state: { levelUp: result.levelUp, newLevel: result.newLevel, newBadges: result.newBadges },
+      })
     },
     onError: () => message.error('Không thể nộp bài ngay bây giờ. Hệ thống sẽ chấm bản đã lưu khi hết giờ.'),
   })

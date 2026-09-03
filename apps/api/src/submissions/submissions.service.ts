@@ -1,8 +1,34 @@
 import { ConflictException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitDto } from './dto/submit.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { XpSource } from '@prisma/client';
+
+interface SnapshotOption {
+  id: string;
+  content: string;
+  isCorrect: boolean;
+  orderIndex: number;
+}
+
+interface SnapshotQuestion {
+  id: string;
+  content: string;
+  explanation?: string | null;
+  questionType: string;
+  orderIndex: number;
+  points: number;
+  options: SnapshotOption[];
+}
+
+interface QuizSnapshot {
+  questions: SnapshotQuestion[];
+}
+
+function toSelectedOptionIds(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
 
 @Injectable()
 export class SubmissionsService {
@@ -121,7 +147,7 @@ export class SubmissionsService {
 
   async getResult(submissionId: string, userId: string) {
     // Trả về null nếu chưa sync lên server thay vì throw 500
-    return this.prisma.submission.findFirst({
+    const submission = await this.prisma.submission.findFirst({
       where: { id: submissionId, userId },
       select: {
         id: true,
@@ -130,7 +156,45 @@ export class SubmissionsService {
         status: true,
         submittedAt: true,
         syncedAt: true,
+        quizVersion: { select: { snapshot: true } },
+        answers: { select: { questionId: true, selectedOptionIds: true } },
       },
     });
+    if (!submission) return null;
+
+    const { quizVersion, answers, ...rest } = submission;
+    const snapshot = quizVersion.snapshot as unknown as QuizSnapshot;
+    const answersByQuestion = new Map(
+      answers.map((a) => [a.questionId, toSelectedOptionIds(a.selectedOptionIds)]),
+    );
+
+    const questions = Array.isArray(snapshot?.questions)
+      ? [...snapshot.questions]
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .map((q) => {
+            const selectedIds = answersByQuestion.get(q.id) ?? [];
+            const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id).sort();
+            const isCorrect = JSON.stringify(correctIds) === JSON.stringify([...selectedIds].sort());
+            return {
+              id: q.id,
+              content: q.content,
+              explanation: q.explanation ?? null,
+              questionType: q.questionType,
+              points: q.points,
+              isCorrect,
+              options: q.options
+                .slice()
+                .sort((a, b) => a.orderIndex - b.orderIndex)
+                .map((o) => ({
+                  id: o.id,
+                  content: o.content,
+                  isCorrect: o.isCorrect,
+                  wasSelected: selectedIds.includes(o.id),
+                })),
+            };
+          })
+      : [];
+
+    return { ...rest, questions };
   }
 }
