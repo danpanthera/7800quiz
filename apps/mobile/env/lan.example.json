@@ -1,4 +1,0 @@
-{
-  "_comment": "Mẫu — copy thành lan.json (đã gitignore, IP riêng từng máy dev) rồi thay <LAN_IP> bằng IP LAN thật của máy chạy API. dev.sh tự sinh lan.json khi chạy './dev.sh device'.",
-  "API_URL": "http://<LAN_IP>:13010/api"
-}
