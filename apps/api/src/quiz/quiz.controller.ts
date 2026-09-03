@@ -1,4 +1,11 @@
-import { Controller, ForbiddenException, Get, Param, Request, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { QuizService } from './quiz.service';

@@ -39,13 +39,18 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `arena-${sessionId}`;
   }
 
-  private extractUser(client: Socket): { userId: string; role: UserRole } | null {
+  private extractUser(
+    client: Socket,
+  ): { userId: string; role: UserRole } | null {
     try {
       const token =
         (client.handshake.auth?.token as string) ||
-        (client.handshake.headers?.authorization as string)?.replace('Bearer ', '');
+        (client.handshake.headers?.authorization as string)?.replace(
+          'Bearer ',
+          '',
+        );
       if (!token) return null;
-      const payload = this.jwtService.verify(token) as { sub: string; role: UserRole };
+      const payload = this.jwtService.verify(token);
       return { userId: payload.sub, role: payload.role };
     } catch {
       return null;
@@ -101,7 +106,12 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sessionId: session.id,
       });
 
-      return { ok: true, teamId: team.id, sessionId: session.id, teamColor: team.color };
+      return {
+        ok: true,
+        teamId: team.id,
+        sessionId: session.id,
+        teamColor: team.color,
+      };
     } catch (err) {
       return { error: err.message };
     }
@@ -115,11 +125,16 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const host = this.extractUser(client);
-    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
     try {
       const questionData = await this.arenaService.startSession(data.sessionId);
-      this.server.to(this.getRoomName(data.sessionId)).emit('arena.started', {});
-      this.server.to(this.getRoomName(data.sessionId)).emit('arena.question', questionData);
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.started', {});
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.question', questionData);
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -164,10 +179,13 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const host = this.extractUser(client);
-    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
     try {
       const revealData = await this.arenaService.revealRound(data.sessionId);
-      this.server.to(this.getRoomName(data.sessionId)).emit('arena.revealed', revealData);
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.revealed', revealData);
       this.server
         .to(this.getRoomName(data.sessionId))
         .emit('arena.leaderboard', { teams: revealData.leaderboard });
@@ -185,13 +203,18 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const host = this.extractUser(client);
-    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
     try {
       const result = await this.arenaService.nextQuestion(data.sessionId);
       if (result.type === 'ended') {
-        this.server.to(this.getRoomName(data.sessionId)).emit('arena.ended', result);
+        this.server
+          .to(this.getRoomName(data.sessionId))
+          .emit('arena.ended', result);
       } else {
-        this.server.to(this.getRoomName(data.sessionId)).emit('arena.question', result);
+        this.server
+          .to(this.getRoomName(data.sessionId))
+          .emit('arena.question', result);
       }
       return { ok: true };
     } catch (err) {
@@ -207,10 +230,13 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const host = this.extractUser(client);
-    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
     try {
       const result = await this.arenaService.endSession(data.sessionId);
-      this.server.to(this.getRoomName(data.sessionId)).emit('arena.ended', result);
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.ended', result);
       return { ok: true };
     } catch (err) {
       return { error: err.message };

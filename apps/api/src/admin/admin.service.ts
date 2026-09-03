@@ -1,12 +1,23 @@
-import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AssignmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
 
-type NSpellChecker = { correct(word: string): boolean; suggest(word: string): string[] };
+type NSpellChecker = {
+  correct(word: string): boolean;
+  suggest(word: string): string[];
+};
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const nspellLib = require('nspell') as (dict: { aff: Buffer; dic: Buffer }) => NSpellChecker;
+const nspellLib = require('nspell') as (dict: {
+  aff: Buffer;
+  dic: Buffer;
+}) => NSpellChecker;
 
 // Lazily initialized spell checker
 let _spellChecker: NSpellChecker | null = null;
@@ -22,13 +33,20 @@ async function getSpellChecker(): Promise<NSpellChecker> {
 function normalizeText(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^\w\sàáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỷỹỵ]/gu, ' ')
+    .replace(
+      /[^\w\sàáâãèéêìíòóôõùúýăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỷỹỵ]/gu,
+      ' ',
+    )
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function tokenize(text: string): Set<string> {
-  return new Set(normalizeText(text).split(' ').filter((w) => w.length > 1));
+  return new Set(
+    normalizeText(text)
+      .split(' ')
+      .filter((w) => w.length > 1),
+  );
 }
 
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
@@ -40,9 +58,7 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 
 @Injectable()
 export class AdminService {
-  constructor(
-    private prisma: PrismaService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   private normalizeUserAD(userAD?: string | null): string | null {
     const normalized = userAD?.trim();
@@ -53,7 +69,10 @@ export class AdminService {
     return this.normalizeUserAD(userAD) ?? cbCode;
   }
 
-  private async ensureUserADIsAvailable(userAD: string | null, canBoId?: string) {
+  private async ensureUserADIsAvailable(
+    userAD: string | null,
+    canBoId?: string,
+  ) {
     if (!userAD) return;
     const existing = await this.prisma.canBo.findFirst({
       where: {
@@ -62,24 +81,44 @@ export class AdminService {
       },
       select: { cbCode: true },
     });
-    if (existing) throw new ConflictException(`User AD "${userAD}" đã thuộc về cán bộ ${existing.cbCode}`);
+    if (existing)
+      throw new ConflictException(
+        `User AD "${userAD}" đã thuộc về cán bộ ${existing.cbCode}`,
+      );
   }
 
   private async syncCanBoUser(
     tx: Prisma.TransactionClient,
-    canBo: { cbCode: string; fullName: string; email: string | null; departmentId: string | null; isActive: boolean; userAD: string | null },
+    canBo: {
+      cbCode: string;
+      fullName: string;
+      email: string | null;
+      departmentId: string | null;
+      isActive: boolean;
+      userAD: string | null;
+    },
     previousCbCode?: string,
     previousUserAD?: string | null,
   ) {
     const username = this.getLoginUsername(canBo.cbCode, canBo.userAD);
-    const previousUsername = this.getLoginUsername(previousCbCode ?? canBo.cbCode, previousUserAD);
+    const previousUsername = this.getLoginUsername(
+      previousCbCode ?? canBo.cbCode,
+      previousUserAD,
+    );
     const userWithUsername = await tx.user.findUnique({ where: { username } });
-    const previousUser = previousUsername === username
-      ? userWithUsername
-      : await tx.user.findUnique({ where: { username: previousUsername } });
+    const previousUser =
+      previousUsername === username
+        ? userWithUsername
+        : await tx.user.findUnique({ where: { username: previousUsername } });
 
-    if (userWithUsername && previousUser && userWithUsername.id !== previousUser.id) {
-      throw new ConflictException(`User AD "${username}" đang được dùng bởi một tài khoản khác`);
+    if (
+      userWithUsername &&
+      previousUser &&
+      userWithUsername.id !== previousUser.id
+    ) {
+      throw new ConflictException(
+        `User AD "${username}" đang được dùng bởi một tài khoản khác`,
+      );
     }
 
     const user = userWithUsername ?? previousUser;
@@ -120,8 +159,11 @@ export class AdminService {
   }
 
   async createSubject(data: { name: string; description?: string }) {
-    const existing = await this.prisma.subject.findUnique({ where: { name: data.name } });
-    if (existing) throw new ConflictException(`Lĩnh vực "${data.name}" đã tồn tại`);
+    const existing = await this.prisma.subject.findUnique({
+      where: { name: data.name },
+    });
+    if (existing)
+      throw new ConflictException(`Lĩnh vực "${data.name}" đã tồn tại`);
     return this.prisma.subject.create({ data });
   }
 
@@ -146,8 +188,12 @@ export class AdminService {
   }
 
   createBankQuestion(data: {
-    content: string; imageUrl?: string; explanation?: string; subjectId?: string;
-    points?: number; questionType?: string;
+    content: string;
+    imageUrl?: string;
+    explanation?: string;
+    subjectId?: string;
+    points?: number;
+    questionType?: string;
     options: { content: string; isCorrect: boolean; orderIndex: number }[];
   }) {
     const { options, questionType, ...rest } = data;
@@ -163,9 +209,16 @@ export class AdminService {
     });
   }
 
-  updateBankQuestion(id: string, data: {
-    content?: string; imageUrl?: string; explanation?: string; subjectId?: string; points?: number;
-  }) {
+  updateBankQuestion(
+    id: string,
+    data: {
+      content?: string;
+      imageUrl?: string;
+      explanation?: string;
+      subjectId?: string;
+      points?: number;
+    },
+  ) {
     return this.prisma.question.update({ where: { id }, data });
   }
 
@@ -174,11 +227,18 @@ export class AdminService {
   }
 
   // ── Duplicate detection ───────────────────────────────────────────────
-  async checkDuplicates(texts: string[]): Promise<{
-    index: number;
-    text: string;
-    matches: { id: string; content: string; score: number; level: 'exact' | 'high' | 'medium' }[];
-  }[]> {
+  async checkDuplicates(texts: string[]): Promise<
+    {
+      index: number;
+      text: string;
+      matches: {
+        id: string;
+        content: string;
+        score: number;
+        level: 'exact' | 'high' | 'medium';
+      }[];
+    }[]
+  > {
     const existing = await this.prisma.question.findMany({
       where: { isBank: true },
       select: { id: true, content: true },
@@ -187,17 +247,34 @@ export class AdminService {
     return texts.map((text, index) => {
       const queryTokens = tokenize(text);
       const queryNorm = normalizeText(text);
-      const matches: { id: string; content: string; score: number; level: 'exact' | 'high' | 'medium' }[] = [];
+      const matches: {
+        id: string;
+        content: string;
+        score: number;
+        level: 'exact' | 'high' | 'medium';
+      }[] = [];
 
       for (const q of existing) {
         const existNorm = normalizeText(q.content);
         if (queryNorm === existNorm) {
-          matches.push({ id: q.id, content: q.content, score: 1, level: 'exact' });
+          matches.push({
+            id: q.id,
+            content: q.content,
+            score: 1,
+            level: 'exact',
+          });
           continue;
         }
         const score = jaccardSimilarity(queryTokens, tokenize(q.content));
-        if (score >= 0.85) matches.push({ id: q.id, content: q.content, score, level: 'high' });
-        else if (score >= 0.65) matches.push({ id: q.id, content: q.content, score, level: 'medium' });
+        if (score >= 0.85)
+          matches.push({ id: q.id, content: q.content, score, level: 'high' });
+        else if (score >= 0.65)
+          matches.push({
+            id: q.id,
+            content: q.content,
+            score,
+            level: 'medium',
+          });
       }
 
       // Sort by score desc, top 3
@@ -207,27 +284,38 @@ export class AdminService {
   }
 
   // ── Spell check (Vietnamese) ──────────────────────────────────────────
-  async checkSpelling(texts: string[]): Promise<{
-    rowIndex: number;
-    warnings: { word: string; suggestions: string[] }[];
-  }[]> {
+  async checkSpelling(texts: string[]): Promise<
+    {
+      rowIndex: number;
+      warnings: { word: string; suggestions: string[] }[];
+    }[]
+  > {
     const checker = await getSpellChecker();
     return texts.map((text, rowIndex) => {
-      const words = normalizeText(text).split(' ').filter((w) => w.length > 1);
+      const words = normalizeText(text)
+        .split(' ')
+        .filter((w) => w.length > 1);
       const warnings: { word: string; suggestions: string[] }[] = [];
       const seen = new Set<string>();
       for (const word of words) {
         if (seen.has(word)) continue;
         seen.add(word);
         if (!checker.correct(word)) {
-          warnings.push({ word, suggestions: checker.suggest(word).slice(0, 3) });
+          warnings.push({
+            word,
+            suggestions: checker.suggest(word).slice(0, 3),
+          });
         }
       }
       return { rowIndex, warnings };
     });
   }
   // ── Import Excel ──────────────────────────────────────────────────────
-  async importQuestionsFromExcel(buffer: Buffer, subjectId: string, dryRun = false): Promise<{
+  async importQuestionsFromExcel(
+    buffer: Buffer,
+    subjectId: string,
+    dryRun = false,
+  ): Promise<{
     preview?: {
       rowNumber: number;
       content: string;
@@ -242,11 +330,15 @@ export class AdminService {
     skipped: number;
     errors: string[];
   }> {
-    if (!subjectId) throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
+    if (!subjectId)
+      throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
 
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, {
+      header: 1,
+      defval: null,
+    });
 
     // Parse all valid rows first
     type ParsedRow = {
@@ -264,20 +356,33 @@ export class AdminService {
       const content = row[0]?.toString().trim();
       if (!content) continue;
 
-      const optionTexts = [row[1], row[2], row[3], row[4]].map((v) => v?.toString().trim() ?? null);
+      const optionTexts = [row[1], row[2], row[3], row[4]].map(
+        (v) => v?.toString().trim() ?? null,
+      );
       const validOptions = optionTexts.filter(Boolean);
-      if (validOptions.length < 2) { errors.push(`Dòng ${i + 1}: Không đủ đáp án`); continue; }
+      if (validOptions.length < 2) {
+        errors.push(`Dòng ${i + 1}: Không đủ đáp án`);
+        continue;
+      }
 
       const correctRaw = Number(row[5]);
       if (!correctRaw || correctRaw < 1 || correctRaw > 4) {
-        errors.push(`Dòng ${i + 1}: Đáp án đúng không hợp lệ (${row[5]})`); continue;
+        errors.push(`Dòng ${i + 1}: Đáp án đúng không hợp lệ (${row[5]})`);
+        continue;
       }
       const correctIndex = correctRaw - 1;
       if (correctIndex >= validOptions.length) {
-        errors.push(`Dòng ${i + 1}: Đáp án đúng vượt số lượng đáp án`); continue;
+        errors.push(`Dòng ${i + 1}: Đáp án đúng vượt số lượng đáp án`);
+        continue;
       }
 
-      parsed.push({ rowNumber: i + 1, content, optionTexts, correctIndex, explanation: row[6]?.toString().trim() || null });
+      parsed.push({
+        rowNumber: i + 1,
+        content,
+        optionTexts,
+        correctIndex,
+        explanation: row[6]?.toString().trim() || null,
+      });
     }
 
     // Duplicate + spell check for all parsed rows
@@ -298,7 +403,13 @@ export class AdminService {
           correctIndex: row.correctIndex,
           explanation: row.explanation,
           duplicateLevel: topMatch?.level ?? null,
-          duplicateMatch: topMatch ? { id: topMatch.id, content: topMatch.content, score: topMatch.score } : null,
+          duplicateMatch: topMatch
+            ? {
+                id: topMatch.id,
+                content: topMatch.content,
+                score: topMatch.score,
+              }
+            : null,
           spellingWarnings: spellResults[idx]?.warnings ?? [],
         };
       });
@@ -306,7 +417,8 @@ export class AdminService {
     }
 
     // Actual import — skip exact/high duplicates
-    let imported = 0, skipped = 0;
+    let imported = 0,
+      skipped = 0;
     for (let idx = 0; idx < parsed.length; idx++) {
       const row = parsed[idx];
       const topDup = dupResults[idx].matches[0];
@@ -325,7 +437,15 @@ export class AdminService {
             orderIndex: 0,
             options: {
               create: row.optionTexts
-                .map((text, i) => text ? { content: text, isCorrect: i === row.correctIndex, orderIndex: i + 1 } : null)
+                .map((text, i) =>
+                  text
+                    ? {
+                        content: text,
+                        isCorrect: i === row.correctIndex,
+                        orderIndex: i + 1,
+                      }
+                    : null,
+                )
                 .filter(Boolean) as any,
             },
           },
@@ -375,32 +495,49 @@ export class AdminService {
   }
 
   createQuiz(data: {
-    title: string; description?: string; topic?: string;
-    durationMin: number; passScore?: number;
+    title: string;
+    description?: string;
+    topic?: string;
+    durationMin: number;
+    passScore?: number;
   }) {
     return this.prisma.quiz.create({ data });
   }
 
-  updateQuiz(id: string, data: {
-    title?: string; description?: string; topic?: string;
-    durationMin?: number; passScore?: number; isActive?: boolean;
-  }) {
+  updateQuiz(
+    id: string,
+    data: {
+      title?: string;
+      description?: string;
+      topic?: string;
+      durationMin?: number;
+      passScore?: number;
+      isActive?: boolean;
+    },
+  ) {
     return this.prisma.quiz.update({ where: { id }, data });
   }
 
   async deleteQuiz(id: string) {
     const quiz = await this.prisma.quiz.findUniqueOrThrow({
       where: { id },
-      include: { _count: { select: { assignments: true, examSessions: true } } },
+      include: {
+        _count: { select: { assignments: true, examSessions: true } },
+      },
     });
     if (quiz._count.assignments > 0 || quiz._count.examSessions > 0)
-      throw new BadRequestException('Không thể xóa bộ đề đã được phân công hoặc có đợt thi. Hãy xóa phân công trước.');
+      throw new BadRequestException(
+        'Không thể xóa bộ đề đã được phân công hoặc có đợt thi. Hãy xóa phân công trước.',
+      );
 
     // Cascade delete arena sessions (ArenaTeam/ArenaRound/ArenaBuzz are cascaded by DB)
     await this.prisma.arenaSession.deleteMany({ where: { quizId: id } });
 
     // Cascade delete: submission_answers → submissions → quiz_versions → quiz
-    const versions = await this.prisma.quizVersion.findMany({ where: { quizId: id }, select: { id: true } });
+    const versions = await this.prisma.quizVersion.findMany({
+      where: { quizId: id },
+      select: { id: true },
+    });
     const versionIds = versions.map((v) => v.id);
     if (versionIds.length > 0) {
       const submissions = await this.prisma.submission.findMany({
@@ -409,8 +546,12 @@ export class AdminService {
       });
       const submissionIds = submissions.map((s) => s.id);
       if (submissionIds.length > 0) {
-        await this.prisma.submissionAnswer.deleteMany({ where: { submissionId: { in: submissionIds } } });
-        await this.prisma.submission.deleteMany({ where: { id: { in: submissionIds } } });
+        await this.prisma.submissionAnswer.deleteMany({
+          where: { submissionId: { in: submissionIds } },
+        });
+        await this.prisma.submission.deleteMany({
+          where: { id: { in: submissionIds } },
+        });
       }
       await this.prisma.quizVersion.deleteMany({ where: { quizId: id } });
     }
@@ -418,21 +559,31 @@ export class AdminService {
   }
 
   // ── Pick random questions from bank ──────────────────────────────────
-  async pickRandomToQuiz(quizId: string, params: {
-    subjectId?: string;
-    count?: number;
-    subjectSlots?: { subjectId?: string; count: number }[];
-    replaceAll?: boolean;
-  }) {
+  async pickRandomToQuiz(
+    quizId: string,
+    params: {
+      subjectId?: string;
+      count?: number;
+      subjectSlots?: { subjectId?: string; count: number }[];
+      replaceAll?: boolean;
+    },
+  ) {
     const { replaceAll } = params;
 
     // Normalize: convert legacy (subjectId + count) to subjectSlots format
-    const slots: { subjectId?: string; count: number }[] =
-      params.subjectSlots?.length
-        ? params.subjectSlots
-        : [{ subjectId: params.subjectId, count: params.count ?? 0 }];
+    const slots: { subjectId?: string; count: number }[] = params.subjectSlots
+      ?.length
+      ? params.subjectSlots
+      : [{ subjectId: params.subjectId, count: params.count ?? 0 }];
 
-    const pickedAll: Array<{ subjectId: string | null; content: string; explanation: string | null; questionType: any; points: number; options: { content: string; isCorrect: boolean; orderIndex: number }[] }> = [];
+    const pickedAll: Array<{
+      subjectId: string | null;
+      content: string;
+      explanation: string | null;
+      questionType: any;
+      points: number;
+      options: { content: string; isCorrect: boolean; orderIndex: number }[];
+    }> = [];
 
     for (const slot of slots) {
       const { subjectId, count } = slot;
@@ -444,9 +595,13 @@ export class AdminService {
       });
 
       if (bankQuestions.length === 0)
-        throw new BadRequestException(`Lĩnh vực không có câu hỏi trong ngân hàng`);
+        throw new BadRequestException(
+          `Lĩnh vực không có câu hỏi trong ngân hàng`,
+        );
       if (count > bankQuestions.length)
-        throw new BadRequestException(`Chỉ có ${bankQuestions.length} câu trong ngân hàng cho lĩnh vực này`);
+        throw new BadRequestException(
+          `Chỉ có ${bankQuestions.length} câu trong ngân hàng cho lĩnh vực này`,
+        );
 
       // Fisher-Yates shuffle
       const shuffled = [...bankQuestions];
@@ -457,13 +612,19 @@ export class AdminService {
       pickedAll.push(...shuffled.slice(0, count));
     }
 
-    if (pickedAll.length === 0) throw new BadRequestException('Không có câu hỏi nào được chọn');
+    if (pickedAll.length === 0)
+      throw new BadRequestException('Không có câu hỏi nào được chọn');
 
     if (replaceAll) {
-      await this.prisma.question.deleteMany({ where: { quizId, isBank: false } });
+      await this.prisma.question.deleteMany({
+        where: { quizId, isBank: false },
+      });
     }
 
-    const maxOrder = await this.prisma.question.aggregate({ where: { quizId }, _max: { orderIndex: true } });
+    const maxOrder = await this.prisma.question.aggregate({
+      where: { quizId },
+      _max: { orderIndex: true },
+    });
     let orderIdx = (maxOrder._max.orderIndex ?? 0) + 1;
 
     for (const q of pickedAll) {
@@ -495,7 +656,16 @@ export class AdminService {
   private readonly assignmentInclude = {
     quiz: { select: { id: true, title: true } },
     user: { select: { id: true, fullName: true } },
-    canBo: { select: { id: true, fullName: true, cbCode: true, department: { select: { id: true, name: true, code: true, parentId: true } } } },
+    canBo: {
+      select: {
+        id: true,
+        fullName: true,
+        cbCode: true,
+        department: {
+          select: { id: true, name: true, code: true, parentId: true },
+        },
+      },
+    },
     department: { select: { id: true, name: true } },
   } as const;
 
@@ -506,23 +676,57 @@ export class AdminService {
     });
   }
 
-  createAssignment(data: { quizId: string; userId?: string; canBoId?: string; departmentId?: string; startAt?: string; endAt?: string; status?: AssignmentStatus }) {
+  createAssignment(data: {
+    quizId: string;
+    userId?: string;
+    canBoId?: string;
+    departmentId?: string;
+    startAt?: string;
+    endAt?: string;
+    status?: AssignmentStatus;
+  }) {
     const { startAt, endAt, ...rest } = data;
     return this.prisma.assignment.create({
-      data: { ...rest, startAt: startAt ? new Date(startAt) : undefined, endAt: endAt ? new Date(endAt) : undefined },
+      data: {
+        ...rest,
+        startAt: startAt ? new Date(startAt) : undefined,
+        endAt: endAt ? new Date(endAt) : undefined,
+      },
       include: this.assignmentInclude,
     });
   }
 
-  updateAssignment(id: string, data: { quizId?: string; canBoId?: string; departmentId?: string; userId?: string; startAt?: string | null; endAt?: string | null; status?: AssignmentStatus }) {
+  updateAssignment(
+    id: string,
+    data: {
+      quizId?: string;
+      canBoId?: string;
+      departmentId?: string;
+      userId?: string;
+      startAt?: string | null;
+      endAt?: string | null;
+      status?: AssignmentStatus;
+    },
+  ) {
     const { startAt, endAt, ...rest } = data;
     // Khi đổi đối tượng, xoá liên kết cũ
     const clearFields: any = {};
-    if ('canBoId' in data && data.canBoId) { clearFields.departmentId = null; clearFields.userId = null; }
-    if ('departmentId' in data && data.departmentId) { clearFields.canBoId = null; clearFields.userId = null; }
+    if ('canBoId' in data && data.canBoId) {
+      clearFields.departmentId = null;
+      clearFields.userId = null;
+    }
+    if ('departmentId' in data && data.departmentId) {
+      clearFields.canBoId = null;
+      clearFields.userId = null;
+    }
     return this.prisma.assignment.update({
       where: { id },
-      data: { ...rest, ...clearFields, startAt: startAt ? new Date(startAt) : null, endAt: endAt ? new Date(endAt) : null },
+      data: {
+        ...rest,
+        ...clearFields,
+        startAt: startAt ? new Date(startAt) : null,
+        endAt: endAt ? new Date(endAt) : null,
+      },
       include: this.assignmentInclude,
     });
   }
@@ -568,7 +772,9 @@ export class AdminService {
   }
 
   async deleteReport(id: string) {
-    await this.prisma.submissionAnswer.deleteMany({ where: { submissionId: id } });
+    await this.prisma.submissionAnswer.deleteMany({
+      where: { submissionId: id },
+    });
     await this.prisma.auditLog.deleteMany({ where: { entityId: id } });
     return this.prisma.submission.delete({ where: { id } });
   }
@@ -577,9 +783,22 @@ export class AdminService {
   getUsers() {
     return this.prisma.user.findMany({
       select: {
-        id: true, username: true, fullName: true, email: true, role: true, isActive: true,
+        id: true,
+        username: true,
+        fullName: true,
+        email: true,
+        role: true,
+        isActive: true,
         departmentId: true,
-        department: { select: { id: true, name: true, code: true, parentId: true, parent: { select: { id: true, name: true, code: true } } } },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            parentId: true,
+            parent: { select: { id: true, name: true, code: true } },
+          },
+        },
       },
       orderBy: { fullName: 'asc' },
     });
@@ -602,22 +821,34 @@ export class AdminService {
 
     // canBoIds path (primary)
     if (data.canBoIds !== undefined) {
-      const ids = data.canBoIds === 'all'
-        ? (await this.prisma.canBo.findMany({ where: { isActive: true }, select: { id: true } })).map(c => c.id)
-        : data.canBoIds;
+      const ids =
+        data.canBoIds === 'all'
+          ? (
+              await this.prisma.canBo.findMany({
+                where: { isActive: true },
+                select: { id: true },
+              })
+            ).map((c) => c.id)
+          : data.canBoIds;
       const result = await this.prisma.assignment.createMany({
-        data: ids.map(canBoId => ({ ...base, canBoId })),
+        data: ids.map((canBoId) => ({ ...base, canBoId })),
         skipDuplicates: true,
       });
       return { count: result.count };
     }
 
     // userIds path (backward compat)
-    const ids = data.userIds === 'all'
-      ? (await this.prisma.user.findMany({ where: { isActive: true }, select: { id: true } })).map(u => u.id)
-      : (data.userIds ?? []);
+    const ids =
+      data.userIds === 'all'
+        ? (
+            await this.prisma.user.findMany({
+              where: { isActive: true },
+              select: { id: true },
+            })
+          ).map((u) => u.id)
+        : (data.userIds ?? []);
     const result = await this.prisma.assignment.createMany({
-      data: ids.map(userId => ({ ...base, userId })),
+      data: ids.map((userId) => ({ ...base, userId })),
       skipDuplicates: true,
     });
     return { count: result.count };
@@ -631,14 +862,30 @@ export class AdminService {
     });
   }
 
-  createAcademicYear(data: { name: string; startYear: number; endYear: number; isActive?: boolean }) {
+  createAcademicYear(data: {
+    name: string;
+    startYear: number;
+    endYear: number;
+    isActive?: boolean;
+  }) {
     return this.prisma.academicYear.create({ data });
   }
 
-  async updateAcademicYear(id: string, data: { name?: string; startYear?: number; endYear?: number; isActive?: boolean }) {
+  async updateAcademicYear(
+    id: string,
+    data: {
+      name?: string;
+      startYear?: number;
+      endYear?: number;
+      isActive?: boolean;
+    },
+  ) {
     // Nếu set active thì deactivate các năm còn lại
     if (data.isActive) {
-      await this.prisma.academicYear.updateMany({ where: { isActive: true }, data: { isActive: false } });
+      await this.prisma.academicYear.updateMany({
+        where: { isActive: true },
+        data: { isActive: false },
+      });
     }
     return this.prisma.academicYear.update({ where: { id }, data });
   }
@@ -666,7 +913,15 @@ export class AdminService {
         academicYear: { select: { name: true } },
         members: {
           include: {
-            user: { select: { id: true, fullName: true, username: true, email: true, department: { select: { name: true } } } },
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                username: true,
+                email: true,
+                department: { select: { name: true } },
+              },
+            },
           },
           orderBy: { joinedAt: 'asc' },
         },
@@ -679,13 +934,30 @@ export class AdminService {
     return cls;
   }
 
-  async createClass(data: { name: string; code: string; description?: string; academicYearId?: string; departmentId?: string }) {
-    const existing = await this.prisma.class.findUnique({ where: { code: data.code } });
-    if (existing) throw new ConflictException(`Mã lớp "${data.code}" đã tồn tại`);
+  async createClass(data: {
+    name: string;
+    code: string;
+    description?: string;
+    academicYearId?: string;
+    departmentId?: string;
+  }) {
+    const existing = await this.prisma.class.findUnique({
+      where: { code: data.code },
+    });
+    if (existing)
+      throw new ConflictException(`Mã lớp "${data.code}" đã tồn tại`);
     return this.prisma.class.create({ data });
   }
 
-  updateClass(id: string, data: { name?: string; code?: string; description?: string; academicYearId?: string }) {
+  updateClass(
+    id: string,
+    data: {
+      name?: string;
+      code?: string;
+      description?: string;
+      academicYearId?: string;
+    },
+  ) {
     return this.prisma.class.update({ where: { id }, data });
   }
 
@@ -695,21 +967,30 @@ export class AdminService {
 
   // ── Class Members ────────────────────────────────────────────────────
   async addClassMember(classId: string, userId: string) {
-    const existing = await this.prisma.classMember.findUnique({ where: { classId_userId: { classId, userId } } });
+    const existing = await this.prisma.classMember.findUnique({
+      where: { classId_userId: { classId, userId } },
+    });
     if (existing) throw new ConflictException('Học viên đã có trong lớp');
     return this.prisma.classMember.create({ data: { classId, userId } });
   }
 
   removeClassMember(classId: string, userId: string) {
-    return this.prisma.classMember.delete({ where: { classId_userId: { classId, userId } } });
+    return this.prisma.classMember.delete({
+      where: { classId_userId: { classId, userId } },
+    });
   }
 
   async addClassMembersbulk(classId: string, userIds: string[]) {
-    const existing = await this.prisma.classMember.findMany({ where: { classId, userId: { in: userIds } }, select: { userId: true } });
+    const existing = await this.prisma.classMember.findMany({
+      where: { classId, userId: { in: userIds } },
+      select: { userId: true },
+    });
     const existingIds = new Set(existing.map((m) => m.userId));
     const newIds = userIds.filter((id) => !existingIds.has(id));
     if (newIds.length === 0) return { added: 0 };
-    await this.prisma.classMember.createMany({ data: newIds.map((userId) => ({ classId, userId })) });
+    await this.prisma.classMember.createMany({
+      data: newIds.map((userId) => ({ classId, userId })),
+    });
     return { added: newIds.length, skipped: existingIds.size };
   }
 
@@ -729,11 +1010,15 @@ export class AdminService {
     return this.prisma.examSession.findUniqueOrThrow({
       where: { id },
       include: {
-        quiz: { select: { id: true, title: true, durationMin: true, passScore: true } },
+        quiz: {
+          select: { id: true, title: true, durationMin: true, passScore: true },
+        },
         class: {
           include: {
             members: {
-              include: { user: { select: { id: true, fullName: true, username: true } } },
+              include: {
+                user: { select: { id: true, fullName: true, username: true } },
+              },
             },
           },
         },
@@ -742,25 +1027,45 @@ export class AdminService {
   }
 
   createExamSession(data: {
-    name: string; quizId: string; classId: string;
-    startAt: string; endAt: string;
-    maxAttempts?: number; scoringPolicy?: string;
-    durationMin?: number; shuffleQuestions?: boolean;
-    shuffleOptions?: boolean; showResultAfter?: string;
+    name: string;
+    quizId: string;
+    classId: string;
+    startAt: string;
+    endAt: string;
+    maxAttempts?: number;
+    scoringPolicy?: string;
+    durationMin?: number;
+    shuffleQuestions?: boolean;
+    shuffleOptions?: boolean;
+    showResultAfter?: string;
     allowReview?: boolean;
   }) {
     return this.prisma.examSession.create({ data: data as any });
   }
 
-  async updateExamSession(id: string, data: Partial<{
-    name: string; startAt: string; endAt: string;
-    maxAttempts: number; scoringPolicy: string;
-    durationMin: number; shuffleQuestions: boolean;
-    shuffleOptions: boolean; showResultAfter: string;
-    allowReview: boolean; status: string;
-  }>) {
-    const session = await this.prisma.examSession.update({ where: { id }, data: data as any,
-      include: { quiz: { select: { title: true } }, class: { select: { members: { select: { userId: true } } } } },
+  async updateExamSession(
+    id: string,
+    data: Partial<{
+      name: string;
+      startAt: string;
+      endAt: string;
+      maxAttempts: number;
+      scoringPolicy: string;
+      durationMin: number;
+      shuffleQuestions: boolean;
+      shuffleOptions: boolean;
+      showResultAfter: string;
+      allowReview: boolean;
+      status: string;
+    }>,
+  ) {
+    const session = await this.prisma.examSession.update({
+      where: { id },
+      data: data as any,
+      include: {
+        quiz: { select: { title: true } },
+        class: { select: { members: { select: { userId: true } } } },
+      },
     });
     return session;
   }
@@ -796,19 +1101,23 @@ export class AdminService {
     return this.prisma.canBo.findMany({
       where: {
         ...(deptIds ? { departmentId: { in: deptIds } } : {}),
-        ...(search ? {
-          OR: [
-            { fullName: { contains: search, mode: 'insensitive' } },
-            { cbCode: { contains: search, mode: 'insensitive' } },
-            { userAD: { contains: search, mode: 'insensitive' } },
-            { username: { contains: search, mode: 'insensitive' } },
-          ],
-        } : {}),
+        ...(search
+          ? {
+              OR: [
+                { fullName: { contains: search, mode: 'insensitive' } },
+                { cbCode: { contains: search, mode: 'insensitive' } },
+                { userAD: { contains: search, mode: 'insensitive' } },
+                { username: { contains: search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
       },
       include: {
         department: {
           select: {
-            id: true, name: true, code: true,
+            id: true,
+            name: true,
+            code: true,
             parent: { select: { id: true, name: true, code: true } },
           },
         },
@@ -818,15 +1127,32 @@ export class AdminService {
   }
 
   async createCanBo(data: {
-    cbCode: string; fullName: string; username?: string; email?: string;
-    phoneNumber?: string; userAD?: string; userIPCAS?: string; maCbtd?: string;
-    cccd?: string; ngayCapCmt?: string; noiCapCmt?: string; ngaySinh?: string;
-    gioiTinh?: string; departmentId?: string; position?: string;
-    isPartyMember?: boolean; isUnionMember?: boolean; isYouthUnionMember?: boolean;
-    isItStaff?: boolean; isActive?: boolean;
+    cbCode: string;
+    fullName: string;
+    username?: string;
+    email?: string;
+    phoneNumber?: string;
+    userAD?: string;
+    userIPCAS?: string;
+    maCbtd?: string;
+    cccd?: string;
+    ngayCapCmt?: string;
+    noiCapCmt?: string;
+    ngaySinh?: string;
+    gioiTinh?: string;
+    departmentId?: string;
+    position?: string;
+    isPartyMember?: boolean;
+    isUnionMember?: boolean;
+    isYouthUnionMember?: boolean;
+    isItStaff?: boolean;
+    isActive?: boolean;
   }) {
-    const existing = await this.prisma.canBo.findUnique({ where: { cbCode: data.cbCode } });
-    if (existing) throw new ConflictException(`Mã CB "${data.cbCode}" đã tồn tại`);
+    const existing = await this.prisma.canBo.findUnique({
+      where: { cbCode: data.cbCode },
+    });
+    if (existing)
+      throw new ConflictException(`Mã CB "${data.cbCode}" đã tồn tại`);
     const { ngaySinh, username: _username, userAD: rawUserAD, ...rest } = data;
     const userAD = this.normalizeUserAD(rawUserAD);
     await this.ensureUserADIsAvailable(userAD);
@@ -842,15 +1168,22 @@ export class AdminService {
       await this.syncCanBoUser(tx, canBo);
       return tx.canBo.findUniqueOrThrow({
         where: { id: canBo.id },
-        include: { department: { select: { id: true, name: true, code: true } } },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+        },
       });
     });
   }
 
   async updateCanBo(id: string, data: any) {
-    const existing = await this.prisma.canBo.findUniqueOrThrow({ where: { id } });
+    const existing = await this.prisma.canBo.findUniqueOrThrow({
+      where: { id },
+    });
     const { ngaySinh, username: _username, userAD: rawUserAD, ...rest } = data;
-    const userAD = rawUserAD === undefined ? existing.userAD : this.normalizeUserAD(rawUserAD);
+    const userAD =
+      rawUserAD === undefined
+        ? existing.userAD
+        : this.normalizeUserAD(rawUserAD);
     await this.ensureUserADIsAvailable(userAD, id);
     return this.prisma.$transaction(async (tx) => {
       const canBo = await tx.canBo.update({
@@ -858,14 +1191,19 @@ export class AdminService {
         data: {
           ...rest,
           userAD,
-          username: this.getLoginUsername(rest.cbCode ?? existing.cbCode, userAD),
+          username: this.getLoginUsername(
+            rest.cbCode ?? existing.cbCode,
+            userAD,
+          ),
           ngaySinh: ngaySinh ? new Date(ngaySinh) : undefined,
         },
       });
       await this.syncCanBoUser(tx, canBo, existing.cbCode, existing.userAD);
       return tx.canBo.findUniqueOrThrow({
         where: { id },
-        include: { department: { select: { id: true, name: true, code: true } } },
+        include: {
+          department: { select: { id: true, name: true, code: true } },
+        },
       });
     });
   }
@@ -875,7 +1213,9 @@ export class AdminService {
   }
 
   async bulkDeleteCanBo(ids: string[]): Promise<{ deleted: number }> {
-    const result = await this.prisma.canBo.deleteMany({ where: { id: { in: ids } } });
+    const result = await this.prisma.canBo.deleteMany({
+      where: { id: { in: ids } },
+    });
     return { deleted: result.count };
   }
 
@@ -917,17 +1257,31 @@ export class AdminService {
     updated: number;
     skipped: number;
     errors: string[];
-    rows: { empno: string; fullName: string; branchCode?: string; branchName?: string; deptName?: string; position?: string; userAD?: string; action: 'created' | 'updated' | 'skipped' | 'error'; note?: string }[];
+    rows: {
+      empno: string;
+      fullName: string;
+      branchCode?: string;
+      branchName?: string;
+      deptName?: string;
+      position?: string;
+      userAD?: string;
+      action: 'created' | 'updated' | 'skipped' | 'error';
+      note?: string;
+    }[];
   }> {
     // Đọc workbook (xlsx lib hỗ trợ cả csv, xls, xlsx)
     const wb = XLSX.read(buffer, { type: 'buffer', raw: false });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const rawRowsOrig: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false });
+    const rawRowsOrig: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, {
+      defval: null,
+      raw: false,
+    });
 
-    if (rawRowsOrig.length === 0) throw new BadRequestException('File không có dữ liệu');
+    if (rawRowsOrig.length === 0)
+      throw new BadRequestException('File không có dữ liệu');
 
     // Chuẩn hoá header: trim + uppercase để tránh lỗi khoảng trắng / chữ thường
-    const rawRows: Record<string, any>[] = rawRowsOrig.map(r => {
+    const rawRows: Record<string, any>[] = rawRowsOrig.map((r) => {
       const norm: Record<string, any> = {};
       for (const [k, v] of Object.entries(r)) {
         norm[k.trim().toUpperCase()] = v;
@@ -940,27 +1294,40 @@ export class AdminService {
     const firstRow = rawRows[0];
     for (const col of required) {
       if (!(col in firstRow)) {
-        throw new BadRequestException(`File thiếu cột bắt buộc: ${col}. File phải có các cột BRCD, BRNM, EMPNO`);
+        throw new BadRequestException(
+          `File thiếu cột bắt buộc: ${col}. File phải có các cột BRCD, BRNM, EMPNO`,
+        );
       }
     }
 
     // Cache phòng ban để giảm DB queries
     const deptCache = new Map<string, string>(); // key = "BRCD::DEPTNM" → departmentId
 
-    const getOrCreateDepartment = async (brcd: string, brnm: string, deptnm?: string | null): Promise<string> => {
+    const getOrCreateDepartment = async (
+      brcd: string,
+      brnm: string,
+      deptnm?: string | null,
+    ): Promise<string> => {
       const branchKey = `branch::${brcd}`;
       // 1. Tạo / lấy chi nhánh cấp 1 (BRCD → BRNM)
       let branchId = deptCache.get(branchKey);
       if (!branchId) {
         // Ưu tiên tra cứu theo code, fallback theo tên để tránh tạo duplicate
-        let branch = await this.prisma.department.findUnique({ where: { code: brcd } });
+        let branch = await this.prisma.department.findUnique({
+          where: { code: brcd },
+        });
         if (!branch) {
           branch = await this.prisma.department.findFirst({
-            where: { name: { equals: brnm, mode: 'insensitive' }, parentId: null },
+            where: {
+              name: { equals: brnm, mode: 'insensitive' },
+              parentId: null,
+            },
           });
         }
         if (!branch) {
-          branch = await this.prisma.department.create({ data: { code: brcd, name: brnm } });
+          branch = await this.prisma.department.create({
+            data: { code: brcd, name: brnm },
+          });
         } else if (branch.code !== brcd) {
           // Đã tìm thấy theo tên — cache thêm theo code mới để tái sử dụng
           deptCache.set(`branch::${branch.code}`, branch.id);
@@ -975,14 +1342,21 @@ export class AdminService {
       const deptCode = `${brcd}::${deptnm}`;
       let deptId = deptCache.get(deptCode);
       if (!deptId) {
-        let dept = await this.prisma.department.findUnique({ where: { code: deptCode } });
+        let dept = await this.prisma.department.findUnique({
+          where: { code: deptCode },
+        });
         if (!dept) {
           dept = await this.prisma.department.findFirst({
-            where: { name: { equals: deptnm, mode: 'insensitive' }, parentId: branchId },
+            where: {
+              name: { equals: deptnm, mode: 'insensitive' },
+              parentId: branchId,
+            },
           });
         }
         if (!dept) {
-          dept = await this.prisma.department.create({ data: { code: deptCode, name: deptnm, parentId: branchId } });
+          dept = await this.prisma.department.create({
+            data: { code: deptCode, name: deptnm, parentId: branchId },
+          });
         }
         deptId = dept.id;
         deptCache.set(deptCode, deptId);
@@ -994,7 +1368,17 @@ export class AdminService {
     let updated = 0;
     let skipped = 0;
     const errors: string[] = [];
-    const rows: { empno: string; fullName: string; branchCode?: string; branchName?: string; deptName?: string; position?: string; userAD?: string; action: 'created' | 'updated' | 'skipped' | 'error'; note?: string }[] = [];
+    const rows: {
+      empno: string;
+      fullName: string;
+      branchCode?: string;
+      branchName?: string;
+      deptName?: string;
+      position?: string;
+      userAD?: string;
+      action: 'created' | 'updated' | 'skipped' | 'error';
+      note?: string;
+    }[] = [];
 
     for (let i = 0; i < rawRows.length; i++) {
       const row = rawRows[i];
@@ -1008,21 +1392,42 @@ export class AdminService {
       const sex = row['SEX']?.toString().trim() || null;
       const birthdt = row['BIRTHDT']?.toString().trim() || null;
       // Tên nhân viên: thử cột EMPNM, FULLNAME, NAME
-      const fullName = (row['EMPNM'] ?? row['FULLNAME'] ?? row['NAME'] ?? '')?.toString().trim();
+      const fullName = (row['EMPNM'] ?? row['FULLNAME'] ?? row['NAME'] ?? '')
+        ?.toString()
+        .trim();
       // Cột AD (tên đăng nhập Active Directory) – thử nhiều tên cột phổ biến
-      const adValue = (row['AD'] ?? row['USERADM'] ?? row['USER_AD'] ?? row['ADUSER'])?.toString().trim() || null;
+      const adValue =
+        (row['AD'] ?? row['USERADM'] ?? row['USER_AD'] ?? row['ADUSER'])
+          ?.toString()
+          .trim() || null;
       // Username đăng nhập: ưu tiên AD, fallback về EMPNO
       const loginUsername = adValue || empno;
 
-      if (!empno) { errors.push(`Dòng ${lineNo}: EMPNO trống`); skipped++; continue; }
-      if (!brcd || !brnm) { errors.push(`Dòng ${lineNo}: BRCD hoặc BRNM trống`); skipped++; continue; }
+      if (!empno) {
+        errors.push(`Dòng ${lineNo}: EMPNO trống`);
+        skipped++;
+        continue;
+      }
+      if (!brcd || !brnm) {
+        errors.push(`Dòng ${lineNo}: BRCD hoặc BRNM trống`);
+        skipped++;
+        continue;
+      }
 
       // Chuẩn hoá giới tính
       let gioiTinh: string | null = null;
       if (sex) {
         const s = sex.toUpperCase();
-        if (s === 'M' || s === 'MALE' || s === 'NAM' || s === '1') gioiTinh = 'Nam';
-        else if (s === 'F' || s === 'FEMALE' || s === 'NU' || s === 'NỮ' || s === '2') gioiTinh = 'Nữ';
+        if (s === 'M' || s === 'MALE' || s === 'NAM' || s === '1')
+          gioiTinh = 'Nam';
+        else if (
+          s === 'F' ||
+          s === 'FEMALE' ||
+          s === 'NU' ||
+          s === 'NỮ' ||
+          s === '2'
+        )
+          gioiTinh = 'Nữ';
         else gioiTinh = sex;
       }
 
@@ -1031,7 +1436,9 @@ export class AdminService {
       if (birthdt) {
         // YYYYMMDD (8 chữ số)
         if (/^\d{8}$/.test(birthdt)) {
-          ngaySinh = new Date(`${birthdt.slice(0, 4)}-${birthdt.slice(4, 6)}-${birthdt.slice(6, 8)}`);
+          ngaySinh = new Date(
+            `${birthdt.slice(0, 4)}-${birthdt.slice(4, 6)}-${birthdt.slice(6, 8)}`,
+          );
         } else if (/^\d{4}-\d{2}-\d{2}/.test(birthdt)) {
           ngaySinh = new Date(birthdt);
         } else if (/^\d{2}\/\d{2}\/\d{4}/.test(birthdt)) {
@@ -1046,7 +1453,9 @@ export class AdminService {
       try {
         const departmentId = await getOrCreateDepartment(brcd, brnm, deptnm);
 
-        const existing = await this.prisma.canBo.findUnique({ where: { cbCode: empno } });
+        const existing = await this.prisma.canBo.findUnique({
+          where: { cbCode: empno },
+        });
 
         const resolvedFullName = fullName || existing?.fullName || empno;
         const data: any = {
@@ -1062,16 +1471,34 @@ export class AdminService {
         if (existing) {
           await this.prisma.canBo.update({ where: { cbCode: empno }, data });
           updated++;
-          rows.push({ empno, fullName: data.fullName, branchCode: brcd, branchName: brnm, deptName: deptnm ?? undefined, position: position ?? undefined, userAD: adValue ?? undefined, action: 'updated' });
+          rows.push({
+            empno,
+            fullName: data.fullName,
+            branchCode: brcd,
+            branchName: brnm,
+            deptName: deptnm ?? undefined,
+            position: position ?? undefined,
+            userAD: adValue ?? undefined,
+            action: 'updated',
+          });
         } else {
           await this.prisma.canBo.create({ data: { cbCode: empno, ...data } });
           created++;
-          rows.push({ empno, fullName: data.fullName, branchCode: brcd, branchName: brnm, deptName: deptnm ?? undefined, position: position ?? undefined, userAD: adValue ?? undefined, action: 'created' });
+          rows.push({
+            empno,
+            fullName: data.fullName,
+            branchCode: brcd,
+            branchName: brnm,
+            deptName: deptnm ?? undefined,
+            position: position ?? undefined,
+            userAD: adValue ?? undefined,
+            action: 'created',
+          });
         }
 
         // Tạo / cập nhật User tương ứng (username = AD từ GAHR26, mk mặc định Abcd@1234)
         // Tìm user: ưu tiên loginUsername (AD), fallback tương thích ngược theo empno cũ
-        let existingUser = await this.prisma.user.findFirst({
+        const existingUser = await this.prisma.user.findFirst({
           where: { OR: [{ username: loginUsername }, { username: empno }] },
         });
         if (!existingUser) {
@@ -1091,7 +1518,11 @@ export class AdminService {
           // Migrate username cũ (empno) → loginUsername (AD)
           await this.prisma.user.update({
             where: { id: existingUser.id },
-            data: { username: loginUsername, fullName: resolvedFullName, departmentId },
+            data: {
+              username: loginUsername,
+              fullName: resolvedFullName,
+              departmentId,
+            },
           });
         } else {
           // Cập nhật fullName và department nếu thay đổi
@@ -1102,26 +1533,47 @@ export class AdminService {
         }
       } catch (err: any) {
         errors.push(`Dòng ${lineNo} (${empno}): ${err.message}`);
-        rows.push({ empno: empno ?? `dòng ${lineNo}`, fullName: '', action: 'error', note: err.message });
+        rows.push({
+          empno: empno ?? `dòng ${lineNo}`,
+          fullName: '',
+          action: 'error',
+          note: err.message,
+        });
       }
     }
 
     return { created, updated, skipped, errors, rows };
   }
 
-
   async getExamSessionGradebook(sessionId: string) {
     const session = await this.prisma.examSession.findUniqueOrThrow({
       where: { id: sessionId },
       include: {
-        class: { include: { members: { include: { user: { select: { id: true, fullName: true, username: true } } } } } },
+        class: {
+          include: {
+            members: {
+              include: {
+                user: { select: { id: true, fullName: true, username: true } },
+              },
+            },
+          },
+        },
         quiz: { select: { id: true, passScore: true } },
       },
     });
 
     const submissions = await this.prisma.submission.findMany({
-      where: { quizId: session.quizId, user: { classMembers: { some: { classId: session.classId } } } },
-      select: { userId: true, score: true, isPassed: true, submittedAt: true, status: true },
+      where: {
+        quizId: session.quizId,
+        user: { classMembers: { some: { classId: session.classId } } },
+      },
+      select: {
+        userId: true,
+        score: true,
+        isPassed: true,
+        submittedAt: true,
+        status: true,
+      },
       orderBy: { submittedAt: 'asc' },
     });
 
@@ -1138,18 +1590,30 @@ export class AdminService {
       let finalScore: number | null = null;
       if (scores.length > 0) {
         switch (session.scoringPolicy) {
-          case 'FIRST': finalScore = scores[0]; break;
-          case 'LAST': finalScore = scores[scores.length - 1]; break;
-          case 'HIGHEST': finalScore = Math.max(...scores); break;
-          case 'AVERAGE': finalScore = scores.reduce((a, b) => a + b, 0) / scores.length; break;
-          default: finalScore = Math.max(...scores);
+          case 'FIRST':
+            finalScore = scores[0];
+            break;
+          case 'LAST':
+            finalScore = scores[scores.length - 1];
+            break;
+          case 'HIGHEST':
+            finalScore = Math.max(...scores);
+            break;
+          case 'AVERAGE':
+            finalScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+            break;
+          default:
+            finalScore = Math.max(...scores);
         }
       }
       return {
         user,
         attempts: attempts.length,
         finalScore,
-        isPassed: finalScore !== null ? finalScore >= (session.quiz.passScore ?? 0) : null,
+        isPassed:
+          finalScore !== null
+            ? finalScore >= (session.quiz.passScore ?? 0)
+            : null,
         lastSubmittedAt: attempts[attempts.length - 1]?.submittedAt ?? null,
       };
     });
@@ -1174,10 +1638,17 @@ export class AdminService {
     const submissions = await this.prisma.submission.findMany({
       where: { quizId: session.quizId, userId },
       select: {
-        id: true, score: true, isPassed: true, submittedAt: true, status: true,
+        id: true,
+        score: true,
+        isPassed: true,
+        submittedAt: true,
+        status: true,
         answers: {
           select: {
-            id: true, questionId: true, selectedOptionIds: true, answeredAt: true,
+            id: true,
+            questionId: true,
+            selectedOptionIds: true,
+            answeredAt: true,
           },
         },
       },
@@ -1188,45 +1659,68 @@ export class AdminService {
   }
 
   // ── Export Gradebook Excel ───────────────────────────────────────────
-  async exportGradebook(sessionId: string): Promise<{ buffer: Buffer; filename: string }> {
+  async exportGradebook(
+    sessionId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
     const session = await this.prisma.examSession.findUniqueOrThrow({
       where: { id: sessionId },
       select: { name: true },
     });
 
     const gradebook = await this.getExamSessionGradebook(sessionId);
-    const sorted = [...gradebook].sort((a, b) => (b.finalScore ?? -1) - (a.finalScore ?? -1));
+    const sorted = [...gradebook].sort(
+      (a, b) => (b.finalScore ?? -1) - (a.finalScore ?? -1),
+    );
 
     const wb = XLSX.utils.book_new();
 
     // Sheet 1 — Bảng điểm đầy đủ
     const rows = sorted.map((g, idx) => ({
-      'STT': idx + 1,
+      STT: idx + 1,
       'Họ tên': g.user.fullName,
-      'Username': g.user.username,
+      Username: g.user.username,
       'Số lần thi': g.attempts,
-      'Điểm': g.finalScore !== null ? +g.finalScore.toFixed(2) : '',
-      'Kết quả': g.isPassed === null ? 'Chưa thi' : g.isPassed ? 'Đạt' : 'Chưa đạt',
-      'Lần cuối nộp': g.lastSubmittedAt ? new Date(g.lastSubmittedAt).toLocaleString('vi-VN') : '',
+      Điểm: g.finalScore !== null ? +g.finalScore.toFixed(2) : '',
+      'Kết quả':
+        g.isPassed === null ? 'Chưa thi' : g.isPassed ? 'Đạt' : 'Chưa đạt',
+      'Lần cuối nộp': g.lastSubmittedAt
+        ? new Date(g.lastSubmittedAt).toLocaleString('vi-VN')
+        : '',
     }));
     const ws1 = XLSX.utils.json_to_sheet(rows);
-    ws1['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 20 }];
+    ws1['!cols'] = [
+      { wch: 5 },
+      { wch: 30 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 20 },
+    ];
     XLSX.utils.book_append_sheet(wb, ws1, 'Bảng điểm');
 
     // Sheet 2 — Chưa làm
-    const notDone = sorted.filter((g) => g.attempts === 0).map((g, idx) => ({
-      'STT': idx + 1,
-      'Họ tên': g.user.fullName,
-      'Username': g.user.username,
-    }));
+    const notDone = sorted
+      .filter((g) => g.attempts === 0)
+      .map((g, idx) => ({
+        STT: idx + 1,
+        'Họ tên': g.user.fullName,
+        Username: g.user.username,
+      }));
     if (notDone.length > 0) {
       const ws2 = XLSX.utils.json_to_sheet(notDone);
       ws2['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 15 }];
       XLSX.utils.book_append_sheet(wb, ws2, 'Chưa làm');
     }
 
-    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
-    const safeName = session.name.replace(/[^a-zA-Z0-9À-ỹ\s]/g, '').trim().replace(/\s+/g, '_');
+    const excelBuffer = XLSX.write(wb, {
+      type: 'buffer',
+      bookType: 'xlsx',
+    }) as Buffer;
+    const safeName = session.name
+      .replace(/[^a-zA-Z0-9À-ỹ\s]/g, '')
+      .trim()
+      .replace(/\s+/g, '_');
     return { buffer: excelBuffer, filename: `BangDiem_${safeName}.xlsx` };
   }
 
@@ -1252,11 +1746,15 @@ export class AdminService {
     const memberIds = members.map((m) => m.userId);
     const submissions = await this.prisma.submission.findMany({
       where: { quizId: session.quizId, userId: { in: memberIds } },
-      select: { answers: { select: { questionId: true, selectedOptionIds: true } } },
+      select: {
+        answers: { select: { questionId: true, selectedOptionIds: true } },
+      },
     });
 
     const questionOpts = new Map(questions.map((q) => [q.id, q.options]));
-    const stats = new Map(questions.map((q) => [q.id, { correct: 0, total: 0 }]));
+    const stats = new Map(
+      questions.map((q) => [q.id, { correct: 0, total: 0 }]),
+    );
 
     for (const sub of submissions) {
       for (const ans of sub.answers) {
@@ -1265,7 +1763,8 @@ export class AdminService {
         s.total++;
         const selected = ans.selectedOptionIds as string[];
         const correctIds = (questionOpts.get(ans.questionId) ?? [])
-          .filter((o) => o.isCorrect).map((o) => o.id);
+          .filter((o) => o.isCorrect)
+          .map((o) => o.id);
         const isCorrect =
           selected.length === correctIds.length &&
           correctIds.every((id) => selected.includes(id));
@@ -1284,7 +1783,8 @@ export class AdminService {
         totalAttempts: s.total,
         correctCount: s.correct,
         wrongCount: s.total - s.correct,
-        correctRate: s.total > 0 ? Math.round((s.correct / s.total) * 100) : null,
+        correctRate:
+          s.total > 0 ? Math.round((s.correct / s.total) * 100) : null,
       };
     });
   }
@@ -1298,17 +1798,26 @@ export class AdminService {
 
     const members = await this.prisma.classMember.findMany({
       where: { classId: session.classId },
-      include: { user: { select: { id: true, fullName: true, username: true, email: true } } },
+      include: {
+        user: {
+          select: { id: true, fullName: true, username: true, email: true },
+        },
+      },
     });
 
     const attempted = await this.prisma.submission.findMany({
-      where: { quizId: session.quizId, userId: { in: members.map((m) => m.userId) } },
+      where: {
+        quizId: session.quizId,
+        userId: { in: members.map((m) => m.userId) },
+      },
       select: { userId: true },
       distinct: ['userId'],
     });
 
     const attemptedIds = new Set(attempted.map((s) => s.userId));
-    return members.filter((m) => !attemptedIds.has(m.userId)).map((m) => m.user);
+    return members
+      .filter((m) => !attemptedIds.has(m.userId))
+      .map((m) => m.user);
   }
 
   // ── Certificate Data ──────────────────────────────────────────────────
@@ -1332,7 +1841,9 @@ export class AdminService {
     });
 
     if (!best) {
-      throw new NotFoundException('Học viên chưa đạt kết quả để cấp chứng nhận');
+      throw new NotFoundException(
+        'Học viên chưa đạt kết quả để cấp chứng nhận',
+      );
     }
 
     return {
@@ -1348,4 +1859,3 @@ export class AdminService {
     };
   }
 }
-

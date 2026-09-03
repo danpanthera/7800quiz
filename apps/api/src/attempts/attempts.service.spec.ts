@@ -42,7 +42,9 @@ describe('AttemptsService', () => {
       quizAttempt: {
         findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ ...data })),
       },
       quizVersion: {
         findFirst: jest.fn().mockResolvedValue({
@@ -54,11 +56,17 @@ describe('AttemptsService', () => {
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     const assignments = {
-      getForUser: jest.fn().mockResolvedValue([
-        { id: assignmentId, quizId: 'quiz-1', quiz: snapshot.quiz },
-      ]),
+      getForUser: jest
+        .fn()
+        .mockResolvedValue([
+          { id: assignmentId, quizId: 'quiz-1', quiz: snapshot.quiz },
+        ]),
     };
-    const service = new AttemptsService(prisma as never, assignments as never, {} as never);
+    const service = new AttemptsService(
+      prisma as never,
+      assignments as never,
+      {} as never,
+    );
 
     const result = await service.start('user-1', {
       id: attemptId,
@@ -93,12 +101,18 @@ describe('AttemptsService', () => {
         }),
       },
     };
-    const service = new AttemptsService(prisma as never, {} as never, {} as never);
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(
       service.saveAnswers('user-1', attemptId, {
         revision: 1,
-        answers: [{ questionId: 'question-1', selectedOptionIds: ['option-1'] }],
+        answers: [
+          { questionId: 'question-1', selectedOptionIds: ['option-1'] },
+        ],
       }),
     ).rejects.toMatchObject({ status: 409 });
   });
@@ -139,9 +153,15 @@ describe('AttemptsService', () => {
     const gamification = {
       updateActivity: jest.fn().mockResolvedValue(undefined),
       incrementSubmissionStats: jest.fn().mockResolvedValue(undefined),
-      awardXp: jest.fn().mockResolvedValue({ levelUp: false, newLevel: 1, newBadges: [] }),
+      awardXp: jest
+        .fn()
+        .mockResolvedValue({ levelUp: false, newLevel: 1, newBadges: [] }),
     };
-    const service = new AttemptsService(prisma as never, {} as never, gamification as never);
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      gamification as never,
+    );
 
     const result = await service.finalize('user-1', attemptId, false);
 
@@ -156,7 +176,10 @@ describe('AttemptsService', () => {
         startedAt: new Date('2026-09-03T08:00:00.000Z'),
       }),
     });
-    expect(gamification.incrementSubmissionStats).toHaveBeenCalledWith('user-1', true);
+    expect(gamification.incrementSubmissionStats).toHaveBeenCalledWith(
+      'user-1',
+      true,
+    );
     expect(result).toMatchObject({ id: attemptId, score: 100, isPassed: true });
   });
 });

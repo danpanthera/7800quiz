@@ -6,7 +6,10 @@ import { GamificationController } from '../gamification/gamification.controller'
 import { ROLES_KEY } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
 
-const getRoles = (controller: object, methodName?: string): UserRole[] | undefined => {
+const getRoles = (
+  controller: object,
+  methodName?: string,
+): UserRole[] | undefined => {
   if (!methodName) return Reflect.getMetadata(ROLES_KEY, controller);
 
   const method = (controller as Record<string, unknown>)[methodName];

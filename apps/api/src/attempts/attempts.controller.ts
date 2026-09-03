@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Put, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SaveAttemptAnswersDto } from './dto/save-attempt-answers.dto';
 import { StartAttemptDto } from './dto/start-attempt.dto';
@@ -11,7 +20,10 @@ export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
   @Post()
-  start(@Request() req: { user: { id: string } }, @Body() dto: StartAttemptDto) {
+  start(
+    @Request() req: { user: { id: string } },
+    @Body() dto: StartAttemptDto,
+  ) {
     return this.attemptsService.start(req.user.id, dto);
   }
 

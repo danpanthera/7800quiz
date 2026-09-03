@@ -28,7 +28,11 @@ export class GamificationService {
     source: XpSource,
     referenceId?: string,
     note?: string,
-  ): Promise<{ levelUp: boolean; newLevel: number; newBadges: { code: string; name: string; iconSlug: string }[] }> {
+  ): Promise<{
+    levelUp: boolean;
+    newLevel: number;
+    newBadges: { code: string; name: string; iconSlug: string }[];
+  }> {
     // Upsert UserProgress
     let progress = await this.prisma.userProgress.upsert({
       where: { userId },
@@ -49,7 +53,9 @@ export class GamificationService {
     });
 
     // Re-fetch updated progress
-    progress = await this.prisma.userProgress.findUniqueOrThrow({ where: { userId } });
+    progress = await this.prisma.userProgress.findUniqueOrThrow({
+      where: { userId },
+    });
 
     // Recalculate level (DB-driven)
     const levelDef = await this.prisma.levelDefinition.findFirst({
@@ -92,9 +98,13 @@ export class GamificationService {
     if (!lastDate) {
       newStreak = 1;
     } else {
-      const lastUtc7 = new Date(new Date(lastDate).getTime() + 7 * 60 * 60 * 1000);
+      const lastUtc7 = new Date(
+        new Date(lastDate).getTime() + 7 * 60 * 60 * 1000,
+      );
       const lastDay = new Date(lastUtc7.toISOString().slice(0, 10));
-      const diffDays = Math.round((today.getTime() - lastDay.getTime()) / (1000 * 60 * 60 * 24));
+      const diffDays = Math.round(
+        (today.getTime() - lastDay.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
       if (diffDays === 0) {
         // Cùng ngày, không đổi
@@ -120,13 +130,22 @@ export class GamificationService {
     // Streak milestone bonus
     if (newStreak === 7 || newStreak === 30) {
       const bonusXp = newStreak === 7 ? 100 : 500;
-      await this.awardXp(userId, bonusXp, XpSource.STREAK_BONUS, undefined, `Streak ${newStreak} ngày`);
+      await this.awardXp(
+        userId,
+        bonusXp,
+        XpSource.STREAK_BONUS,
+        undefined,
+        `Streak ${newStreak} ngày`,
+      );
     }
   }
 
   // ─── incrementStats ───────────────────────────────────────────────────────
 
-  async incrementSubmissionStats(userId: string, isPassed: boolean): Promise<void> {
+  async incrementSubmissionStats(
+    userId: string,
+    isPassed: boolean,
+  ): Promise<void> {
     await this.prisma.userProgress.upsert({
       where: { userId },
       update: {
@@ -156,7 +175,9 @@ export class GamificationService {
       include: { userBadges: true },
     });
 
-    const alreadyHas = new Set(progress.userBadges.map((ub) => ub.badgeDefinitionId));
+    const alreadyHas = new Set(
+      progress.userBadges.map((ub) => ub.badgeDefinitionId),
+    );
     const allBadges = await this.prisma.badgeDefinition.findMany();
 
     const newBadges: { code: string; name: string; iconSlug: string }[] = [];
@@ -190,7 +211,11 @@ export class GamificationService {
           });
         }
 
-        newBadges.push({ code: badge.code, name: badge.name, iconSlug: badge.iconSlug });
+        newBadges.push({
+          code: badge.code,
+          name: badge.name,
+          iconSlug: badge.iconSlug,
+        });
       }
     }
 
@@ -238,7 +263,10 @@ export class GamificationService {
           take: condition.value,
           select: { isPassed: true },
         });
-        return recent.length >= condition.value && recent.every((s) => s.isPassed === true);
+        return (
+          recent.length >= condition.value &&
+          recent.every((s) => s.isPassed === true)
+        );
       }
 
       default:
@@ -269,8 +297,13 @@ export class GamificationService {
     });
 
     const xpInCurrentLevel = progress.xp - (currentLevelDef?.minXp ?? 0);
-    const xpToNext = nextLevelDef ? nextLevelDef.minXp - (currentLevelDef?.minXp ?? 0) : 0;
-    const percentToNext = xpToNext > 0 ? Math.min(100, Math.round((xpInCurrentLevel / xpToNext) * 100)) : 100;
+    const xpToNext = nextLevelDef
+      ? nextLevelDef.minXp - (currentLevelDef?.minXp ?? 0)
+      : 0;
+    const percentToNext =
+      xpToNext > 0
+        ? Math.min(100, Math.round((xpInCurrentLevel / xpToNext) * 100))
+        : 100;
 
     // Global rank
     const rank = await this.prisma.userProgress.count({
@@ -324,7 +357,10 @@ export class GamificationService {
 
   // ─── Admin: Leaderboard ───────────────────────────────────────────────────
 
-  async getLeaderboard(period: 'all' | 'month' | 'week' = 'all', departmentId?: string) {
+  async getLeaderboard(
+    period: 'all' | 'month' | 'week' = 'all',
+    departmentId?: string,
+  ) {
     if (period === 'all' && !departmentId) {
       // Dùng UserProgress trực tiếp
       const rows = await this.prisma.userProgress.findMany({
@@ -332,7 +368,12 @@ export class GamificationService {
         take: 100,
         include: {
           user: {
-            select: { id: true, fullName: true, departmentId: true, department: { select: { name: true } } },
+            select: {
+              id: true,
+              fullName: true,
+              departmentId: true,
+              department: { select: { name: true } },
+            },
           },
         },
       });
@@ -371,12 +412,20 @@ export class GamificationService {
     const userIds = txGroups.map((g) => g.userId);
     const users = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, fullName: true, departmentId: true, department: { select: { name: true } } },
+      select: {
+        id: true,
+        fullName: true,
+        departmentId: true,
+        department: { select: { name: true } },
+      },
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
     return txGroups
-      .filter((g) => !departmentId || userMap.get(g.userId)?.departmentId === departmentId)
+      .filter(
+        (g) =>
+          !departmentId || userMap.get(g.userId)?.departmentId === departmentId,
+      )
       .map((g, i) => {
         const u = userMap.get(g.userId);
         return {
@@ -411,19 +460,39 @@ export class GamificationService {
     return this.prisma.levelDefinition.findMany({ orderBy: { level: 'asc' } });
   }
 
-  createLevel(data: { level: number; name: string; minXp: number; color: string; iconSlug?: string }) {
+  createLevel(data: {
+    level: number;
+    name: string;
+    minXp: number;
+    color: string;
+    iconSlug?: string;
+  }) {
     return this.prisma.levelDefinition.create({ data });
   }
 
-  updateLevel(id: string, data: Partial<{ name: string; minXp: number; color: string; iconSlug: string }>) {
+  updateLevel(
+    id: string,
+    data: Partial<{
+      name: string;
+      minXp: number;
+      color: string;
+      iconSlug: string;
+    }>,
+  ) {
     return this.prisma.levelDefinition.update({ where: { id }, data });
   }
 
   async deleteLevel(id: string) {
-    const levelDef = await this.prisma.levelDefinition.findUniqueOrThrow({ where: { id } });
-    const usersAtLevel = await this.prisma.userProgress.count({ where: { level: levelDef.level } });
+    const levelDef = await this.prisma.levelDefinition.findUniqueOrThrow({
+      where: { id },
+    });
+    const usersAtLevel = await this.prisma.userProgress.count({
+      where: { level: levelDef.level },
+    });
     if (usersAtLevel > 0) {
-      throw new Error(`Không thể xóa cấp ${levelDef.level} vì có ${usersAtLevel} người dùng đang ở cấp này`);
+      throw new Error(
+        `Không thể xóa cấp ${levelDef.level} vì có ${usersAtLevel} người dùng đang ở cấp này`,
+      );
     }
     return this.prisma.levelDefinition.delete({ where: { id } });
   }

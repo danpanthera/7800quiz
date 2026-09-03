@@ -1,4 +1,13 @@
-import { Body, Controller, Get, NotFoundException, Param, Post, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SubmitDto } from './dto/submit.dto';
 import { SubmissionsService } from './submissions.service';
@@ -18,8 +27,12 @@ export class SubmissionsController {
     @Param('submissionId') submissionId: string,
     @Request() req: { user: { id: string } },
   ) {
-    const result = await this.submissionsService.getResult(submissionId, req.user.id);
-    if (!result) throw new NotFoundException('Bài thi chưa được đồng bộ lên server');
+    const result = await this.submissionsService.getResult(
+      submissionId,
+      req.user.id,
+    );
+    if (!result)
+      throw new NotFoundException('Bài thi chưa được đồng bộ lên server');
     return result;
   }
 }

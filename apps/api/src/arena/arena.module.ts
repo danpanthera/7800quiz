@@ -7,11 +7,7 @@ import { GamificationModule } from '../gamification/gamification.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [
-    AuthModule,
-    PrismaModule,
-    GamificationModule,
-  ],
+  imports: [AuthModule, PrismaModule, GamificationModule],
   controllers: [ArenaController],
   providers: [ArenaService, ArenaGateway],
 })

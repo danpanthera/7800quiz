@@ -1,12 +1,23 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateArenaDto } from './dto/create-arena.dto';
 import { ArenaStatus, ArenaRoundStatus, XpSource } from '@prisma/client';
 import { GamificationService } from '../gamification/gamification.service';
 
 const TEAM_COLORS = [
-  '#E74C3C', '#3498DB', '#2ECC71', '#F39C12',
-  '#9B59B6', '#1ABC9C', '#E67E22', '#2C3E50', '#F1C40F',
+  '#E74C3C',
+  '#3498DB',
+  '#2ECC71',
+  '#F39C12',
+  '#9B59B6',
+  '#1ABC9C',
+  '#E67E22',
+  '#2C3E50',
+  '#F1C40F',
 ];
 
 function generateJoinCode(): string {
@@ -40,7 +51,9 @@ export class ArenaService {
     let attempts = 0;
     do {
       joinCode = generateJoinCode();
-      const existing = await this.prisma.arenaSession.findUnique({ where: { joinCode } });
+      const existing = await this.prisma.arenaSession.findUnique({
+        where: { joinCode },
+      });
       if (!existing) break;
       attempts++;
     } while (attempts < 10);
@@ -60,7 +73,9 @@ export class ArenaService {
     });
 
     // Pre-create ArenaRounds from quiz questions
-    const questions = quiz.questions.sort((a, b) => a.orderIndex - b.orderIndex);
+    const questions = quiz.questions.sort(
+      (a, b) => a.orderIndex - b.orderIndex,
+    );
     if (questions.length > 0) {
       await this.prisma.arenaRound.createMany({
         data: questions.map((q, idx) => ({
@@ -79,7 +94,15 @@ export class ArenaService {
       orderBy: { createdAt: 'desc' },
       include: {
         quiz: { select: { id: true, title: true } },
-        teams: { select: { id: true, name: true, color: true, score: true, rank: true } },
+        teams: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            score: true,
+            rank: true,
+          },
+        },
         _count: { select: { rounds: true } },
       },
     });
@@ -123,14 +146,20 @@ export class ArenaService {
   }
 
   async cancelSession(id: string) {
-    const session = await this.prisma.arenaSession.findUniqueOrThrow({ where: { id } });
+    const session = await this.prisma.arenaSession.findUniqueOrThrow({
+      where: { id },
+    });
     if (session.status !== ArenaStatus.LOBBY)
-      throw new BadRequestException('Chỉ có thể hủy phiên đang ở trạng thái chờ');
+      throw new BadRequestException(
+        'Chỉ có thể hủy phiên đang ở trạng thái chờ',
+      );
     return this.prisma.arenaSession.delete({ where: { id } });
   }
 
   async stopSession(id: string) {
-    const session = await this.prisma.arenaSession.findUniqueOrThrow({ where: { id } });
+    const session = await this.prisma.arenaSession.findUniqueOrThrow({
+      where: { id },
+    });
     if (session.status !== ArenaStatus.RUNNING)
       throw new BadRequestException('Chỉ có thể dừng phiên đang chạy');
     return this.endSession(id);
@@ -157,7 +186,8 @@ export class ArenaService {
     const existingName = session.teams.find(
       (t) => t.name.toLowerCase() === teamName.toLowerCase(),
     );
-    if (existingName) throw new BadRequestException('Tên đội đã tồn tại trong phiên này');
+    if (existingName)
+      throw new BadRequestException('Tên đội đã tồn tại trong phiên này');
 
     const color = TEAM_COLORS[session.teams.length];
     const team = await this.prisma.arenaTeam.create({
@@ -233,7 +263,12 @@ export class ArenaService {
     };
   }
 
-  async recordAnswer(arenaRoundId: string, teamId: string, selectedOptionIds: string[], userId: string) {
+  async recordAnswer(
+    arenaRoundId: string,
+    teamId: string,
+    selectedOptionIds: string[],
+    userId: string,
+  ) {
     const round = await this.prisma.arenaRound.findUnique({
       where: { id: arenaRoundId },
       include: {
@@ -250,7 +285,8 @@ export class ArenaService {
       where: { id: teamId, arenaSessionId: round.arenaSessionId },
     });
     if (!team) throw new BadRequestException('Đội không thuộc phiên này');
-    if (team.userId !== userId) throw new BadRequestException('Bạn không thuộc đội này');
+    if (team.userId !== userId)
+      throw new BadRequestException('Bạn không thuộc đội này');
 
     // Check not already answered
     const existingBuzz = await this.prisma.arenaBuzz.findUnique({
@@ -264,7 +300,8 @@ export class ArenaService {
       .map((o) => o.id)
       .sort();
     const selectedSorted = [...selectedOptionIds].sort();
-    const isCorrect = JSON.stringify(correctOptionIds) === JSON.stringify(selectedSorted);
+    const isCorrect =
+      JSON.stringify(correctOptionIds) === JSON.stringify(selectedSorted);
 
     const buzz = await this.prisma.arenaBuzz.create({
       data: {
@@ -350,15 +387,17 @@ export class ArenaService {
 
     return {
       roundId: round.id,
-      correctOptionIds: round.question.options.filter((o) => o.isCorrect).map((o) => o.id),
+      correctOptionIds: round.question.options
+        .filter((o) => o.isCorrect)
+        .map((o) => o.id),
       explanation: round.question.explanation,
       buzzes: [...correctBuzzes, ...wrongBuzzes].map((b) => ({
         teamId: b.teamId,
         isCorrect: b.isCorrect,
-        pointsAwarded:
-          b.isCorrect
-            ? (pointsForRank[correctBuzzes.indexOf(b)] ?? pointsForRank[pointsForRank.length - 1])
-            : -penaltyWrong,
+        pointsAwarded: b.isCorrect
+          ? (pointsForRank[correctBuzzes.indexOf(b)] ??
+            pointsForRank[pointsForRank.length - 1])
+          : -penaltyWrong,
       })),
       leaderboard: updatedTeams,
     };
@@ -399,7 +438,11 @@ export class ArenaService {
     // Cộng XP + thăng bậc (dùng chung hệ Gamification với làm bài quiz)
     const xpResults: Record<
       string,
-      { levelUp: boolean; newLevel: number; newBadges: { code: string; name: string; iconSlug: string }[] }
+      {
+        levelUp: boolean;
+        newLevel: number;
+        newBadges: { code: string; name: string; iconSlug: string }[];
+      }
     > = {};
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
@@ -418,13 +461,25 @@ export class ArenaService {
         `Tham gia Arena, hạng ${rank}`,
       );
       const winResult = isWinner
-        ? await this.gamification.awardXp(team.userId, 30, XpSource.ARENA_WIN, sessionId, 'Vô địch Arena')
+        ? await this.gamification.awardXp(
+            team.userId,
+            30,
+            XpSource.ARENA_WIN,
+            sessionId,
+            'Vô địch Arena',
+          )
         : null;
 
       xpResults[team.userId] = {
         levelUp: participateResult.levelUp || (winResult?.levelUp ?? false),
-        newLevel: Math.max(participateResult.newLevel, winResult?.newLevel ?? 0),
-        newBadges: [...participateResult.newBadges, ...(winResult?.newBadges ?? [])],
+        newLevel: Math.max(
+          participateResult.newLevel,
+          winResult?.newLevel ?? 0,
+        ),
+        newBadges: [
+          ...participateResult.newBadges,
+          ...(winResult?.newBadges ?? []),
+        ],
       };
     }
 

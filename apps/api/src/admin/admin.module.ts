@@ -6,7 +6,11 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [AuthModule, PrismaModule, MulterModule.register({ limits: { fileSize: 10 * 1024 * 1024 } })],
+  imports: [
+    AuthModule,
+    PrismaModule,
+    MulterModule.register({ limits: { fileSize: 10 * 1024 * 1024 } }),
+  ],
   controllers: [AdminController],
   providers: [AdminService],
 })

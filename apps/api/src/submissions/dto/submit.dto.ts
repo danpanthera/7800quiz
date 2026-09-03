@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 
 export class AnswerDto {
   @IsUUID()

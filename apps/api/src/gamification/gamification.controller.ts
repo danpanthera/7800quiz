@@ -1,5 +1,15 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, Request, UseGuards, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  Request,
+  UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { GamificationService } from './gamification.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -30,7 +40,11 @@ export class GamificationController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.svc.getXpHistory(req.user.id, page ? +page : 1, limit ? +limit : 20);
+    return this.svc.getXpHistory(
+      req.user.id,
+      page ? +page : 1,
+      limit ? +limit : 20,
+    );
   }
 
   // ─── /admin routes ────────────────────────────────────────────────────────
@@ -58,7 +72,16 @@ export class GamificationController {
 
   @Post('admin/levels')
   @Roles(UserRole.ADMIN, UserRole.TRAINER)
-  createLevel(@Body() body: { level: number; name: string; minXp: number; color: string; iconSlug?: string }) {
+  createLevel(
+    @Body()
+    body: {
+      level: number;
+      name: string;
+      minXp: number;
+      color: string;
+      iconSlug?: string;
+    },
+  ) {
     return this.svc.createLevel(body);
   }
 
@@ -66,7 +89,13 @@ export class GamificationController {
   @Roles(UserRole.ADMIN, UserRole.TRAINER)
   updateLevel(
     @Param('id') id: string,
-    @Body() body: Partial<{ name: string; minXp: number; color: string; iconSlug: string }>,
+    @Body()
+    body: Partial<{
+      name: string;
+      minXp: number;
+      color: string;
+      iconSlug: string;
+    }>,
   ) {
     return this.svc.updateLevel(id, body);
   }
@@ -77,7 +106,9 @@ export class GamificationController {
     try {
       return await this.svc.deleteLevel(id);
     } catch (e: unknown) {
-      throw new BadRequestException(e instanceof Error ? e.message : 'Không thể xóa cấp độ này');
+      throw new BadRequestException(
+        e instanceof Error ? e.message : 'Không thể xóa cấp độ này',
+      );
     }
   }
 }

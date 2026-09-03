@@ -9,7 +9,12 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { AttemptStatus, AttemptViolationType, Prisma, XpSource } from '@prisma/client';
+import {
+  AttemptStatus,
+  AttemptViolationType,
+  Prisma,
+  XpSource,
+} from '@prisma/client';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -85,7 +90,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async start(userId: string, dto: StartAttemptDto) {
-    const existingById = await this.prisma.quizAttempt.findUnique({ where: { id: dto.id } });
+    const existingById = await this.prisma.quizAttempt.findUnique({
+      where: { id: dto.id },
+    });
     if (existingById) {
       if (existingById.userId !== userId) {
         throw new ForbiddenException('Attempt này không thuộc về bạn');
@@ -116,9 +123,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     const assignmentDeadline = assignment.endAt
       ? new Date(assignment.endAt)
       : undefined;
-    const deadlineAt = assignmentDeadline && assignmentDeadline < durationDeadline
-      ? assignmentDeadline
-      : durationDeadline;
+    const deadlineAt =
+      assignmentDeadline && assignmentDeadline < durationDeadline
+        ? assignmentDeadline
+        : durationDeadline;
 
     if (deadlineAt <= startedAt) {
       throw new GoneException('Thời gian làm bài đã kết thúc');
@@ -141,7 +149,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         userId,
         action: 'START_ATTEMPT',
         entityId: attempt.id,
-        meta: { assignmentId: assignment.id, deadlineAt: deadlineAt.toISOString() },
+        meta: {
+          assignmentId: assignment.id,
+          deadlineAt: deadlineAt.toISOString(),
+        },
       },
     });
 
@@ -150,7 +161,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
 
   async get(userId: string, id: string) {
     const attempt = await this.findAttempt(userId, id);
-    if (attempt.status === AttemptStatus.IN_PROGRESS && attempt.deadlineAt <= new Date()) {
+    if (
+      attempt.status === AttemptStatus.IN_PROGRESS &&
+      attempt.deadlineAt <= new Date()
+    ) {
       await this.finalize(userId, id, true);
       return this.get(userId, id);
     }
@@ -166,7 +180,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     }
     if (attempt.deadlineAt <= new Date()) {
       await this.finalize(userId, id, true);
-      throw new GoneException('Đã hết thời gian làm bài; hệ thống đã chấm bản lưu gần nhất');
+      throw new GoneException(
+        'Đã hết thời gian làm bài; hệ thống đã chấm bản lưu gần nhất',
+      );
     }
     if (dto.revision !== attempt.answerRevision) {
       throw new ConflictException({
@@ -236,7 +252,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     }
     if (saveResult.current.deadlineAt <= lastSavedAt) {
       await this.finalize(userId, id, true);
-      throw new GoneException('Đã hết thời gian làm bài; hệ thống đã chấm bản lưu gần nhất');
+      throw new GoneException(
+        'Đã hết thời gian làm bài; hệ thống đã chấm bản lưu gần nhất',
+      );
     }
     throw new ConflictException({
       message: 'Dữ liệu cục bộ đã cũ; vui lòng tải lại bài kiểm tra',
@@ -247,9 +265,16 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   // Ghi nhận hành vi nghi vấn (rời màn hình, thoát fullscreen, cố sao chép đề) khi
   // đang làm bài — chỉ ghi log + tăng bộ đếm, KHÔNG tự động chấm rớt (tránh oan nếu
   // người dùng vô tình alt-tab). Admin xem lại violationCount khi cần đối chiếu.
-  async reportViolation(userId: string, id: string, type: AttemptViolationType) {
-    const attempt = await this.prisma.quizAttempt.findFirst({ where: { id, userId } });
-    if (!attempt) throw new NotFoundException('Không tìm thấy bài kiểm tra đang làm');
+  async reportViolation(
+    userId: string,
+    id: string,
+    type: AttemptViolationType,
+  ) {
+    const attempt = await this.prisma.quizAttempt.findFirst({
+      where: { id, userId },
+    });
+    if (!attempt)
+      throw new NotFoundException('Không tìm thấy bài kiểm tra đang làm');
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
       return { violationCount: attempt.violationCount };
     }
@@ -306,7 +331,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         answers: {
           create: attempt.answers.map((answer) => ({
             questionId: answer.questionId,
-            selectedOptionIds: this.toSelectedOptionIds(answer.selectedOptionIds),
+            selectedOptionIds: this.toSelectedOptionIds(
+              answer.selectedOptionIds,
+            ),
             answeredAt: answer.updatedAt,
           })),
         },
@@ -323,10 +350,20 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     await this.prisma.auditLog.create({
-      data: { userId, action: 'FINALIZE_ATTEMPT', entityId: attempt.id, meta: { timedOut } },
+      data: {
+        userId,
+        action: 'FINALIZE_ATTEMPT',
+        entityId: attempt.id,
+        meta: { timedOut },
+      },
     });
 
-    const xpResult = await this.awardSubmissionXp(userId, isPassed, score, submission.id);
+    const xpResult = await this.awardSubmissionXp(
+      userId,
+      isPassed,
+      score,
+      submission.id,
+    );
     return {
       id: submission.id,
       status: submission.status,
@@ -342,7 +379,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   async finalizeExpiredAttempts() {
     try {
       const expiredAttempts = await this.prisma.quizAttempt.findMany({
-        where: { status: AttemptStatus.IN_PROGRESS, deadlineAt: { lte: new Date() } },
+        where: {
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: { lte: new Date() },
+        },
         select: { id: true, userId: true },
       });
       for (const attempt of expiredAttempts) {
@@ -361,7 +401,8 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         quizVersion: { select: { snapshot: true } },
       },
     });
-    if (!attempt) throw new NotFoundException('Không tìm thấy bài kiểm tra đang làm');
+    if (!attempt)
+      throw new NotFoundException('Không tìm thấy bài kiểm tra đang làm');
     return attempt;
   }
 
@@ -420,7 +461,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
 
   private readSnapshot(value: unknown): QuizSnapshot {
     if (!this.isSnapshot(value)) {
-      throw new BadRequestException('Bộ đề chưa có phiên bản hợp lệ để làm bài');
+      throw new BadRequestException(
+        'Bộ đề chưa có phiên bản hợp lệ để làm bài',
+      );
     }
     return value;
   }
@@ -466,10 +509,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
           points: question.points,
           // ORDERING: xáo vị trí hiển thị (ổn định theo attempt+câu hỏi, không lộ thứ tự đúng
           // vốn được mã hoá qua orderIndex của option). SINGLE/MULTIPLE: giữ nguyên thứ tự đã cấu hình.
-          options: (
-            question.questionType === 'ORDERING'
-              ? this.stableShuffle(question.options, attempt.id + question.id)
-              : question.options
+          options: (question.questionType === 'ORDERING'
+            ? this.stableShuffle(question.options, attempt.id + question.id)
+            : question.options
           ).map((option) => ({
             id: option.id,
             content: option.content,
@@ -485,30 +527,45 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private validateAnswers(snapshot: QuizSnapshot, dto: SaveAttemptAnswersDto) {
-    const questions = new Map(snapshot.questions.map((question) => [question.id, question]));
+    const questions = new Map(
+      snapshot.questions.map((question) => [question.id, question]),
+    );
     for (const answer of dto.answers) {
       const question = questions.get(answer.questionId);
-      if (!question) throw new BadRequestException('Câu trả lời không thuộc bộ đề này');
+      if (!question)
+        throw new BadRequestException('Câu trả lời không thuộc bộ đề này');
       const optionIds = new Set(question.options.map((option) => option.id));
-      if (answer.selectedOptionIds.some((optionId) => !optionIds.has(optionId))) {
+      if (
+        answer.selectedOptionIds.some((optionId) => !optionIds.has(optionId))
+      ) {
         throw new BadRequestException('Phương án trả lời không hợp lệ');
       }
-      if (question.questionType === 'SINGLE' && answer.selectedOptionIds.length > 1) {
-        throw new BadRequestException('Câu hỏi một đáp án chỉ được chọn một phương án');
+      if (
+        question.questionType === 'SINGLE' &&
+        answer.selectedOptionIds.length > 1
+      ) {
+        throw new BadRequestException(
+          'Câu hỏi một đáp án chỉ được chọn một phương án',
+        );
       }
       if (
         question.questionType === 'ORDERING' &&
         answer.selectedOptionIds.length > 0 &&
         answer.selectedOptionIds.length !== question.options.length
       ) {
-        throw new BadRequestException('Câu hỏi sắp xếp phải sắp xếp đủ tất cả các mục');
+        throw new BadRequestException(
+          'Câu hỏi sắp xếp phải sắp xếp đủ tất cả các mục',
+        );
       }
     }
   }
 
   // Sắp xếp ổn định theo hash(seed) — cùng seed luôn ra cùng thứ tự (không cần lưu
   // riêng vào DB), khác attempt/câu hỏi thì khác nhau nên không đoán trước được.
-  private stableShuffle<T extends { id: string }>(items: T[], seed: string): T[] {
+  private stableShuffle<T extends { id: string }>(
+    items: T[],
+    seed: string,
+  ): T[] {
     return items
       .map((item) => ({ item, key: this.hashString(seed + item.id) }))
       .sort((a, b) => a.key - b.key)
@@ -529,7 +586,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   ) {
     // KHÔNG sort ở đây — câu ORDERING cần giữ nguyên thứ tự đã trả lời để so khớp.
     const answersByQuestion = new Map(
-      answers.map((answer) => [answer.questionId, this.toSelectedOptionIds(answer.selectedOptionIds)]),
+      answers.map((answer) => [
+        answer.questionId,
+        this.toSelectedOptionIds(answer.selectedOptionIds),
+      ]),
     );
     let totalPoints = 0;
     let earnedPoints = 0;
@@ -545,13 +605,16 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
           .slice()
           .sort((a, b) => a.orderIndex - b.orderIndex)
           .map((option) => option.id);
-        isCorrect = JSON.stringify(correctOrder) === JSON.stringify(selectedOptionIds);
+        isCorrect =
+          JSON.stringify(correctOrder) === JSON.stringify(selectedOptionIds);
       } else {
         const correctOptionIds = question.options
           .filter((option) => option.isCorrect)
           .map((option) => option.id)
           .sort();
-        isCorrect = JSON.stringify(correctOptionIds) === JSON.stringify([...selectedOptionIds].sort());
+        isCorrect =
+          JSON.stringify(correctOptionIds) ===
+          JSON.stringify([...selectedOptionIds].sort());
       }
 
       if (isCorrect) earnedPoints += question.points;
@@ -573,9 +636,16 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   private async getFinalResult(userId: string, submissionId: string) {
     const submission = await this.prisma.submission.findFirst({
       where: { id: submissionId, userId },
-      select: { id: true, status: true, score: true, isPassed: true, submittedAt: true },
+      select: {
+        id: true,
+        status: true,
+        score: true,
+        isPassed: true,
+        submittedAt: true,
+      },
     });
-    if (!submission) throw new NotFoundException('Không tìm thấy kết quả bài kiểm tra');
+    if (!submission)
+      throw new NotFoundException('Không tìm thấy kết quả bài kiểm tra');
     return submission;
   }
 
@@ -588,7 +658,12 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     await this.gamification.updateActivity(userId);
     await this.gamification.incrementSubmissionStats(userId, isPassed);
     if (score === 100) {
-      const passResult = await this.gamification.awardXp(userId, 50, XpSource.EXAM_PASS, submissionId);
+      const passResult = await this.gamification.awardXp(
+        userId,
+        50,
+        XpSource.EXAM_PASS,
+        submissionId,
+      );
       const perfectResult = await this.gamification.awardXp(
         userId,
         50,

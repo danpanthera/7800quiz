@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -51,7 +55,9 @@ export class AuthService {
     }
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị khóa');
+      throw new UnauthorizedException(
+        'Tài khoản không tồn tại hoặc đã bị khóa',
+      );
     }
 
     const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
@@ -86,13 +92,20 @@ export class AuthService {
     };
   }
 
-  async changePassword(userId: string, oldPassword: string, newPassword: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  async changePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+    });
 
     const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!isMatch) throw new UnauthorizedException('Mật khẩu cũ không đúng');
 
-    if (newPassword.length < 6) throw new BadRequestException('Mật khẩu mới phải tối thiểu 6 ký tự');
+    if (newPassword.length < 6)
+      throw new BadRequestException('Mật khẩu mới phải tối thiểu 6 ký tự');
 
     const newHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({

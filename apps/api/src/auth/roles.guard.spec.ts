@@ -24,10 +24,9 @@ describe('RolesGuard', () => {
 
   it('cho phép người dùng có vai trò phù hợp', () => {
     const reflector = {
-      getAllAndOverride: jest.fn().mockReturnValue([
-        UserRole.ADMIN,
-        UserRole.TRAINER,
-      ]),
+      getAllAndOverride: jest
+        .fn()
+        .mockReturnValue([UserRole.ADMIN, UserRole.TRAINER]),
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
 
