@@ -146,7 +146,7 @@ export class AdminService {
   }
 
   createBankQuestion(data: {
-    content: string; explanation?: string; subjectId?: string;
+    content: string; imageUrl?: string; explanation?: string; subjectId?: string;
     points?: number; questionType?: string;
     options: { content: string; isCorrect: boolean; orderIndex: number }[];
   }) {
@@ -164,7 +164,7 @@ export class AdminService {
   }
 
   updateBankQuestion(id: string, data: {
-    content?: string; explanation?: string; subjectId?: string; points?: number;
+    content?: string; imageUrl?: string; explanation?: string; subjectId?: string; points?: number;
   }) {
     return this.prisma.question.update({ where: { id }, data });
   }

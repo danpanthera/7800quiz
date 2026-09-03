@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Put, Request, UseGuards } from '@ne
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SaveAttemptAnswersDto } from './dto/save-attempt-answers.dto';
 import { StartAttemptDto } from './dto/start-attempt.dto';
+import { ReportViolationDto } from './dto/report-violation.dto';
 import { AttemptsService } from './attempts.service';
 
 @Controller('me/attempts')
@@ -31,5 +32,14 @@ export class AttemptsController {
   @Post(':id/submit')
   submit(@Request() req: { user: { id: string } }, @Param('id') id: string) {
     return this.attemptsService.finalize(req.user.id, id, false);
+  }
+
+  @Post(':id/violations')
+  reportViolation(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Body() dto: ReportViolationDto,
+  ) {
+    return this.attemptsService.reportViolation(req.user.id, id, dto.type);
   }
 }

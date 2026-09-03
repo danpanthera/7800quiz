@@ -15,6 +15,7 @@ interface SnapshotOption {
 interface SnapshotQuestion {
   id: string;
   content: string;
+  imageUrl?: string | null;
   explanation?: string | null;
   questionType: string;
   orderIndex: number;
@@ -173,11 +174,41 @@ export class SubmissionsService {
           .sort((a, b) => a.orderIndex - b.orderIndex)
           .map((q) => {
             const selectedIds = answersByQuestion.get(q.id) ?? [];
+
+            if (q.questionType === 'ORDERING') {
+              const correctOrder = q.options.slice().sort((a, b) => a.orderIndex - b.orderIndex);
+              const correctOrderIds = correctOrder.map((o) => o.id);
+              const isCorrect = selectedIds.length > 0 && JSON.stringify(correctOrderIds) === JSON.stringify(selectedIds);
+              const byId = new Map(q.options.map((o) => [o.id, o]));
+              // Hiện theo đúng thứ tự người dùng đã sắp; đánh dấu từng mục đúng VỊ TRÍ hay không.
+              const displayed = selectedIds.length > 0 ? selectedIds : correctOrderIds;
+              return {
+                id: q.id,
+                content: q.content,
+                imageUrl: q.imageUrl ?? null,
+                explanation: q.explanation ?? null,
+                questionType: q.questionType,
+                points: q.points,
+                isCorrect,
+                options: displayed.map((optId, idx) => {
+                  const opt = byId.get(optId)!;
+                  return {
+                    id: opt.id,
+                    content: opt.content,
+                    isCorrect: correctOrderIds[idx] === optId,
+                    wasSelected: selectedIds.length > 0,
+                  };
+                }),
+                correctOrder: isCorrect ? undefined : correctOrder.map((o) => ({ id: o.id, content: o.content })),
+              };
+            }
+
             const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id).sort();
             const isCorrect = JSON.stringify(correctIds) === JSON.stringify([...selectedIds].sort());
             return {
               id: q.id,
               content: q.content,
+              imageUrl: q.imageUrl ?? null,
               explanation: q.explanation ?? null,
               questionType: q.questionType,
               points: q.points,

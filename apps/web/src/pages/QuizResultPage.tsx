@@ -1,8 +1,10 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Result, Skeleton, Space, Tag, Typography } from 'antd'
 import { CheckCircleOutlined, CloseCircleOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import api from '../lib/api'
+import { fireConfetti } from '../lib/feedback-fx'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -16,11 +18,13 @@ interface ResultOption {
 interface ResultQuestion {
   id: string
   content: string
+  imageUrl: string | null
   explanation: string | null
-  questionType: 'SINGLE' | 'MULTIPLE'
+  questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING'
   points: number
   isCorrect: boolean
   options: ResultOption[]
+  correctOrder?: { id: string; content: string }[]
 }
 
 interface QuizResult {
@@ -49,6 +53,10 @@ export default function QuizResultPage() {
     enabled: Boolean(submissionId),
     retry: false,
   })
+
+  useEffect(() => {
+    if (resultQuery.data?.isPassed === true) void fireConfetti()
+  }, [resultQuery.data?.id, resultQuery.data?.isPassed])
 
   if (resultQuery.isLoading) return <Skeleton active paragraph={{ rows: 6 }} />
   if (resultQuery.isError || !resultQuery.data) {
@@ -111,21 +119,56 @@ export default function QuizResultPage() {
                   </Tag>
                 </div>
                 <Paragraph style={{ fontWeight: 600, marginBottom: 16 }}>{q.content}</Paragraph>
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                  {q.options.map((opt, optIdx) => {
-                    let stateClass = ''
-                    if (opt.isCorrect) stateClass = 'is-correct-option'
-                    else if (opt.wasSelected) stateClass = 'is-wrong-selected'
-                    return (
-                      <div key={opt.id} className={`quiz-review-option ${stateClass}`}>
-                        <span className="quiz-option-letter">{String.fromCharCode(65 + optIdx)}</span>
-                        <span style={{ flex: 1 }}>{opt.content}</span>
-                        {opt.wasSelected && <Tag style={{ marginInlineEnd: 0 }}>Bạn chọn</Tag>}
-                        {opt.isCorrect && <CheckCircleOutlined style={{ color: '#27AE60' }} />}
-                      </div>
-                    )
-                  })}
-                </Space>
+                {q.imageUrl && (
+                  <img src={q.imageUrl} alt="" className="quiz-question-image" style={{ marginBottom: 16 }} />
+                )}
+
+                {q.questionType === 'ORDERING' ? (
+                  <>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Thứ tự bạn đã sắp xếp:</Text>
+                    <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 8 }}>
+                      {q.options.map((opt, optIdx) => (
+                        <div key={opt.id} className={`quiz-review-option ${opt.isCorrect ? 'is-correct-option' : 'is-wrong-selected'}`}>
+                          <span className="quiz-option-letter">{optIdx + 1}</span>
+                          <span style={{ flex: 1 }}>{opt.content}</span>
+                          {opt.isCorrect
+                            ? <CheckCircleOutlined style={{ color: '#27AE60' }} />
+                            : <CloseCircleOutlined style={{ color: '#E53935' }} />}
+                        </div>
+                      ))}
+                    </Space>
+                    {q.correctOrder && (
+                      <>
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 16 }}>Thứ tự đúng:</Text>
+                        <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 8 }}>
+                          {q.correctOrder.map((opt, optIdx) => (
+                            <div key={opt.id} className="quiz-review-option is-correct-option">
+                              <span className="quiz-option-letter">{optIdx + 1}</span>
+                              <span style={{ flex: 1 }}>{opt.content}</span>
+                            </div>
+                          ))}
+                        </Space>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    {q.options.map((opt, optIdx) => {
+                      let stateClass = ''
+                      if (opt.isCorrect) stateClass = 'is-correct-option'
+                      else if (opt.wasSelected) stateClass = 'is-wrong-selected'
+                      return (
+                        <div key={opt.id} className={`quiz-review-option ${stateClass}`}>
+                          <span className="quiz-option-letter">{String.fromCharCode(65 + optIdx)}</span>
+                          <span style={{ flex: 1 }}>{opt.content}</span>
+                          {opt.wasSelected && <Tag style={{ marginInlineEnd: 0 }}>Bạn chọn</Tag>}
+                          {opt.isCorrect && <CheckCircleOutlined style={{ color: '#27AE60' }} />}
+                        </div>
+                      )
+                    })}
+                  </Space>
+                )}
+
                 {q.explanation && (
                   <Paragraph className="quiz-review-explanation">💡 {q.explanation}</Paragraph>
                 )}

@@ -109,6 +109,7 @@ model Question {
   quizId       String?      @map("quiz_id") // null nếu thuộc ngân hàng câu hỏi chung
   subjectId    String?      @map("subject_id") // lĩnh vực
   content      String
+  imageUrl     String?      @map("image_url") // ảnh minh hoạ câu hỏi (URL)
   explanation  String? // giải thích đáp án đúng
   questionType QuestionType @default(SINGLE) @map("question_type")
   orderIndex   Int          @default(0) @map("order_index")
@@ -128,6 +129,7 @@ model Question {
 enum QuestionType {
   SINGLE // chọn 1 đáp án
   MULTIPLE // chọn nhiều đáp án
+  ORDERING // sắp xếp đúng thứ tự các mục
 
   @@map("question_type")
 }
@@ -218,6 +220,7 @@ model QuizAttempt {
   answerRevision Int           @default(0) @map("answer_revision")
   finalizedAt    DateTime?     @map("finalized_at") @db.Timestamptz(3)
   timedOut       Boolean       @default(false) @map("timed_out")
+  violationCount Int           @default(0) @map("violation_count") // số lần phát hiện rời màn hình/dán nội dung khi đang làm bài
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -226,10 +229,30 @@ model QuizAttempt {
   quizVersion QuizVersion         @relation(fields: [quizVersionId], references: [id])
   submission  Submission?         @relation(fields: [submissionId], references: [id])
   answers     QuizAttemptAnswer[]
+  violations  AttemptViolation[]
 
   @@index([userId, assignmentId, status])
   @@index([status, deadlineAt])
   @@map("quiz_attempts")
+}
+
+model AttemptViolation {
+  id         String              @id @default(uuid())
+  attemptId  String              @map("attempt_id")
+  type       AttemptViolationType
+  occurredAt DateTime            @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@map("attempt_violations")
+}
+
+enum AttemptViolationType {
+  TAB_HIDDEN // chuyển tab / thu nhỏ cửa sổ
+  FULLSCREEN_EXIT // thoát chế độ toàn màn hình
+  COPY_ATTEMPT // cố sao chép nội dung đề bài
+
+  @@map("attempt_violation_type")
 }
 
 enum AttemptStatus {

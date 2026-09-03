@@ -9,7 +9,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { AttemptStatus, Prisma, XpSource } from '@prisma/client';
+import { AttemptStatus, AttemptViolationType, Prisma, XpSource } from '@prisma/client';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -26,6 +26,7 @@ interface SnapshotOption {
 interface SnapshotQuestion {
   id: string;
   content: string;
+  imageUrl?: string | null;
   explanation?: string | null;
   questionType: string;
   orderIndex: number;
@@ -243,6 +244,27 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  // Ghi nhận hành vi nghi vấn (rời màn hình, thoát fullscreen, cố sao chép đề) khi
+  // đang làm bài — chỉ ghi log + tăng bộ đếm, KHÔNG tự động chấm rớt (tránh oan nếu
+  // người dùng vô tình alt-tab). Admin xem lại violationCount khi cần đối chiếu.
+  async reportViolation(userId: string, id: string, type: AttemptViolationType) {
+    const attempt = await this.prisma.quizAttempt.findFirst({ where: { id, userId } });
+    if (!attempt) throw new NotFoundException('Không tìm thấy bài kiểm tra đang làm');
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      return { violationCount: attempt.violationCount };
+    }
+
+    const [, updated] = await this.prisma.$transaction([
+      this.prisma.attemptViolation.create({ data: { attemptId: id, type } }),
+      this.prisma.quizAttempt.update({
+        where: { id },
+        data: { violationCount: { increment: 1 } },
+      }),
+    ]);
+
+    return { violationCount: updated.violationCount };
+  }
+
   async finalize(userId: string, id: string, timedOut: boolean) {
     const attempt = await this.findAttempt(userId, id);
     if (attempt.status === AttemptStatus.GRADED) {
@@ -372,6 +394,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       questions: questions.map((question) => ({
         id: question.id,
         content: question.content,
+        imageUrl: question.imageUrl,
         explanation: question.explanation,
         questionType: question.questionType,
         orderIndex: question.orderIndex,
@@ -437,10 +460,17 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         questions: snapshot.questions.map((question) => ({
           id: question.id,
           content: question.content,
+          imageUrl: question.imageUrl ?? null,
           questionType: question.questionType,
           orderIndex: question.orderIndex,
           points: question.points,
-          options: question.options.map((option) => ({
+          // ORDERING: xáo vị trí hiển thị (ổn định theo attempt+câu hỏi, không lộ thứ tự đúng
+          // vốn được mã hoá qua orderIndex của option). SINGLE/MULTIPLE: giữ nguyên thứ tự đã cấu hình.
+          options: (
+            question.questionType === 'ORDERING'
+              ? this.stableShuffle(question.options, attempt.id + question.id)
+              : question.options
+          ).map((option) => ({
             id: option.id,
             content: option.content,
             orderIndex: option.orderIndex,
@@ -466,32 +496,65 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       if (question.questionType === 'SINGLE' && answer.selectedOptionIds.length > 1) {
         throw new BadRequestException('Câu hỏi một đáp án chỉ được chọn một phương án');
       }
+      if (
+        question.questionType === 'ORDERING' &&
+        answer.selectedOptionIds.length > 0 &&
+        answer.selectedOptionIds.length !== question.options.length
+      ) {
+        throw new BadRequestException('Câu hỏi sắp xếp phải sắp xếp đủ tất cả các mục');
+      }
     }
+  }
+
+  // Sắp xếp ổn định theo hash(seed) — cùng seed luôn ra cùng thứ tự (không cần lưu
+  // riêng vào DB), khác attempt/câu hỏi thì khác nhau nên không đoán trước được.
+  private stableShuffle<T extends { id: string }>(items: T[], seed: string): T[] {
+    return items
+      .map((item) => ({ item, key: this.hashString(seed + item.id) }))
+      .sort((a, b) => a.key - b.key)
+      .map((entry) => entry.item);
+  }
+
+  private hashString(input: string): number {
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      hash = (hash * 31 + input.charCodeAt(i)) | 0;
+    }
+    return hash;
   }
 
   private scoreAttempt(
     snapshot: QuizSnapshot,
     answers: Array<{ questionId: string; selectedOptionIds: Prisma.JsonValue }>,
   ) {
+    // KHÔNG sort ở đây — câu ORDERING cần giữ nguyên thứ tự đã trả lời để so khớp.
     const answersByQuestion = new Map(
-      answers.map((answer) => [
-        answer.questionId,
-        this.toSelectedOptionIds(answer.selectedOptionIds).sort(),
-      ]),
+      answers.map((answer) => [answer.questionId, this.toSelectedOptionIds(answer.selectedOptionIds)]),
     );
     let totalPoints = 0;
     let earnedPoints = 0;
 
     for (const question of snapshot.questions) {
       totalPoints += question.points;
-      const correctOptionIds = question.options
-        .filter((option) => option.isCorrect)
-        .map((option) => option.id)
-        .sort();
       const selectedOptionIds = answersByQuestion.get(question.id) ?? [];
-      if (JSON.stringify(correctOptionIds) === JSON.stringify(selectedOptionIds)) {
-        earnedPoints += question.points;
+      let isCorrect: boolean;
+
+      if (question.questionType === 'ORDERING') {
+        // Đúng thứ tự = orderIndex tăng dần chính là thứ tự đúng do người soạn đề định nghĩa.
+        const correctOrder = question.options
+          .slice()
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .map((option) => option.id);
+        isCorrect = JSON.stringify(correctOrder) === JSON.stringify(selectedOptionIds);
+      } else {
+        const correctOptionIds = question.options
+          .filter((option) => option.isCorrect)
+          .map((option) => option.id)
+          .sort();
+        isCorrect = JSON.stringify(correctOptionIds) === JSON.stringify([...selectedOptionIds].sort());
       }
+
+      if (isCorrect) earnedPoints += question.points;
     }
 
     const score = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;

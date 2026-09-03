@@ -19,7 +19,8 @@ const { Title, Text } = Typography
 interface Subject { id: string; name: string; description?: string; _count?: { questions: number } }
 interface QuestionOption { id?: string; content: string; isCorrect: boolean; orderIndex: number }
 interface Question {
-  id: string; content: string; explanation?: string; questionType: 'SINGLE' | 'MULTIPLE'
+  id: string; content: string; imageUrl?: string; explanation?: string
+  questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING'
   points: number; subjectId?: string
   options: QuestionOption[]
   subject?: { id: string; name: string }
@@ -54,6 +55,7 @@ export default function QuestionsPage() {
   const [importing, setImporting] = useState(false)
   const [subjectForm] = Form.useForm()
   const [questionForm] = Form.useForm()
+  const questionTypeWatch = Form.useWatch('questionType', questionForm)
 
   // ── Duplicate + spell check state for manual add ──────────────────────
   const [dupWarnings, setDupWarnings] = useState<DupMatch[]>([])
@@ -176,7 +178,7 @@ export default function QuestionsPage() {
   const openEditQuestion = (q: Question) => {
     setEditQuestion(q)
     questionForm.setFieldsValue({
-      content: q.content, explanation: q.explanation,
+      content: q.content, imageUrl: q.imageUrl, explanation: q.explanation,
       subjectId: q.subjectId, questionType: q.questionType, points: q.points,
       options: q.options,
     })
@@ -187,11 +189,14 @@ export default function QuestionsPage() {
     if (editQuestion) {
       updateQuestionMutation.mutate({
         id: editQuestion.id,
-        content: values.content, explanation: values.explanation,
+        content: values.content, imageUrl: values.imageUrl, explanation: values.explanation,
         subjectId: values.subjectId, points: values.points,
       })
     } else {
-      createQuestionMutation.mutate(values)
+      // Thứ tự hiển thị/đúng (câu ORDERING) lấy theo vị trí cuối cùng trong danh sách,
+      // không phụ thuộc orderIndex khởi tạo ban đầu — để nút ↑↓ có tác dụng thật.
+      const options = (values.options ?? []).map((opt: QuestionOption, idx: number) => ({ ...opt, orderIndex: idx + 1 }))
+      createQuestionMutation.mutate({ ...values, options })
     }
   }
 
@@ -257,7 +262,11 @@ export default function QuestionsPage() {
     },
     {
       title: 'Loại', dataIndex: 'questionType', width: 110,
-      render: (v: string) => <Tag color={v === 'SINGLE' ? 'blue' : 'purple'}>{v === 'SINGLE' ? 'Chọn 1' : 'Chọn nhiều'}</Tag>,
+      render: (v: string) => {
+        const label = v === 'SINGLE' ? 'Chọn 1' : v === 'MULTIPLE' ? 'Chọn nhiều' : 'Sắp xếp'
+        const color = v === 'SINGLE' ? 'blue' : v === 'MULTIPLE' ? 'purple' : 'gold'
+        return <Tag color={color}>{label}</Tag>
+      },
     },
     { title: 'Điểm', dataIndex: 'points', width: 70 },
     {
@@ -344,12 +353,17 @@ export default function QuestionsPage() {
           expandable={{
             expandedRowRender: (r) => (
               <div style={{ padding: '4px 0' }}>
-                {r.options.map((o, i) => (
-                  <div key={i} style={{ padding: '3px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {o.isCorrect ? <Tag color="green">✔</Tag> : <Tag color="default">✗</Tag>}
-                    {o.content}
-                  </div>
-                ))}
+                {r.options
+                  .slice()
+                  .sort((a, b) => a.orderIndex - b.orderIndex)
+                  .map((o, i) => (
+                    <div key={i} style={{ padding: '3px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {r.questionType === 'ORDERING'
+                        ? <Tag>{i + 1}</Tag>
+                        : (o.isCorrect ? <Tag color="green">✔</Tag> : <Tag color="default">✗</Tag>)}
+                      {o.content}
+                    </div>
+                  ))}
               </div>
             ),
           }}
@@ -402,6 +416,15 @@ export default function QuestionsPage() {
               onBlur={(e) => onContentBlur(e.target.value)}
             />
           </Form.Item>
+          <Form.Item name="imageUrl" label="Ảnh minh hoạ (URL, không bắt buộc)">
+            <Input placeholder="https://..." />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.imageUrl !== cur.imageUrl}>
+            {({ getFieldValue }) => {
+              const url = getFieldValue('imageUrl')
+              return url ? <img src={url} alt="" className="quiz-question-image" style={{ marginBottom: 16, maxHeight: 180 }} /> : null
+            }}
+          </Form.Item>
 
           {/* Duplicate warnings */}
           {!editQuestion && dupWarnings.length > 0 && (
@@ -451,6 +474,7 @@ export default function QuestionsPage() {
             <Radio.Group>
               <Radio value="SINGLE">Chọn 1</Radio>
               <Radio value="MULTIPLE">Chọn nhiều</Radio>
+              <Radio value="ORDERING">Sắp xếp thứ tự</Radio>
             </Radio.Group>
           </Form.Item>
           <Form.Item name="explanation" label="Giải thích đáp án đúng">
@@ -461,18 +485,34 @@ export default function QuestionsPage() {
           </Form.Item>
           {!editQuestion && (
             <>
-              <Divider>Đáp án</Divider>
+              <Divider>{questionTypeWatch === 'ORDERING' ? 'Thứ tự đúng (sắp từ trên xuống)' : 'Đáp án'}</Divider>
+              {questionTypeWatch === 'ORDERING' && (
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                  Nhập nội dung theo đúng thứ tự — dùng nút ↑↓ để sắp lại nếu cần. Hệ thống sẽ xáo vị trí hiển thị
+                  cho từng người làm bài, thứ tự bạn nhập ở đây là đáp án đúng.
+                </Text>
+              )}
               <Form.List name="options">
-                {(fields) => (
+                {(fields, { move }) => (
                   <Space direction="vertical" style={{ width: '100%' }}>
                     {fields.map((field, idx) => (
                       <div key={field.key} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <Form.Item name={[field.name, 'isCorrect']} valuePropName="checked" style={{ margin: 0 }}>
-                          <Checkbox />
-                        </Form.Item>
+                        {questionTypeWatch === 'ORDERING' ? (
+                          <span className="quiz-option-letter">{idx + 1}</span>
+                        ) : (
+                          <Form.Item name={[field.name, 'isCorrect']} valuePropName="checked" style={{ margin: 0 }}>
+                            <Checkbox />
+                          </Form.Item>
+                        )}
                         <Form.Item name={[field.name, 'content']} style={{ flex: 1, margin: 0 }} rules={[{ required: true, message: ' ' }]}>
                           <Input placeholder={`Đáp án ${String.fromCharCode(65 + idx)}`} spellCheck lang="vi" />
                         </Form.Item>
+                        {questionTypeWatch === 'ORDERING' && (
+                          <Space size={4}>
+                            <Button size="small" disabled={idx === 0} onClick={() => move(idx, idx - 1)}>↑</Button>
+                            <Button size="small" disabled={idx === fields.length - 1} onClick={() => move(idx, idx + 1)}>↓</Button>
+                          </Space>
+                        )}
                       </div>
                     ))}
                   </Space>

@@ -10,6 +10,7 @@ import { io, Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { playCorrectSound, playWrongSound, playWinSound, fireConfettiBurst } from '../lib/feedback-fx'
 
 const { Title, Text } = Typography
 const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
@@ -111,6 +112,8 @@ export default function ArenaPlayerPage() {
     socket.on('arena.revealed', (data: RevealData) => {
       setRevealData(data)
       setLobbyTeams(data.leaderboard)
+      const mine = data.buzzes.find((b) => b.teamId === myTeamIdRef.current)
+      if (mine) void (mine.isCorrect ? playCorrectSound() : playWrongSound())
     })
 
     socket.on('arena.leaderboard', ({ teams }: { teams: ArenaTeam[] }) => {
@@ -121,6 +124,11 @@ export default function ArenaPlayerPage() {
       setFinalRanking(ranking)
       if (user && xpResults?.[user.id]) setMyXp(xpResults[user.id])
       setView('result')
+      const mine = ranking.find((t) => t.id === myTeamIdRef.current)
+      if (mine?.rank === 1) {
+        void playWinSound()
+        void fireConfettiBurst()
+      }
     })
 
     socket.emit(
@@ -164,18 +172,18 @@ export default function ArenaPlayerPage() {
 
   if (view === 'join') {
     if (previewLoading) {
-      return <CenterCard><Spin size="large" /></CenterCard>
+      return <CenterCard key={view}><Spin size="large" /></CenterCard>
     }
     if (previewFailed || !preview) {
       return (
-        <CenterCard>
+        <CenterCard key={view}>
           <Result status="error" title="Mã tham gia không hợp lệ" subTitle="Kiểm tra lại mã hoặc quét lại mã QR từ MC." />
         </CenterCard>
       )
     }
     if (preview.status !== 'LOBBY') {
       return (
-        <CenterCard>
+        <CenterCard key={view}>
           <Result
             status="warning"
             title={preview.status === 'RUNNING' ? 'Phiên đấu đã bắt đầu' : 'Phiên đấu đã kết thúc'}
@@ -185,7 +193,7 @@ export default function ArenaPlayerPage() {
       )
     }
     return (
-      <CenterCard>
+      <CenterCard key={view}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <TrophyOutlined style={{ fontSize: 40, color: '#faad14' }} />
           <Title level={3} style={{ margin: '8px 0 0' }}>{preview.name}</Title>
@@ -219,7 +227,7 @@ export default function ArenaPlayerPage() {
 
   if (view === 'lobby') {
     return (
-      <CenterCard>
+      <CenterCard key={view}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <Spin size="large" />
           <Title level={4} style={{ marginTop: 16 }}>Đã tham gia! Đang chờ MC bắt đầu…</Title>
@@ -247,7 +255,7 @@ export default function ArenaPlayerPage() {
   if (view === 'game' && currentQuestion) {
     const isRevealed = !!revealData
     return (
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '16px 12px' }}>
+      <div key={currentQuestion.roundId} className="arena-view-transition" style={{ maxWidth: 560, margin: '0 auto', padding: '16px 12px' }}>
         <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
           <Tag color={myTeamColor}>{teamName}</Tag>
           <Text strong>{myScore} điểm</Text>
@@ -325,7 +333,7 @@ export default function ArenaPlayerPage() {
   if (view === 'result') {
     const myRank = finalRanking.find((t) => t.id === myTeamId)
     return (
-      <CenterCard>
+      <CenterCard key={view}>
         <div style={{ textAlign: 'center' }}>
           <Title level={3}><TrophyOutlined style={{ color: '#faad14' }} /> Kết quả Đấu trường</Title>
           {myRank && (
@@ -370,14 +378,14 @@ export default function ArenaPlayerPage() {
     )
   }
 
-  return <CenterCard><Spin size="large" /></CenterCard>
+  return <CenterCard key={view}><Spin size="large" /></CenterCard>
 }
 
 // ─── Layout helper ──────────────────────────────────────────────────────────
 
 function CenterCard({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="arena-view-transition" style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <Card style={{ width: '100%', maxWidth: 420 }}>
         {children}
       </Card>

@@ -48,6 +48,7 @@ export class QuizService {
       select: {
         id: true,
         content: true,
+        imageUrl: true,
         questionType: true,
         orderIndex: true,
         points: true,

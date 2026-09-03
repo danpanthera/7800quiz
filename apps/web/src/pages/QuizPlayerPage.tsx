@@ -16,8 +16,11 @@ import {
   message,
 } from 'antd'
 import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  EyeInvisibleOutlined,
   LeftOutlined,
   RightOutlined,
   SaveOutlined,
@@ -45,10 +48,30 @@ interface QuizOption {
 interface QuizQuestion {
   id: string
   content: string
-  questionType: 'SINGLE' | 'MULTIPLE'
+  imageUrl: string | null
+  questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING'
   orderIndex: number
   points: number
   options: QuizOption[]
+}
+
+// ORDERING: nếu đã có đáp án đủ số mục thì giữ đúng thứ tự đã chọn,
+// chưa trả lời thì hiện theo thứ tự server đã xáo sẵn cho attempt này.
+function getOrderingArrangement(question: QuizQuestion, selected: string[]): QuizOption[] {
+  if (selected.length === question.options.length) {
+    const byId = new Map(question.options.map((o) => [o.id, o]))
+    const arranged = selected.map((id) => byId.get(id)).filter((o): o is QuizOption => Boolean(o))
+    if (arranged.length === question.options.length) return arranged
+  }
+  return question.options
+}
+
+function moveItem(list: string[], index: number, direction: -1 | 1): string[] {
+  const next = [...list]
+  const target = index + direction
+  if (target < 0 || target >= next.length) return next
+  ;[next[index], next[target]] = [next[target], next[index]]
+  return next
 }
 
 interface AttemptData {
@@ -109,6 +132,7 @@ export default function QuizPlayerPage() {
   const [hydrated, setHydrated] = useState(false)
   const [retryToken, setRetryToken] = useState(0)
   const [remainingSeconds, setRemainingSeconds] = useState(0)
+  const [violationCount, setViolationCount] = useState(0)
   const initializedAttemptId = useRef<string | undefined>(undefined)
   const answersRef = useRef(answers)
   const answerRevisionRef = useRef(answerRevision)
@@ -141,6 +165,33 @@ export default function QuizPlayerPage() {
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [])
+
+  // Ghi nhận rời màn hình / cố sao chép đề khi đang làm bài — chỉ cảnh báo +
+  // lưu lại để đối chiếu sau, KHÔNG tự động chấm rớt (tránh oan vô tình alt-tab).
+  useEffect(() => {
+    if (!attemptId || attemptQuery.data?.attempt.status !== 'IN_PROGRESS') return
+
+    const reportViolation = (type: 'TAB_HIDDEN' | 'COPY_ATTEMPT') => {
+      api
+        .post(`/me/attempts/${attemptId}/violations`, { type })
+        .then((response) => setViolationCount(response.data.violationCount))
+        .catch(() => {})
+    }
+    const handleVisibility = () => {
+      if (document.hidden) reportViolation('TAB_HIDDEN')
+    }
+    const handleCopy = (event: ClipboardEvent) => {
+      event.preventDefault()
+      reportViolation('COPY_ATTEMPT')
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    document.addEventListener('copy', handleCopy)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      document.removeEventListener('copy', handleCopy)
+    }
+  }, [attemptId, attemptQuery.data?.attempt.status])
 
   useEffect(() => {
     const data = attemptQuery.data
@@ -288,6 +339,10 @@ export default function QuizPlayerPage() {
   }
 
   const selectedOptionIds = answers[currentQuestion.id] ?? []
+  const orderingArrangement = currentQuestion.questionType === 'ORDERING'
+    ? getOrderingArrangement(currentQuestion, selectedOptionIds)
+    : []
+  const orderingArrangementIds = orderingArrangement.map((o) => o.id)
   const answeredQuestionCount = Object.values(answers).filter((selected) => selected.length > 0).length
   const progressPercent = quiz.questions.length
     ? Math.round((answeredQuestionCount / quiz.questions.length) * 100)
@@ -332,6 +387,16 @@ export default function QuizPlayerPage() {
         />
       )}
 
+      {violationCount > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          icon={<EyeInvisibleOutlined />}
+          message={`Đã ghi nhận ${violationCount} lần rời khỏi màn hình làm bài`}
+          description="Hành vi này được hệ thống lưu lại để đối chiếu. Vui lòng ở lại trang làm bài cho đến khi nộp."
+        />
+      )}
+
       <div className="quiz-player-layout">
         <aside className="quiz-navigation" aria-label="Danh sách câu hỏi">
           <div className="quiz-navigation-summary">
@@ -357,11 +422,18 @@ export default function QuizPlayerPage() {
         <Card className="quiz-question-card" bordered={false}>
           <div className="quiz-question-heading">
             <Text>Câu {currentQuestionIndex + 1} / {quiz.questions.length}</Text>
-            <Tag>{currentQuestion.questionType === 'MULTIPLE' ? 'Chọn nhiều đáp án' : 'Chọn một đáp án'}</Tag>
+            <Tag>
+              {currentQuestion.questionType === 'MULTIPLE' && 'Chọn nhiều đáp án'}
+              {currentQuestion.questionType === 'SINGLE' && 'Chọn một đáp án'}
+              {currentQuestion.questionType === 'ORDERING' && 'Sắp xếp đúng thứ tự'}
+            </Tag>
           </div>
           <Title level={3}>{currentQuestion.content}</Title>
+          {currentQuestion.imageUrl && (
+            <img src={currentQuestion.imageUrl} alt="" className="quiz-question-image" style={{ marginBottom: 20 }} />
+          )}
 
-          {currentQuestion.questionType === 'MULTIPLE' ? (
+          {currentQuestion.questionType === 'MULTIPLE' && (
             <Checkbox.Group
               className="quiz-options"
               value={selectedOptionIds}
@@ -374,7 +446,9 @@ export default function QuizPlayerPage() {
                 </Checkbox>
               ))}
             </Checkbox.Group>
-          ) : (
+          )}
+
+          {currentQuestion.questionType === 'SINGLE' && (
             <Radio.Group
               className="quiz-options"
               value={selectedOptionIds[0]}
@@ -387,6 +461,33 @@ export default function QuizPlayerPage() {
                 </Radio>
               ))}
             </Radio.Group>
+          )}
+
+          {currentQuestion.questionType === 'ORDERING' && (
+            <Space direction="vertical" size={8} className="quiz-options" style={{ width: '100%' }}>
+              {orderingArrangement.map((option, idx) => (
+                <div key={option.id} className="quiz-option quiz-ordering-item">
+                  <span className="quiz-option-letter">{idx + 1}</span>
+                  <span style={{ flex: 1 }}>{option.content}</span>
+                  <Space size={4}>
+                    <Button
+                      size="small"
+                      icon={<ArrowUpOutlined />}
+                      disabled={idx === 0}
+                      aria-label="Di chuyển lên"
+                      onClick={() => updateAnswer(currentQuestion.id, moveItem(orderingArrangementIds, idx, -1))}
+                    />
+                    <Button
+                      size="small"
+                      icon={<ArrowDownOutlined />}
+                      disabled={idx === orderingArrangement.length - 1}
+                      aria-label="Di chuyển xuống"
+                      onClick={() => updateAnswer(currentQuestion.id, moveItem(orderingArrangementIds, idx, 1))}
+                    />
+                  </Space>
+                </div>
+              ))}
+            </Space>
           )}
 
           <footer className="quiz-player-actions">
