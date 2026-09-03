@@ -1,7 +1,6 @@
 import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { AssignmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
 
@@ -43,7 +42,6 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 export class AdminService {
   constructor(
     private prisma: PrismaService,
-    private notifications: NotificationsService,
   ) {}
 
   private normalizeUserAD(userAD?: string | null): string | null {
@@ -764,16 +762,6 @@ export class AdminService {
     const session = await this.prisma.examSession.update({ where: { id }, data: data as any,
       include: { quiz: { select: { title: true } }, class: { select: { members: { select: { userId: true } } } } },
     });
-    // Gửi push notification khi mở đợt thi
-    if (data.status === 'OPEN') {
-      const memberIds = session.class.members.map((m: { userId: string }) => m.userId);
-      await this.notifications.sendToUsers(
-        memberIds,
-        '📝 Đợt thi mới đã mở',
-        `"${session.quiz.title}" — ${session.name} đang chờ bạn!`,
-        { sessionId: session.id, type: 'EXAM_OPENED' },
-      );
-    }
     return session;
   }
 
