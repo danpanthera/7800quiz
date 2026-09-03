@@ -28,7 +28,9 @@ interface QuizSnapshot {
 }
 
 function toSelectedOptionIds(value: Prisma.JsonValue): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === 'string')
+    : [];
 }
 
 @Injectable()
@@ -40,9 +42,15 @@ export class SubmissionsService {
 
   async submit(userId: string, dto: SubmitDto) {
     // Idempotency — nếu đã tồn tại submission với ID này thì trả về luôn
-    const existing = await this.prisma.submission.findUnique({ where: { id: dto.id } });
+    const existing = await this.prisma.submission.findUnique({
+      where: { id: dto.id },
+    });
     if (existing) {
-      return { id: existing.id, status: existing.status, score: existing.score };
+      return {
+        id: existing.id,
+        status: existing.status,
+        score: existing.score,
+      };
     }
 
     // Nếu quizVersionId rỗng, tự tìm version mới nhất
@@ -69,7 +77,10 @@ export class SubmissionsService {
         where: { quizId: dto.quizId },
         include: { options: { where: { isCorrect: true } } },
       }),
-      this.prisma.quiz.findUnique({ where: { id: dto.quizId }, select: { passScore: true } }),
+      this.prisma.quiz.findUnique({
+        where: { id: dto.quizId },
+        select: { passScore: true },
+      }),
     ]);
 
     let totalPoints = 0;
@@ -119,20 +130,45 @@ export class SubmissionsService {
     await this.gamification.updateActivity(userId);
     await this.gamification.incrementSubmissionStats(userId, isPassed);
 
-    let xpResult: { levelUp: boolean; newLevel: number; newBadges: { code: string; name: string; iconSlug: string }[] };
+    let xpResult: {
+      levelUp: boolean;
+      newLevel: number;
+      newBadges: { code: string; name: string; iconSlug: string }[];
+    };
     if (score === 100) {
       // Pass + perfect
-      const passResult = await this.gamification.awardXp(userId, 50, XpSource.EXAM_PASS, submission.id);
-      const perfectResult = await this.gamification.awardXp(userId, 50, XpSource.EXAM_PERFECT, submission.id, 'Điểm tuyệt đối');
+      const passResult = await this.gamification.awardXp(
+        userId,
+        50,
+        XpSource.EXAM_PASS,
+        submission.id,
+      );
+      const perfectResult = await this.gamification.awardXp(
+        userId,
+        50,
+        XpSource.EXAM_PERFECT,
+        submission.id,
+        'Điểm tuyệt đối',
+      );
       xpResult = {
         levelUp: passResult.levelUp || perfectResult.levelUp,
         newLevel: Math.max(passResult.newLevel, perfectResult.newLevel),
         newBadges: [...passResult.newBadges, ...perfectResult.newBadges],
       };
     } else if (isPassed) {
-      xpResult = await this.gamification.awardXp(userId, 50, XpSource.EXAM_PASS, submission.id);
+      xpResult = await this.gamification.awardXp(
+        userId,
+        50,
+        XpSource.EXAM_PASS,
+        submission.id,
+      );
     } else {
-      xpResult = await this.gamification.awardXp(userId, 20, XpSource.EXAM_FAIL, submission.id);
+      xpResult = await this.gamification.awardXp(
+        userId,
+        20,
+        XpSource.EXAM_FAIL,
+        submission.id,
+      );
     }
     // ─────────────────────────────────────────────────────────────────────
 
@@ -166,7 +202,10 @@ export class SubmissionsService {
     const { quizVersion, answers, ...rest } = submission;
     const snapshot = quizVersion.snapshot as unknown as QuizSnapshot;
     const answersByQuestion = new Map(
-      answers.map((a) => [a.questionId, toSelectedOptionIds(a.selectedOptionIds)]),
+      answers.map((a) => [
+        a.questionId,
+        toSelectedOptionIds(a.selectedOptionIds),
+      ]),
     );
 
     const questions = Array.isArray(snapshot?.questions)
@@ -176,12 +215,20 @@ export class SubmissionsService {
             const selectedIds = answersByQuestion.get(q.id) ?? [];
 
             if (q.questionType === 'ORDERING') {
-              const correctOrder = q.options.slice().sort((a, b) => a.orderIndex - b.orderIndex);
+              const correctOrder = q.options
+                .slice()
+                .sort((a, b) => a.orderIndex - b.orderIndex);
               const correctOrderIds = correctOrder.map((o) => o.id);
-              const isCorrect = selectedIds.length > 0 && JSON.stringify(correctOrderIds) === JSON.stringify(selectedIds);
+              const isCorrect =
+                selectedIds.length > 0 &&
+                JSON.stringify(correctOrderIds) === JSON.stringify(selectedIds);
               const byId = new Map(q.options.map((o) => [o.id, o]));
               // Hiện theo đúng thứ tự người dùng đã sắp; đánh dấu từng mục đúng VỊ TRÍ hay không.
-              const displayed = selectedIds.length > 0 ? selectedIds : correctOrderIds;
+              // Lọc bỏ id lạ (không thuộc snapshot câu hỏi) để không crash trang kết quả nếu dữ liệu
+              // đã lưu từng lệch khỏi snapshot hiện tại — coi như chưa trả lời hợp lệ trong trường hợp đó.
+              const validSelectedIds = selectedIds.filter((id) => byId.has(id));
+              const displayed =
+                validSelectedIds.length === q.options.length ? validSelectedIds : correctOrderIds;
               return {
                 id: q.id,
                 content: q.content,
@@ -196,15 +243,22 @@ export class SubmissionsService {
                     id: opt.id,
                     content: opt.content,
                     isCorrect: correctOrderIds[idx] === optId,
-                    wasSelected: selectedIds.length > 0,
+                    wasSelected: displayed === validSelectedIds,
                   };
                 }),
-                correctOrder: isCorrect ? undefined : correctOrder.map((o) => ({ id: o.id, content: o.content })),
+                correctOrder: isCorrect
+                  ? undefined
+                  : correctOrder.map((o) => ({ id: o.id, content: o.content })),
               };
             }
 
-            const correctIds = q.options.filter((o) => o.isCorrect).map((o) => o.id).sort();
-            const isCorrect = JSON.stringify(correctIds) === JSON.stringify([...selectedIds].sort());
+            const correctIds = q.options
+              .filter((o) => o.isCorrect)
+              .map((o) => o.id)
+              .sort();
+            const isCorrect =
+              JSON.stringify(correctIds) ===
+              JSON.stringify([...selectedIds].sort());
             return {
               id: q.id,
               content: q.content,
