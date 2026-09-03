@@ -39,7 +39,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `arena-${sessionId}`;
   }
 
-  private extractHostUser(client: Socket): { userId: string; role: UserRole } | null {
+  private extractUser(client: Socket): { userId: string; role: UserRole } | null {
     try {
       const token =
         (client.handshake.auth?.token as string) ||
@@ -59,7 +59,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const host = this.extractHostUser(client);
+    const host = this.extractUser(client);
     if (!host || !ARENA_HOST_ROLES.includes(host.role)) {
       return { error: 'Không có quyền điều hành' };
     }
@@ -69,18 +69,25 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { ok: true, sessionId: data.sessionId };
   }
 
-  // ─── Mobile: join a team ──────────────────────────────────────────────────
+  // ─── Người chơi: tham gia đội (bắt buộc đăng nhập) ─────────────────────────
 
   @SubscribeMessage('arena.join')
   async handleJoin(
     @MessageBody() data: { joinCode: string; teamName: string },
     @ConnectedSocket() client: Socket,
   ) {
+    const player = this.extractUser(client);
+    if (!player) return { error: 'Cần đăng nhập để tham gia Arena' };
     try {
-      const { session, team } = await this.arenaService.joinTeam(data.joinCode, data.teamName);
+      const { session, team } = await this.arenaService.joinTeam(
+        data.joinCode,
+        data.teamName,
+        player.userId,
+      );
       client.join(this.getRoomName(session.id));
       client.data.sessionId = session.id;
       client.data.teamId = team.id;
+      client.data.userId = player.userId;
 
       // Broadcast new team to everyone in room
       this.server.to(this.getRoomName(session.id)).emit('arena.team_joined', {
@@ -107,7 +114,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const host = this.extractHostUser(client);
+    const host = this.extractUser(client);
     if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const questionData = await this.arenaService.startSession(data.sessionId);
@@ -119,7 +126,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Mobile: submit answer ────────────────────────────────────────────────
+  // ─── Người chơi: nộp đáp án (buzz-in) ───────────────────────────────────────
 
   @SubscribeMessage('arena.answer')
   async handleAnswer(
@@ -127,11 +134,14 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     data: { arenaRoundId: string; teamId: string; selectedOptionIds: string[] },
     @ConnectedSocket() client: Socket,
   ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return { error: 'Cần tham gia đội trước khi trả lời' };
     try {
       const result = await this.arenaService.recordAnswer(
         data.arenaRoundId,
         data.teamId,
         data.selectedOptionIds,
+        userId,
       );
       // Notify everyone that a team has buzzed (no correct/wrong revealed yet)
       const sessionId = client.data.sessionId as string;
@@ -153,7 +163,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const host = this.extractHostUser(client);
+    const host = this.extractUser(client);
     if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const revealData = await this.arenaService.revealRound(data.sessionId);
@@ -174,7 +184,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const host = this.extractHostUser(client);
+    const host = this.extractUser(client);
     if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const result = await this.arenaService.nextQuestion(data.sessionId);
@@ -196,7 +206,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const host = this.extractHostUser(client);
+    const host = this.extractUser(client);
     if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const result = await this.arenaService.endSession(data.sessionId);

@@ -29,6 +29,7 @@ model User {
   classMembers ClassMember[]
   userProgress UserProgress?
   attempts     QuizAttempt[]
+  arenaTeams   ArenaTeam[]
 
   @@map("users")
 }
@@ -413,6 +414,7 @@ enum ArenaHostMode {
 model ArenaTeam {
   id             String   @id @default(uuid())
   arenaSessionId String   @map("arena_session_id")
+  userId         String?  @map("user_id") // người chơi sở hữu đội — bắt buộc từ khi Arena yêu cầu đăng nhập
   name           String
   color          String // hex color tự động assign
   score          Int      @default(0)
@@ -420,8 +422,10 @@ model ArenaTeam {
   joinedAt       DateTime @default(now()) @map("joined_at")
 
   arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   buzzes       ArenaBuzz[]
 
+  @@unique([arenaSessionId, userId])
   @@map("arena_teams")
 }
 

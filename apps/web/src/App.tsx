@@ -21,6 +21,7 @@ import ClassesPage from './pages/ClassesPage'
 import ExamSessionsPage from './pages/ExamSessionsPage'
 import CanBoPage from './pages/CanBoPage'
 import ArenaPage from './pages/ArenaPage'
+import ArenaPlayerPage from './pages/ArenaPlayerPage'
 import AchievementsPage from './pages/AchievementsPage'
 import LevelsPage from './pages/LevelsPage'
 import { ADMIN_ROLES, TRAINING_ROLES, USER_ROLES } from './lib/permissions'
@@ -158,6 +159,7 @@ export default function App() {
                   <Route path="my/quizzes" element={<MyQuizzesPage />} />
                   <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
                   <Route path="my/results/:submissionId" element={<QuizResultPage />} />
+                  <Route path="arena/join/:joinCode" element={<ArenaPlayerPage />} />
                 </Route>
 
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>

@@ -138,7 +138,7 @@ export class ArenaService {
 
   // ─── Socket.IO Business Logic ──────────────────────────────────────────────
 
-  async joinTeam(joinCode: string, teamName: string) {
+  async joinTeam(joinCode: string, teamName: string, userId: string) {
     const session = await this.prisma.arenaSession.findUnique({
       where: { joinCode },
       include: { teams: true },
@@ -146,6 +146,11 @@ export class ArenaService {
     if (!session) throw new BadRequestException('Mã tham gia không hợp lệ');
     if (session.status !== ArenaStatus.LOBBY)
       throw new BadRequestException('Phiên đấu đã bắt đầu hoặc kết thúc');
+
+    // Đã tham gia trước đó (vd: refresh trang) — trả lại đúng đội cũ, không tạo mới
+    const existingByUser = session.teams.find((t) => t.userId === userId);
+    if (existingByUser) return { session, team: existingByUser };
+
     if (session.teams.length >= 9)
       throw new BadRequestException('Phiên đã đủ 9 đội');
 
@@ -156,7 +161,7 @@ export class ArenaService {
 
     const color = TEAM_COLORS[session.teams.length];
     const team = await this.prisma.arenaTeam.create({
-      data: { arenaSessionId: session.id, name: teamName, color },
+      data: { arenaSessionId: session.id, userId, name: teamName, color },
     });
 
     return { session, team };
@@ -228,7 +233,7 @@ export class ArenaService {
     };
   }
 
-  async recordAnswer(arenaRoundId: string, teamId: string, selectedOptionIds: string[]) {
+  async recordAnswer(arenaRoundId: string, teamId: string, selectedOptionIds: string[], userId: string) {
     const round = await this.prisma.arenaRound.findUnique({
       where: { id: arenaRoundId },
       include: {
@@ -240,11 +245,12 @@ export class ArenaService {
     if (round.status !== ArenaRoundStatus.ACTIVE)
       throw new BadRequestException('Round không đang active');
 
-    // Check team belongs to session
+    // Check team belongs to session và đúng người sở hữu đội mới được trả lời thay đội
     const team = await this.prisma.arenaTeam.findFirst({
       where: { id: teamId, arenaSessionId: round.arenaSessionId },
     });
     if (!team) throw new BadRequestException('Đội không thuộc phiên này');
+    if (team.userId !== userId) throw new BadRequestException('Bạn không thuộc đội này');
 
     // Check not already answered
     const existingBuzz = await this.prisma.arenaBuzz.findUnique({
@@ -390,12 +396,42 @@ export class ArenaService {
       data: { status: ArenaStatus.FINISHED },
     });
 
-    // TODO Sprint 9: Arena XP — cần thêm userId tracking vào ArenaTeam trước khi award XP
-    // Hiện tại ArenaTeam là team Kahoot, không track individual user.
+    // Cộng XP + thăng bậc (dùng chung hệ Gamification với làm bài quiz)
+    const xpResults: Record<
+      string,
+      { levelUp: boolean; newLevel: number; newBadges: { code: string; name: string; iconSlug: string }[] }
+    > = {};
+    for (let i = 0; i < teams.length; i++) {
+      const team = teams[i];
+      if (!team.userId) continue; // đội cũ trước khi Arena yêu cầu đăng nhập — bỏ qua
+      const rank = i + 1;
+      const isWinner = rank === 1;
+
+      await this.gamification.updateActivity(team.userId);
+      if (isWinner) await this.gamification.incrementArenaWins(team.userId);
+
+      const participateResult = await this.gamification.awardXp(
+        team.userId,
+        10,
+        XpSource.ARENA_PARTICIPATE,
+        sessionId,
+        `Tham gia Arena, hạng ${rank}`,
+      );
+      const winResult = isWinner
+        ? await this.gamification.awardXp(team.userId, 30, XpSource.ARENA_WIN, sessionId, 'Vô địch Arena')
+        : null;
+
+      xpResults[team.userId] = {
+        levelUp: participateResult.levelUp || (winResult?.levelUp ?? false),
+        newLevel: Math.max(participateResult.newLevel, winResult?.newLevel ?? 0),
+        newBadges: [...participateResult.newBadges, ...(winResult?.newBadges ?? [])],
+      };
+    }
 
     return {
       type: 'ended',
       ranking: teams.map((t, i) => ({ ...t, rank: i + 1 })),
+      xpResults,
     };
   }
 }

@@ -65,7 +65,8 @@ export class ArenaController {
     return this.arenaService.stopSession(id);
   }
 
-  // ─── Public endpoint — Flutter dùng để lấy session info qua joinCode ────
+  // ─── Public endpoint — trang join của người chơi xem trước thông tin phiên
+  // đấu bằng joinCode, TRƯỚC khi đăng nhập (đăng nhập chỉ bắt buộc lúc join thật) ──
 
   @Get('arena/join/:joinCode')
   joinInfo(@Param('joinCode') joinCode: string) {
