@@ -4,7 +4,7 @@ import {
   Table, Tag, Typography, Badge, Button, Space, Popconfirm, App,
   Modal, Form, Select, DatePicker, Radio, Divider,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, ApartmentOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import api from '../lib/api'
 
@@ -13,7 +13,7 @@ interface Assignment {
   quiz: { id: string; title: string }
   user: { id: string; fullName: string } | null
   canBo: { id: string; fullName: string; cbCode: string; department?: { id: string; name: string } | null } | null
-  department: { id: string; name: string } | null
+  department: { id: string; name: string; parentId?: string | null } | null
   startAt: string | null
   endAt: string | null
   status: string
@@ -41,7 +41,7 @@ export default function AssignmentsPage() {
   const [form] = Form.useForm()
 
   // State cho form tạo mới
-  const [assignTarget, setAssignTarget] = useState<'all' | 'custom'>('custom')
+  const [assignTarget, setAssignTarget] = useState<'all' | 'custom' | 'department'>('custom')
   const [filterUnitId, setFilterUnitId] = useState<string | undefined>()
   const [filterDeptId, setFilterDeptId] = useState<string | undefined>()
 
@@ -129,8 +129,13 @@ export default function AssignmentsPage() {
   }
   const openEdit = (row: Assignment) => {
     setEditItem(row)
-    setAssignTarget(row.canBo || row.user ? 'custom' : 'all')
-    setFilterUnitId(undefined)
+    if (row.department) {
+      setAssignTarget('department')
+      setFilterUnitId(row.department.parentId ?? undefined)
+    } else {
+      setAssignTarget(row.canBo || row.user ? 'custom' : 'all')
+      setFilterUnitId(undefined)
+    }
     setFilterDeptId(undefined)
     setModalOpen(true)
   }
@@ -145,15 +150,19 @@ export default function AssignmentsPage() {
       endAt: values.endAt ? values.endAt.toISOString() : null,
     }
     if (editItem) {
-      const ids: string[] = values.canBoIds ?? []
       const updatePayload: any = { ...base, quizId: values.quizId }
       if (assignTarget === 'all') {
         // Giao cho tất cả: không thay đổi đối tượng
-      } else if (ids.length === 1) {
-        // Phân biệt canBo vs department dựa vào danh sách
-        const isCanBo = canBoList.some(c => c.id === ids[0])
-        if (isCanBo) updatePayload.canBoId = ids[0]
-        else updatePayload.departmentId = ids[0]
+      } else if (assignTarget === 'department') {
+        const deptIds: string[] = values.departmentIds ?? []
+        if (deptIds.length > 1) {
+          message.warning('Sửa phân công chỉ hỗ trợ 1 phòng ban. Để giao nhiều phòng ban, vui lòng tạo phân công mới.')
+          return
+        }
+        if (deptIds.length === 1) updatePayload.departmentId = deptIds[0]
+      } else {
+        const ids: string[] = values.canBoIds ?? []
+        if (ids.length === 1) updatePayload.canBoId = ids[0]
       }
       updateMut.mutate({ id: editItem.id, ...updatePayload })
       return
@@ -161,6 +170,10 @@ export default function AssignmentsPage() {
     // Tạo mới
     if (assignTarget === 'all') {
       bulkMut.mutate({ quizId: values.quizId, canBoIds: 'all', ...base })
+    } else if (assignTarget === 'department') {
+      const deptIds: string[] = values.departmentIds ?? []
+      if (!deptIds.length) { message.warning('Vui lòng chọn ít nhất 1 phòng ban'); return }
+      bulkMut.mutate({ quizId: values.quizId, departmentIds: deptIds, ...base })
     } else {
       const ids: string[] = values.canBoIds ?? []
       if (!ids.length) { message.warning('Vui lòng chọn ít nhất 1 cán bộ'); return }
@@ -238,9 +251,8 @@ export default function AssignmentsPage() {
           if (editItem) {
             form.setFieldsValue({
               quizId: editItem.quiz.id,
-              canBoIds: editItem.canBo ? [editItem.canBo.id]
-                : editItem.department ? [editItem.department.id]
-                : undefined,
+              canBoIds: editItem.canBo ? [editItem.canBo.id] : undefined,
+              departmentIds: editItem.department ? [editItem.department.id] : undefined,
               status: editItem.status,
               startAt: editItem.startAt ? dayjs(editItem.startAt) : null,
               endAt: editItem.endAt ? dayjs(editItem.endAt) : null,
@@ -272,12 +284,52 @@ export default function AssignmentsPage() {
                 setFilterUnitId(undefined)
                 setFilterDeptId(undefined)
                 form.setFieldValue('canBoIds', undefined)
+                form.setFieldValue('departmentIds', undefined)
               }}
               style={{ marginBottom: 12 }}
             >
               <Radio value="all"><TeamOutlined /> Tất cả người dùng</Radio>
               <Radio value="custom">Chọn cá nhân cụ thể</Radio>
+              <Radio value="department"><ApartmentOutlined /> Theo phòng ban</Radio>
             </Radio.Group>
+
+            {assignTarget === 'department' && (
+              <>
+                {/* Chọn chi nhánh rồi multi-select nhiều phòng ban trong chi nhánh đó */}
+                <Form.Item label="Chi nhánh" required style={{ marginBottom: 8 }}>
+                  <Select
+                    placeholder="Chọn chi nhánh"
+                    allowClear
+                    style={{ width: '100%' }}
+                    value={filterUnitId}
+                    onChange={val => { setFilterUnitId(val); form.setFieldValue('departmentIds', undefined) }}
+                    options={topUnits.map(d => ({ value: d.id, label: d.name }))}
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  name="departmentIds"
+                  label={`Chọn phòng ban${subDepts.length ? ` (${subDepts.length} phòng ban)` : ''}`}
+                  rules={[{ required: true, message: 'Chọn ít nhất 1 phòng ban' }]}
+                >
+                  <Select
+                    mode="multiple"
+                    showSearch
+                    optionFilterProp="label"
+                    disabled={!filterUnitId}
+                    placeholder={filterUnitId ? 'Chọn 1 hoặc nhiều phòng ban...' : 'Chọn chi nhánh trước'}
+                    maxTagCount="responsive"
+                    options={subDepts.map(d => {
+                      const unitName = topUnits.find(u => u.id === filterUnitId)?.name ?? ''
+                      const label = unitName && d.name.toLowerCase().startsWith(unitName.toLowerCase())
+                        ? d.name.slice(unitName.length).replace(/^\s*[-–]\s*/, '').trim()
+                        : d.name
+                      return { value: d.id, label }
+                    })}
+                  />
+                </Form.Item>
+              </>
+            )}
 
             {assignTarget === 'custom' && (
               <>

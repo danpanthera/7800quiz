@@ -671,7 +671,7 @@ export class AdminService {
         },
       },
     },
-    department: { select: { id: true, name: true } },
+    department: { select: { id: true, name: true, parentId: true } },
   } as const;
 
   getAssignments() {
@@ -812,6 +812,7 @@ export class AdminService {
   async createAssignmentsBulk(data: {
     quizId: string;
     canBoIds?: string[] | 'all';
+    departmentIds?: string[];
     userIds?: string[] | 'all'; // backward compat
     status?: AssignmentStatus;
     startAt?: string;
@@ -823,6 +824,18 @@ export class AdminService {
       startAt: data.startAt ? new Date(data.startAt) : undefined,
       endAt: data.endAt ? new Date(data.endAt) : undefined,
     };
+
+    // departmentIds path (giao theo nhiều phòng ban cùng lúc)
+    if (data.departmentIds !== undefined) {
+      const result = await this.prisma.assignment.createMany({
+        data: data.departmentIds.map((departmentId) => ({
+          ...base,
+          departmentId,
+        })),
+        skipDuplicates: true,
+      });
+      return { count: result.count };
+    }
 
     // canBoIds path (primary)
     if (data.canBoIds !== undefined) {
