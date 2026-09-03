@@ -8,5 +8,15 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 15173,
     strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:13010',
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: 'ws://localhost:13010',
+        ws: true,
+      },
+    },
   },
 })

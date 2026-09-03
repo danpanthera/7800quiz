@@ -10,6 +10,9 @@ import {
 import { Server, Socket } from 'socket.io';
 import { ArenaService } from './arena.service';
 import { JwtService } from '@nestjs/jwt';
+import { UserRole } from '@prisma/client';
+
+const ARENA_HOST_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.TRAINER];
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -36,13 +39,13 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `arena-${sessionId}`;
   }
 
-  private extractAdminUser(client: Socket): { userId: string; role: string } | null {
+  private extractHostUser(client: Socket): { userId: string; role: UserRole } | null {
     try {
       const token =
         (client.handshake.auth?.token as string) ||
         (client.handshake.headers?.authorization as string)?.replace('Bearer ', '');
       if (!token) return null;
-      const payload = this.jwtService.verify(token) as { sub: string; role: string };
+      const payload = this.jwtService.verify(token) as { sub: string; role: UserRole };
       return { userId: payload.sub, role: payload.role };
     } catch {
       return null;
@@ -56,8 +59,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const admin = this.extractAdminUser(client);
-    if (!admin || admin.role !== 'ADMIN') {
+    const host = this.extractHostUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role)) {
       return { error: 'Không có quyền điều hành' };
     }
     client.join(this.getRoomName(data.sessionId));
@@ -104,8 +107,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const admin = this.extractAdminUser(client);
-    if (!admin || admin.role !== 'ADMIN') return { error: 'Không có quyền' };
+    const host = this.extractHostUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const questionData = await this.arenaService.startSession(data.sessionId);
       this.server.to(this.getRoomName(data.sessionId)).emit('arena.started', {});
@@ -150,8 +153,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const admin = this.extractAdminUser(client);
-    if (!admin || admin.role !== 'ADMIN') return { error: 'Không có quyền' };
+    const host = this.extractHostUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const revealData = await this.arenaService.revealRound(data.sessionId);
       this.server.to(this.getRoomName(data.sessionId)).emit('arena.revealed', revealData);
@@ -171,8 +174,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const admin = this.extractAdminUser(client);
-    if (!admin || admin.role !== 'ADMIN') return { error: 'Không có quyền' };
+    const host = this.extractHostUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const result = await this.arenaService.nextQuestion(data.sessionId);
       if (result.type === 'ended') {
@@ -193,8 +196,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { sessionId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const admin = this.extractAdminUser(client);
-    if (!admin || admin.role !== 'ADMIN') return { error: 'Không có quyền' };
+    const host = this.extractHostUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role)) return { error: 'Không có quyền' };
     try {
       const result = await this.arenaService.endSession(data.sessionId);
       this.server.to(this.getRoomName(data.sessionId)).emit('arena.ended', result);

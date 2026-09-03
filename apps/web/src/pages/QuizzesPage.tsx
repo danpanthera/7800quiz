@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Table, Tag, Typography, Badge, Button, Space, Popconfirm, message,
   Modal, Form, Input, InputNumber, Switch, Drawer, Select, theme,
+  Card, Grid, List, Tooltip,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined } from '@ant-design/icons'
 import api from '../lib/api'
@@ -18,6 +19,8 @@ interface Question { id: string; content: string; questionType: string; points: 
 
 export default function QuizzesPage() {
   const { token } = theme.useToken()
+  const screens = Grid.useBreakpoint()
+  const isCompactView = screens.md !== true
   const qc = useQueryClient()
   const [quizModalOpen, setQuizModalOpen] = useState(false)
   const [editQuiz, setEditQuiz] = useState<Quiz | null>(null)
@@ -121,6 +124,25 @@ export default function QuizzesPage() {
     pickMutation.mutate({ id: pickTarget!.id, subjectSlots: values.subjectSlots, replaceAll: values.replaceAll })
   }
 
+  const renderQuizActions = (quiz: Quiz) => (
+    <Space size={6}>
+      <Tooltip title="Xem câu hỏi">
+        <Button aria-label={`Xem câu hỏi của ${quiz.title}`} icon={<EyeOutlined />} size="small" onClick={() => openDetail(quiz)} />
+      </Tooltip>
+      <Tooltip title="Lấy câu ngẫu nhiên">
+        <Button aria-label={`Lấy câu ngẫu nhiên cho ${quiz.title}`} icon={<ThunderboltOutlined />} size="small" onClick={() => openPick(quiz)} />
+      </Tooltip>
+      <Tooltip title="Sửa bộ đề">
+        <Button aria-label={`Sửa ${quiz.title}`} icon={<EditOutlined />} size="small" onClick={() => openEdit(quiz)} />
+      </Tooltip>
+      <Popconfirm title="Xóa bộ đề?" onConfirm={() => deleteMutation.mutate(quiz.id)}>
+        <Tooltip title="Xóa bộ đề">
+          <Button aria-label={`Xóa ${quiz.title}`} icon={<DeleteOutlined />} size="small" danger />
+        </Tooltip>
+      </Popconfirm>
+    </Space>
+  )
+
   // ── Columns ───────────────────────────────────────────────────────────
   const columns = [
     { title: 'Tên bộ đề', dataIndex: 'title', ellipsis: true },
@@ -134,26 +156,44 @@ export default function QuizzesPage() {
     },
     {
       title: '', width: 160,
-      render: (_: any, r: Quiz) => (
-        <Space>
-          <Button icon={<EyeOutlined />} size="small" onClick={() => openDetail(r)} />
-          <Button icon={<ThunderboltOutlined />} size="small" title="Lấy câu ngẫu nhiên từ ngân hàng" onClick={() => openPick(r)} />
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(r)} />
-          <Popconfirm title="Xóa bộ đề?" onConfirm={() => deleteMutation.mutate(r.id)}>
-            <Button icon={<DeleteOutlined />} size="small" danger />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: any, quiz: Quiz) => renderQuizActions(quiz),
     },
   ]
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div className="management-page-header">
         <Typography.Title level={4} style={{ margin: 0 }}>Quản lý bộ đề</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>Tạo bộ đề</Button>
       </div>
-      <Table rowKey="id" loading={isLoading} dataSource={quizzes} columns={columns} size="small" />
+      {isCompactView ? (
+        <List
+          className="manage-card-list"
+          loading={isLoading}
+          dataSource={quizzes}
+          renderItem={(quiz) => (
+            <List.Item>
+              <Card className="manage-record-card" bordered={false}>
+                <div className="manage-record-heading">
+                  <div>
+                    <Typography.Title level={5}>{quiz.title}</Typography.Title>
+                    {quiz.topic && <Tag color="geekblue">{quiz.topic}</Tag>}
+                  </div>
+                  <Badge status={quiz.isActive ? 'success' : 'default'} text={quiz.isActive ? 'Hoạt động' : 'Tắt'} />
+                </div>
+                <dl className="manage-record-meta">
+                  <div><dt>Thời gian</dt><dd>{quiz.durationMin} phút</dd></div>
+                  <div><dt>Câu hỏi</dt><dd>{quiz._count.questions}</dd></div>
+                  <div><dt>Phân công</dt><dd>{quiz._count.assignments}</dd></div>
+                </dl>
+                <div className="manage-record-actions">{renderQuizActions(quiz)}</div>
+              </Card>
+            </List.Item>
+          )}
+        />
+      ) : (
+        <Table rowKey="id" loading={isLoading} dataSource={quizzes} columns={columns} size="small" />
+      )}
 
       {/* Modal: Create / Edit Quiz */}
       <Modal
@@ -198,18 +238,20 @@ export default function QuizzesPage() {
             Lấy câu ngẫu nhiên
           </Button>
         }
-        styles={{ wrapper: { width: drawerWidth, transition: isResizing.current ? 'none' : undefined } }}
+        styles={{ wrapper: { width: isCompactView ? '100%' : drawerWidth, transition: isResizing.current ? 'none' : undefined } }}
       >
         {/* Resize handle */}
-        <div
-          onMouseDown={onResizeStart}
-          style={{
-            position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
-            cursor: 'col-resize', zIndex: 10,
-            background: 'transparent',
-          }}
-          title="Kéo để thay đổi độ rộng"
-        />
+        {!isCompactView && (
+          <div
+            onMouseDown={onResizeStart}
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
+              cursor: 'col-resize', zIndex: 10,
+              background: 'transparent',
+            }}
+            title="Kéo để thay đổi độ rộng"
+          />
+        )}
         {quizDetail?.questions?.length === 0 && (
           <Typography.Text type="secondary">Chưa có câu hỏi nào. Dùng nút "Lấy câu ngẫu nhiên" để thêm từ ngân hàng.</Typography.Text>
         )}

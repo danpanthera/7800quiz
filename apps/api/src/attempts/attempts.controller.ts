@@ -1,0 +1,35 @@
+import { Body, Controller, Get, Param, Post, Put, Request, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { SaveAttemptAnswersDto } from './dto/save-attempt-answers.dto';
+import { StartAttemptDto } from './dto/start-attempt.dto';
+import { AttemptsService } from './attempts.service';
+
+@Controller('me/attempts')
+@UseGuards(JwtAuthGuard)
+export class AttemptsController {
+  constructor(private readonly attemptsService: AttemptsService) {}
+
+  @Post()
+  start(@Request() req: { user: { id: string } }, @Body() dto: StartAttemptDto) {
+    return this.attemptsService.start(req.user.id, dto);
+  }
+
+  @Get(':id')
+  get(@Request() req: { user: { id: string } }, @Param('id') id: string) {
+    return this.attemptsService.get(req.user.id, id);
+  }
+
+  @Put(':id/answers')
+  saveAnswers(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Body() dto: SaveAttemptAnswersDto,
+  ) {
+    return this.attemptsService.saveAnswers(req.user.id, id, dto);
+  }
+
+  @Post(':id/submit')
+  submit(@Request() req: { user: { id: string } }, @Param('id') id: string) {
+    return this.attemptsService.finalize(req.user.id, id, false);
+  }
+}

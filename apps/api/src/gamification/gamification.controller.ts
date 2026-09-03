@@ -3,7 +3,11 @@ import {
 } from '@nestjs/common';
 import { GamificationService } from './gamification.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class GamificationController {
   constructor(private svc: GamificationService) {}
@@ -11,19 +15,16 @@ export class GamificationController {
   // ─── /me routes ──────────────────────────────────────────────────────────
 
   @Get('me/progress')
-  @UseGuards(JwtAuthGuard)
   getProgress(@Request() req: { user: { id: string } }) {
     return this.svc.getProgress(req.user.id);
   }
 
   @Get('me/badges')
-  @UseGuards(JwtAuthGuard)
   getBadges(@Request() req: { user: { id: string } }) {
     return this.svc.getBadges(req.user.id);
   }
 
   @Get('me/xp-history')
-  @UseGuards(JwtAuthGuard)
   getXpHistory(
     @Request() req: { user: { id: string } },
     @Query('page') page?: string,
@@ -35,7 +36,7 @@ export class GamificationController {
   // ─── /admin routes ────────────────────────────────────────────────────────
 
   @Get('admin/leaderboard')
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN, UserRole.TRAINER)
   getLeaderboard(
     @Query('period') period?: 'all' | 'month' | 'week',
     @Query('departmentId') departmentId?: string,
@@ -44,25 +45,25 @@ export class GamificationController {
   }
 
   @Get('admin/badge-stats')
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN, UserRole.TRAINER)
   getBadgeStats() {
     return this.svc.getBadgeStats();
   }
 
   @Get('admin/levels')
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN, UserRole.TRAINER)
   getLevels() {
     return this.svc.getLevels();
   }
 
   @Post('admin/levels')
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN, UserRole.TRAINER)
   createLevel(@Body() body: { level: number; name: string; minXp: number; color: string; iconSlug?: string }) {
     return this.svc.createLevel(body);
   }
 
   @Put('admin/levels/:id')
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN, UserRole.TRAINER)
   updateLevel(
     @Param('id') id: string,
     @Body() body: Partial<{ name: string; minXp: number; color: string; iconSlug: string }>,
@@ -71,7 +72,7 @@ export class GamificationController {
   }
 
   @Delete('admin/levels/:id')
-  @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN, UserRole.TRAINER)
   async deleteLevel(@Param('id') id: string) {
     try {
       return await this.svc.deleteLevel(id);

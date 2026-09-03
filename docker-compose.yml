@@ -34,11 +34,11 @@ services:
       postgres:
         condition: service_healthy
 
-  admin:
+  web:
     build:
-      context: ./apps/admin
+      context: ./apps/web
       dockerfile: Dockerfile
-    container_name: quiz7800_admin
+    container_name: quiz7800_web
     restart: unless-stopped
     ports:
       - "15173:80"  # dải port riêng cho 7800quiz trên máy dev

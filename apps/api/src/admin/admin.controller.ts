@@ -3,51 +3,66 @@ import {
   UploadedFile, UseGuards, UseInterceptors, Res, StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UserRole } from '@prisma/client';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { AdminService } from './admin.service';
 
-@UseGuards(JwtAuthGuard)
+const TRAINING_ROLES = [UserRole.ADMIN, UserRole.TRAINER] as const;
+
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
 @Controller('admin')
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
   // ── Subjects ──────────────────────────────────────────────────────────
   @Get('subjects')
+  @Roles(...TRAINING_ROLES)
   getSubjects() { return this.adminService.getSubjects(); }
 
   @Post('subjects')
+  @Roles(...TRAINING_ROLES)
   createSubject(@Body() body: { name: string; description?: string }) {
     return this.adminService.createSubject(body);
   }
 
   @Put('subjects/:id')
+  @Roles(...TRAINING_ROLES)
   updateSubject(@Param('id') id: string, @Body() body: { name?: string; description?: string }) {
     return this.adminService.updateSubject(id, body);
   }
 
   @Delete('subjects/:id')
+  @Roles(...TRAINING_ROLES)
   deleteSubject(@Param('id') id: string) { return this.adminService.deleteSubject(id); }
 
   // ── Bank Questions ────────────────────────────────────────────────────
   @Get('bank-questions')
+  @Roles(...TRAINING_ROLES)
   getBankQuestions(@Query('subjectId') subjectId?: string) {
     return this.adminService.getBankQuestions(subjectId);
   }
 
   @Post('bank-questions')
+  @Roles(...TRAINING_ROLES)
   createBankQuestion(@Body() body: any) { return this.adminService.createBankQuestion(body); }
 
   @Put('bank-questions/:id')
+  @Roles(...TRAINING_ROLES)
   updateBankQuestion(@Param('id') id: string, @Body() body: any) {
     return this.adminService.updateBankQuestion(id, body);
   }
 
   @Delete('bank-questions/:id')
+  @Roles(...TRAINING_ROLES)
   deleteBankQuestion(@Param('id') id: string) { return this.adminService.deleteBankQuestion(id); }
 
   // ── Import Excel ─────────────────────────────────────────────────────
   @Post('bank-questions/import')
+  @Roles(...TRAINING_ROLES)
   @UseInterceptors(FileInterceptor('file'))
   importQuestions(
     @UploadedFile() file: Express.Multer.File,
@@ -59,73 +74,92 @@ export class AdminController {
 
   // ── Duplicate check ───────────────────────────────────────────────────
   @Post('bank-questions/check-duplicates')
+  @Roles(...TRAINING_ROLES)
   checkDuplicates(@Body() body: { texts: string[] }) {
     return this.adminService.checkDuplicates(body.texts);
   }
 
   // ── Spell check ───────────────────────────────────────────────────────
   @Post('bank-questions/check-spelling')
+  @Roles(...TRAINING_ROLES)
   checkSpelling(@Body() body: { texts: string[] }) {
     return this.adminService.checkSpelling(body.texts);
   }
 
   // ── Questions ─────────────────────────────────────────────────────────
   @Get('questions')
+  @Roles(...TRAINING_ROLES)
   getQuestions() { return this.adminService.getQuestions(); }
 
   @Delete('questions/:id')
+  @Roles(...TRAINING_ROLES)
   deleteQuestion(@Param('id') id: string) { return this.adminService.deleteQuestion(id); }
 
   // ── Quizzes ───────────────────────────────────────────────────────────
   @Get('quizzes')
+  @Roles(...TRAINING_ROLES)
   getQuizzes() { return this.adminService.getQuizzes(); }
 
   @Get('quizzes/:id')
+  @Roles(...TRAINING_ROLES)
   getQuiz(@Param('id') id: string) { return this.adminService.getQuiz(id); }
 
   @Post('quizzes')
+  @Roles(...TRAINING_ROLES)
   createQuiz(@Body() body: { title: string; description?: string; topic?: string; durationMin: number; passScore?: number }) {
     return this.adminService.createQuiz(body);
   }
 
   @Put('quizzes/:id')
+  @Roles(...TRAINING_ROLES)
   updateQuiz(@Param('id') id: string, @Body() body: any) { return this.adminService.updateQuiz(id, body); }
 
   @Delete('quizzes/:id')
+  @Roles(...TRAINING_ROLES)
   deleteQuiz(@Param('id') id: string) { return this.adminService.deleteQuiz(id); }
 
   @Post('quizzes/:id/pick-random')
+  @Roles(...TRAINING_ROLES)
   pickRandom(@Param('id') id: string, @Body() body: { subjectId?: string; count?: number; subjectSlots?: { subjectId?: string; count: number }[]; replaceAll?: boolean }) {
     return this.adminService.pickRandomToQuiz(id, body);
   }
 
   // ── Assignments ───────────────────────────────────────────────────────
   @Get('assignments')
+  @Roles(...TRAINING_ROLES)
   getAssignments() { return this.adminService.getAssignments(); }
 
   @Post('assignments')
+  @Roles(...TRAINING_ROLES)
   createAssignment(@Body() body: any) { return this.adminService.createAssignment(body); }
   @Post('assignments/bulk')
+  @Roles(...TRAINING_ROLES)
   createAssignmentsBulk(@Body() body: any) { return this.adminService.createAssignmentsBulk(body); }
   @Put('assignments/:id')
+  @Roles(...TRAINING_ROLES)
   updateAssignment(@Param('id') id: string, @Body() body: any) { return this.adminService.updateAssignment(id, body); }
 
   @Delete('assignments/:id')
+  @Roles(...TRAINING_ROLES)
   deleteAssignment(@Param('id') id: string) { return this.adminService.deleteAssignment(id); }
 
   // ── Reports ───────────────────────────────────────────────────────────
   @Get('reports')
+  @Roles(...TRAINING_ROLES)
   getReports() { return this.adminService.getReports(); }
 
   @Delete('reports/:id')
+  @Roles(...TRAINING_ROLES)
   deleteReport(@Param('id') id: string) { return this.adminService.deleteReport(id); }
 
   // ── Users ─────────────────────────────────────────────────────────────
   @Get('users')
+  @Roles(...TRAINING_ROLES)
   getUsers() { return this.adminService.getUsers(); }
 
   // ── Academic Years ────────────────────────────────────────────────────
   @Get('academic-years')
+  @Roles(...TRAINING_ROLES)
   getAcademicYears() { return this.adminService.getAcademicYears(); }
 
   @Post('academic-years')
@@ -143,9 +177,11 @@ export class AdminController {
 
   // ── Classes ───────────────────────────────────────────────────────────
   @Get('classes')
+  @Roles(...TRAINING_ROLES)
   getClasses(@Query('academicYearId') academicYearId?: string) { return this.adminService.getClasses(academicYearId); }
 
   @Get('classes/:id')
+  @Roles(...TRAINING_ROLES)
   getClass(@Param('id') id: string) { return this.adminService.getClass(id); }
 
   @Post('classes')
@@ -174,32 +210,41 @@ export class AdminController {
 
   // ── Exam Sessions ─────────────────────────────────────────────────────
   @Get('exam-sessions')
+  @Roles(...TRAINING_ROLES)
   getExamSessions(@Query('classId') classId?: string) { return this.adminService.getExamSessions(classId); }
 
   @Get('exam-sessions/:id')
+  @Roles(...TRAINING_ROLES)
   getExamSession(@Param('id') id: string) { return this.adminService.getExamSession(id); }
 
   @Post('exam-sessions')
+  @Roles(...TRAINING_ROLES)
   createExamSession(@Body() body: any) { return this.adminService.createExamSession(body); }
 
   @Put('exam-sessions/:id')
+  @Roles(...TRAINING_ROLES)
   updateExamSession(@Param('id') id: string, @Body() body: any) { return this.adminService.updateExamSession(id, body); }
 
   @Delete('exam-sessions/:id')
+  @Roles(...TRAINING_ROLES)
   deleteExamSession(@Param('id') id: string) { return this.adminService.deleteExamSession(id); }
 
   @Get('exam-sessions/:id/gradebook')
+  @Roles(...TRAINING_ROLES)
   getGradebook(@Param('id') id: string) { return this.adminService.getExamSessionGradebook(id); }
 
   @Get('exam-sessions/:id/leaderboard')
+  @Roles(...TRAINING_ROLES)
   getLeaderboard(@Param('id') id: string) { return this.adminService.getExamSessionLeaderboard(id); }
 
   @Get('exam-sessions/:id/attempts/:userId')
+  @Roles(...TRAINING_ROLES)
   getAttemptHistory(@Param('id') sessionId: string, @Param('userId') userId: string) {
     return this.adminService.getAttemptHistory(sessionId, userId);
   }
 
   @Get('exam-sessions/:id/export')
+  @Roles(...TRAINING_ROLES)
   async exportGradebook(
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
@@ -213,22 +258,27 @@ export class AdminController {
   }
 
   @Get('exam-sessions/:id/question-stats')
+  @Roles(...TRAINING_ROLES)
   getQuestionStats(@Param('id') id: string) { return this.adminService.getQuestionStats(id); }
 
   @Get('exam-sessions/:id/not-attempted')
+  @Roles(...TRAINING_ROLES)
   getNotAttempted(@Param('id') id: string) { return this.adminService.getNotAttempted(id); }
 
   @Get('exam-sessions/:id/certificate/:userId')
+  @Roles(...TRAINING_ROLES)
   getCertificateData(@Param('id') id: string, @Param('userId') userId: string) {
     return this.adminService.getCertificateData(id, userId);
   }
 
   // ── Departments ───────────────────────────────────────────────────────
   @Get('departments')
+  @Roles(...TRAINING_ROLES)
   getDepartments() { return this.adminService.getDepartments(); }
 
   // ── Cán bộ ────────────────────────────────────────────────────────────
   @Get('can-bo')
+  @Roles(...TRAINING_ROLES)
   getCanBo(
     @Query('search') search?: string,
     @Query('departmentId') departmentId?: string,

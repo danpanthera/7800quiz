@@ -11,6 +11,11 @@ import {
 import { ArenaService } from './arena.service';
 import { CreateArenaDto } from './dto/create-arena.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+
+const ARENA_HOST_ROLES = [UserRole.ADMIN, UserRole.TRAINER] as const;
 
 @Controller()
 export class ArenaController {
@@ -18,37 +23,43 @@ export class ArenaController {
 
   // ─── Admin endpoints (require JWT) ──────────────────────────────────────
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ARENA_HOST_ROLES)
   @Post('admin/arena-sessions')
   create(@Body() dto: CreateArenaDto) {
     return this.arenaService.createSession(dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ARENA_HOST_ROLES)
   @Get('admin/arena-sessions')
   list() {
     return this.arenaService.listSessions();
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ARENA_HOST_ROLES)
   @Get('admin/arena-sessions/:id')
   detail(@Param('id') id: string) {
     return this.arenaService.getSessionDetail(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ARENA_HOST_ROLES)
   @Delete('admin/arena-sessions/:id')
   remove(@Param('id') id: string) {
     return this.arenaService.deleteSession(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ARENA_HOST_ROLES)
   @Patch('admin/arena-sessions/:id/cancel')
   cancel(@Param('id') id: string) {
     return this.arenaService.cancelSession(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ARENA_HOST_ROLES)
   @Patch('admin/arena-sessions/:id/stop')
   stop(@Param('id') id: string) {
     return this.arenaService.stopSession(id);

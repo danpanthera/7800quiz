@@ -4,8 +4,14 @@ import { ConfigProvider, App as AntApp, theme as antTheme } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import { AuthProvider } from './lib/auth'
 import RequireAuth from './components/RequireAuth'
+import RoleGuard from './components/RoleGuard'
+import HomeRedirect from './components/HomeRedirect'
 import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
+import MyQuizzesPage from './pages/MyQuizzesPage'
+import QuizPlayerPage from './pages/QuizPlayerPage'
+import QuizResultPage from './pages/QuizResultPage'
 import QuestionsPage from './pages/QuestionsPage'
 import QuizzesPage from './pages/QuizzesPage'
 import AssignmentsPage from './pages/AssignmentsPage'
@@ -17,6 +23,7 @@ import CanBoPage from './pages/CanBoPage'
 import ArenaPage from './pages/ArenaPage'
 import AchievementsPage from './pages/AchievementsPage'
 import LevelsPage from './pages/LevelsPage'
+import { ADMIN_ROLES, TRAINING_ROLES, USER_ROLES } from './lib/permissions'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -41,7 +48,7 @@ export default function App() {
             borderRadius: 8,
             borderRadiusSM: 6,
             borderRadiusLG: 12,
-            fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
+            fontFamily: "'Be Vietnam Pro', sans-serif",
             fontSize: 14,
             controlHeight: 38,
             boxShadow: '0 4px 16px rgba(21,101,192,0.12)',
@@ -131,24 +138,57 @@ export default function App() {
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route
+                path="/change-password"
+                element={
+                  <RequireAuth>
+                    <ChangePasswordPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
                 element={
                   <RequireAuth>
                     <AppLayout />
                   </RequireAuth>
                 }
               >
-                <Route index element={<Navigate to="/quizzes" replace />} />
-                <Route path="questions" element={<QuestionsPage />} />
-                <Route path="quizzes" element={<QuizzesPage />} />
-                <Route path="assignments" element={<AssignmentsPage />} />
-                <Route path="reports" element={<ReportsPage />} />
-                <Route path="academic-years" element={<AcademicYearsPage />} />
-                <Route path="classes" element={<ClassesPage />} />
-                <Route path="exam-sessions" element={<ExamSessionsPage />} />
-                <Route path="can-bo" element={<CanBoPage />} />
-                <Route path="arena" element={<ArenaPage />} />
-                <Route path="achievements" element={<AchievementsPage />} />
-                <Route path="levels" element={<LevelsPage />} />
+                <Route index element={<HomeRedirect />} />
+
+                <Route element={<RoleGuard allowedRoles={USER_ROLES} />}>
+                  <Route path="my/quizzes" element={<MyQuizzesPage />} />
+                  <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
+                  <Route path="my/results/:submissionId" element={<QuizResultPage />} />
+                </Route>
+
+                <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>
+                  <Route path="manage/questions" element={<QuestionsPage />} />
+                  <Route path="manage/quizzes" element={<QuizzesPage />} />
+                  <Route path="manage/assignments" element={<AssignmentsPage />} />
+                  <Route path="manage/reports" element={<ReportsPage />} />
+                  <Route path="manage/exam-sessions" element={<ExamSessionsPage />} />
+                  <Route path="manage/arena" element={<ArenaPage />} />
+                  <Route path="manage/achievements" element={<AchievementsPage />} />
+                  <Route path="manage/levels" element={<LevelsPage />} />
+                </Route>
+
+                <Route element={<RoleGuard allowedRoles={ADMIN_ROLES} />}>
+                  <Route path="manage/academic-years" element={<AcademicYearsPage />} />
+                  <Route path="manage/classes" element={<ClassesPage />} />
+                  <Route path="manage/staff" element={<CanBoPage />} />
+                </Route>
+
+                <Route path="quizzes" element={<HomeRedirect />} />
+                <Route path="questions" element={<Navigate to="/manage/questions" replace />} />
+                <Route path="assignments" element={<Navigate to="/manage/assignments" replace />} />
+                <Route path="reports" element={<Navigate to="/manage/reports" replace />} />
+                <Route path="academic-years" element={<Navigate to="/manage/academic-years" replace />} />
+                <Route path="classes" element={<Navigate to="/manage/classes" replace />} />
+                <Route path="exam-sessions" element={<Navigate to="/manage/exam-sessions" replace />} />
+                <Route path="can-bo" element={<Navigate to="/manage/staff" replace />} />
+                <Route path="arena" element={<Navigate to="/manage/arena" replace />} />
+                <Route path="achievements" element={<Navigate to="/manage/achievements" replace />} />
+                <Route path="levels" element={<Navigate to="/manage/levels" replace />} />
+                <Route path="*" element={<HomeRedirect />} />
               </Route>
             </Routes>
           </BrowserRouter>

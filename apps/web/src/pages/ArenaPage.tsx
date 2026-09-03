@@ -15,8 +15,7 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
 
 const { Title, Text } = Typography
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:13010/api'
-const WS_URL = API_BASE.replace('/api', '')
+const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
