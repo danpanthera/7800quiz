@@ -4,7 +4,7 @@ import {
   Button, Card, Input, Space, Spin, Typography, Tag, Avatar, List, Result, Alert,
 } from 'antd'
 import {
-  TrophyOutlined, ThunderboltOutlined, CheckCircleOutlined, ArrowLeftOutlined, BankOutlined,
+  TrophyOutlined, ThunderboltOutlined, CheckCircleOutlined, ArrowLeftOutlined, BankOutlined, LockOutlined,
 } from '@ant-design/icons'
 import { io, Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
@@ -35,6 +35,7 @@ interface RevealData {
 interface XpResult { levelUp: boolean; newLevel: number; newBadges: { code: string; name: string; iconSlug: string }[] }
 interface SessionPreview {
   id: string; name: string; joinCode: string; status: string
+  requiresPasscode: boolean
   quiz: { id: string; title: string }
   teams: { id: string; name: string; color: string; score: number }[]
 }
@@ -55,6 +56,7 @@ export default function ArenaPlayerPage() {
 
   const [view, setView] = useState<View>('join')
   const [teamName, setTeamName] = useState(user?.fullName ?? '')
+  const [passcode, setPasscode] = useState('')
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [myTeamId, setMyTeamId] = useState<string | null>(null)
@@ -83,6 +85,10 @@ export default function ArenaPlayerPage() {
   const handleJoin = useCallback(() => {
     const name = teamName.trim()
     if (!name) { setJoinError('Nhập tên đội/tên bạn để tham gia'); return }
+    if (preview?.requiresPasscode && !passcode.trim()) {
+      setJoinError('Phòng này yêu cầu mật khẩu — nhập mật khẩu do MC cung cấp')
+      return
+    }
 
     setJoining(true)
     setJoinError('')
@@ -133,7 +139,7 @@ export default function ArenaPlayerPage() {
 
     socket.emit(
       'arena.join',
-      { joinCode, teamName: name },
+      { joinCode, teamName: name, passcode: passcode.trim() || undefined },
       (res: { ok?: boolean; teamId?: string; teamColor?: string; error?: string }) => {
         setJoining(false)
         if (!res?.ok) {
@@ -148,7 +154,7 @@ export default function ArenaPlayerPage() {
         setView('lobby')
       },
     )
-  }, [joinCode, teamName, user])
+  }, [joinCode, teamName, passcode, preview?.requiresPasscode, user])
 
   function toggleOption(optionId: string, questionType: 'SINGLE' | 'MULTIPLE') {
     if (hasAnswered) return
@@ -200,6 +206,11 @@ export default function ArenaPlayerPage() {
             <TrophyOutlined style={{ fontSize: 40, color: '#faad14' }} />
             <Title level={3} style={{ margin: '8px 0 0' }}>{preview.name}</Title>
             <Text type="secondary">{preview.quiz.title}</Text>
+            {preview.requiresPasscode && (
+              <div style={{ marginTop: 6 }}>
+                <Tag icon={<LockOutlined />} color="gold">Phòng yêu cầu mật khẩu</Tag>
+              </div>
+            )}
           </div>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <div>
@@ -213,6 +224,18 @@ export default function ArenaPlayerPage() {
                 placeholder="VD: Đội Tín dụng"
               />
             </div>
+            {preview.requiresPasscode && (
+              <div>
+                <Text strong>Mật khẩu phòng</Text>
+                <Input.Password
+                  size="large"
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  onPressEnter={handleJoin}
+                  placeholder="MC cung cấp mật khẩu để vào phòng"
+                />
+              </div>
+            )}
             {joinError && <Alert type="error" message={joinError} showIcon />}
             <Button type="primary" size="large" block loading={joining} onClick={handleJoin} icon={<ThunderboltOutlined />}>
               Tham gia ngay

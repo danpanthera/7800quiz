@@ -410,6 +410,7 @@ model ArenaSession {
   name              String
   quizId            String        @map("quiz_id")
   joinCode          String        @unique @map("join_code") // 6 ký tự [A-Z0-9]
+  passcode          String?       @map("passcode") // mật khẩu phòng tuỳ chọn — bắt buộc nhập thêm khi join, không lộ qua QR/link
   hostMode          ArenaHostMode @default(MANUAL) @map("host_mode")
   autoAdvanceSec    Int           @default(10) @map("auto_advance_sec")
   status            ArenaStatus   @default(LOBBY)

@@ -69,6 +69,7 @@ export class ArenaService {
         autoAdvanceSec: dto.autoAdvanceSec ?? 10,
         pointsForRank,
         penaltyWrong: dto.penaltyWrong ?? 0,
+        passcode: dto.passcode?.trim() || null,
       },
     });
 
@@ -137,7 +138,10 @@ export class ArenaService {
       },
     });
     if (!session) throw new NotFoundException('Mã tham gia không hợp lệ');
-    return session;
+    // Endpoint public (chưa đăng nhập) — không được lộ giá trị mật khẩu thật,
+    // chỉ báo cho client biết có cần nhập mật khẩu hay không.
+    const { passcode, ...rest } = session;
+    return { ...rest, requiresPasscode: !!passcode };
   }
 
   async deleteSession(id: string) {
@@ -167,7 +171,12 @@ export class ArenaService {
 
   // ─── Socket.IO Business Logic ──────────────────────────────────────────────
 
-  async joinTeam(joinCode: string, teamName: string, userId: string) {
+  async joinTeam(
+    joinCode: string,
+    teamName: string,
+    userId: string,
+    passcode?: string,
+  ) {
     const session = await this.prisma.arenaSession.findUnique({
       where: { joinCode },
       include: { teams: true },
@@ -176,9 +185,13 @@ export class ArenaService {
     if (session.status !== ArenaStatus.LOBBY)
       throw new BadRequestException('Phiên đấu đã bắt đầu hoặc kết thúc');
 
-    // Đã tham gia trước đó (vd: refresh trang) — trả lại đúng đội cũ, không tạo mới
+    // Đã tham gia trước đó (vd: refresh trang) — trả lại đúng đội cũ, không tạo mới,
+    // không bắt nhập lại mật khẩu vì đã qua vòng kiểm tra lúc join lần đầu
     const existingByUser = session.teams.find((t) => t.userId === userId);
     if (existingByUser) return { session, team: existingByUser };
+
+    if (session.passcode && session.passcode !== (passcode ?? '').trim())
+      throw new BadRequestException('Sai mật khẩu phòng');
 
     if (session.teams.length >= 9)
       throw new BadRequestException('Phiên đã đủ 9 đội');

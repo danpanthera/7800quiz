@@ -7,7 +7,7 @@ import {
 import {
   TrophyOutlined, TeamOutlined, PlayCircleOutlined, CheckCircleOutlined,
   ArrowRightOutlined, StopOutlined, CopyOutlined, ReloadOutlined,
-  ThunderboltOutlined, DeleteOutlined,
+  ThunderboltOutlined, DeleteOutlined, LockOutlined, SafetyOutlined,
 } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import { io, Socket } from 'socket.io-client'
@@ -37,6 +37,7 @@ interface RevealData {
 interface ArenaSession {
   id: string; name: string; joinCode: string; status: string
   hostMode: string; autoAdvanceSec: number
+  passcode?: string | null
   quiz: { id: string; title: string }
   teams: ArenaTeam[]
   rounds: { id: string; order: number }[]
@@ -259,7 +260,14 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
           }}
           columns={[
             { title: 'Tên phiên', dataIndex: 'name', render: (v, r: ArenaSession) => <><Text strong>{v}</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>{r.quiz.title}</Text></> },
-            { title: 'Mã vào', dataIndex: 'joinCode', render: (v) => <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 2 }}>{v}</Tag> },
+            {
+              title: 'Mã vào', dataIndex: 'joinCode', render: (v, r: ArenaSession) => (
+                <Space>
+                  <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 2 }}>{v}</Tag>
+                  {r.passcode && <Tag icon={<LockOutlined />} color="gold">Có mật khẩu</Tag>}
+                </Space>
+              )
+            },
             { title: 'Trạng thái', dataIndex: 'status', render: (v) => <Tag color={statusColor[v]}>{statusLabel[v] ?? v}</Tag> },
             { title: 'Số đội', render: (_: unknown, r: ArenaSession) => r.teams.length },
             {
@@ -334,8 +342,10 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
   async function onFinish(values: Record<string, unknown>) {
     setLoading(true)
     try {
+      const passcode = (values.passcode as string | undefined)?.trim()
       const res = await api.post('/admin/arena-sessions', {
         ...values,
+        passcode: passcode || undefined,
         pointsForRank: (values.pointsForRank as string).split(',').map((v) => parseInt(v.trim())),
       })
       onCreated(res.data)
@@ -370,6 +380,26 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
         </Form.Item>
         <Form.Item name="penaltyWrong" label="Trừ điểm nếu sai">
           <InputNumber min={0} max={10} style={{ width: 120 }} addonAfter="điểm" />
+        </Form.Item>
+        <Divider titlePlacement="left" styles={{ content: { margin: 0 } }} style={{ fontSize: 13, color: '#8c8c8c' }}>
+          <SafetyOutlined /> Bảo mật phòng (tuỳ chọn)
+        </Divider>
+        <Form.Item
+          name="passcode"
+          label="Mật khẩu phòng"
+          rules={[
+            {
+              validator: (_, value: string | undefined) => {
+                const v = value?.trim()
+                if (!v) return Promise.resolve()
+                if (v.length < 4 || v.length > 20) return Promise.reject(new Error('Mật khẩu cần 4-20 ký tự'))
+                return Promise.resolve()
+              },
+            },
+          ]}
+          extra="Để trống nếu không cần — khi đặt, người quét mã QR/link phải nhập đúng mật khẩu này mới vào được phòng."
+        >
+          <Input.Password placeholder="Không bắt buộc, VD: 1234" autoComplete="new-password" />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={loading} icon={<PlayCircleOutlined />} block>
@@ -407,6 +437,28 @@ function Lobby({ session, teams, onStart, onBack }: {
             <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>{joinUrl}</Text>
           </div>
           <Divider />
+          {session.passcode ? (
+            <>
+              <Space align="center" style={{ marginBottom: 4 }}>
+                <LockOutlined style={{ color: '#faad14' }} />
+                <Text strong>Mật khẩu phòng (đọc cho người chơi)</Text>
+              </Space>
+              <div style={{ textAlign: 'center', margin: '4px 0 12px' }}>
+                <Text style={{ fontSize: 22, fontFamily: 'monospace', fontWeight: 700, letterSpacing: 4 }}>
+                  {session.passcode}
+                </Text>
+                <Button
+                  size="small" type="text" icon={<CopyOutlined />}
+                  onClick={() => navigator.clipboard.writeText(session.passcode!)}
+                  style={{ marginLeft: 8 }}
+                />
+              </div>
+            </>
+          ) : (
+            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+              Không đặt mật khẩu — ai có mã/QR đều tham gia được.
+            </Text>
+          )}
           <Text type="secondary">{session.quiz.title}</Text><br />
           <Text type="secondary">Chế độ: <Tag>{session.hostMode}</Tag></Text><br />
           <Text type="secondary">{session.rounds?.length ?? 0} câu hỏi</Text>

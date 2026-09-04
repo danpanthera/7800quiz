@@ -9,6 +9,7 @@ import {
   IsArray,
   ArrayMinSize,
   ArrayMaxSize,
+  Length,
 } from 'class-validator';
 
 export enum ArenaHostModeDto {
@@ -28,6 +29,12 @@ export class CreateArenaDto {
   @IsOptional()
   @IsEnum(ArenaHostModeDto)
   hostMode?: ArenaHostModeDto;
+
+  // Mật khẩu phòng — tuỳ chọn, admin bật thêm nếu muốn chặn người ngoài quét QR/link vào tự do
+  @IsOptional()
+  @IsString()
+  @Length(4, 20)
+  passcode?: string;
 
   @IsOptional()
   @IsInt()

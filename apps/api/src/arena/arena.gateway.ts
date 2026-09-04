@@ -78,7 +78,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('arena.join')
   async handleJoin(
-    @MessageBody() data: { joinCode: string; teamName: string },
+    @MessageBody()
+    data: { joinCode: string; teamName: string; passcode?: string },
     @ConnectedSocket() client: Socket,
   ) {
     const player = this.extractUser(client);
@@ -88,6 +89,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.joinCode,
         data.teamName,
         player.userId,
+        data.passcode,
       );
       client.join(this.getRoomName(session.id));
       client.data.sessionId = session.id;
