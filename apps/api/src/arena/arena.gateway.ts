@@ -39,6 +39,12 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `arena-${sessionId}`;
   }
 
+  // Room riêng cho từng đội — dùng để gửi sự kiện riêng tư (vd: bị kick)
+  // đúng client sở hữu đội đó, không phát cho cả phòng
+  private getTeamRoomName(teamId: string) {
+    return `arena-team-${teamId}`;
+  }
+
   private extractUser(
     client: Socket,
   ): { userId: string; role: UserRole } | null {
@@ -92,6 +98,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.passcode,
       );
       client.join(this.getRoomName(session.id));
+      client.join(this.getTeamRoomName(team.id));
       client.data.sessionId = session.id;
       client.data.teamId = team.id;
       client.data.userId = player.userId;
@@ -137,6 +144,35 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server
         .to(this.getRoomName(data.sessionId))
         .emit('arena.question', questionData);
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  }
+
+  // ─── Admin: mời một đội ra khỏi phòng (kick) ────────────────────────────────
+
+  @SubscribeMessage('arena.kick')
+  async handleKick(
+    @MessageBody() data: { sessionId: string; teamId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const host = this.extractUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
+    try {
+      const result = await this.arenaService.kickTeam(
+        data.sessionId,
+        data.teamId,
+      );
+      // Báo riêng cho client của đội bị kick để họ tự thoát khỏi phòng
+      this.server
+        .to(this.getTeamRoomName(data.teamId))
+        .emit('arena.you_were_kicked', { teamName: result.teamName });
+      // Báo cho cả phòng (host + các đội khác) để cập nhật danh sách
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.team_kicked', result);
       return { ok: true };
     } catch (err) {
       return { error: err.message };

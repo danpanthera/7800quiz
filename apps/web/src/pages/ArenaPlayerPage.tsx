@@ -40,7 +40,7 @@ interface SessionPreview {
   teams: { id: string; name: string; color: string; score: number }[]
 }
 
-type View = 'join' | 'lobby' | 'game' | 'result'
+type View = 'join' | 'lobby' | 'game' | 'result' | 'kicked'
 
 function RankMedal({ rank }: { rank: number }) {
   const medals: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' }
@@ -106,6 +106,12 @@ export default function ArenaPlayerPage() {
     })
 
     socket.on('arena.started', () => setView('game'))
+
+    socket.on('arena.you_were_kicked', () => {
+      setView('kicked')
+      socket.disconnect()
+      socketRef.current = null
+    })
 
     socket.on('arena.question', (q: ArenaQuestion) => {
       setCurrentQuestion(q)
@@ -388,6 +394,17 @@ export default function ArenaPlayerPage() {
             Về trang chủ
           </Button>
         </div>
+      </CenterCard>
+    )
+  } else if (view === 'kicked') {
+    body = (
+      <CenterCard key={view}>
+        <Result
+          status="warning"
+          title="Bạn đã bị mời ra khỏi phòng"
+          subTitle="MC đã đưa bạn ra khỏi phiên đấu này. Liên hệ MC nếu đây là nhầm lẫn."
+          extra={<Button type="primary" onClick={() => navigate('/')}>Về trang chủ</Button>}
+        />
       </CenterCard>
     )
   } else {

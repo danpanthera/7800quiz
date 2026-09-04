@@ -7,7 +7,7 @@ import {
 import {
   TrophyOutlined, TeamOutlined, PlayCircleOutlined, CheckCircleOutlined,
   ArrowRightOutlined, StopOutlined, CopyOutlined, ReloadOutlined,
-  ThunderboltOutlined, DeleteOutlined, LockOutlined, SafetyOutlined,
+  ThunderboltOutlined, DeleteOutlined, LockOutlined, SafetyOutlined, UserDeleteOutlined,
 } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import { io, Socket } from 'socket.io-client'
@@ -80,6 +80,10 @@ export default function ArenaPage() {
       setTeams((prev) => [...prev.filter((t) => t.id !== team.id), { ...team, score: 0 }])
     })
 
+    socket.on('arena.team_kicked', ({ teamId }: { teamId: string }) => {
+      setTeams((prev) => prev.filter((t) => t.id !== teamId))
+    })
+
     socket.on('arena.started', () => setView('game'))
 
     socket.on('arena.question', (q: ArenaQuestion) => {
@@ -140,6 +144,7 @@ export default function ArenaPage() {
   function emitStart() { socketRef.current?.emit('arena.start', { sessionId: session!.id }) }
   function emitReveal() { socketRef.current?.emit('arena.reveal', { sessionId: session!.id }) }
   function emitNext() { socketRef.current?.emit('arena.next', { sessionId: session!.id }) }
+  function emitKick(teamId: string) { socketRef.current?.emit('arena.kick', { sessionId: session!.id, teamId }) }
   function emitEnd() {
     Modal.confirm({
       title: 'Kết thúc phiên đấu?',
@@ -154,7 +159,7 @@ export default function ArenaPage() {
 
   if (view === 'list') return <SessionList onNew={() => setView('create')} onOpen={(s) => { setSession(s); setTeams(s.teams); connectSocket(s.id); setView('lobby') }} />
   if (view === 'create') return <CreateForm onCreated={(s) => { setSession(s); setTeams([]); connectSocket(s.id); setView('lobby') }} onBack={() => setView('list')} />
-  if (view === 'lobby') return <Lobby session={session!} teams={teams} onStart={emitStart} onBack={() => { disconnectSocket(); setView('list') }} />
+  if (view === 'lobby') return <Lobby session={session!} teams={teams} onStart={emitStart} onKick={emitKick} onBack={() => { disconnectSocket(); setView('list') }} />
   if (view === 'game') return (
     <GameControl
       session={session!} teams={teams} currentQuestion={currentQuestion}
@@ -413,8 +418,8 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function Lobby({ session, teams, onStart, onBack }: {
-  session: ArenaSession; teams: ArenaTeam[]; onStart: () => void; onBack: () => void
+function Lobby({ session, teams, onStart, onKick, onBack }: {
+  session: ArenaSession; teams: ArenaTeam[]; onStart: () => void; onKick: (teamId: string) => void; onBack: () => void
 }) {
   const joinUrl = `${window.location.origin}/arena/join/${session.joinCode}`
 
@@ -487,7 +492,21 @@ function Lobby({ session, teams, onStart, onBack }: {
             <List
               dataSource={teams}
               renderItem={(team) => (
-                <List.Item>
+                <List.Item
+                  actions={[
+                    <Popconfirm
+                      key="kick"
+                      title="Mời người chơi này ra khỏi phòng?"
+                      description={`Đội "${team.name}" sẽ bị ngắt khỏi phòng ngay lập tức.`}
+                      okText="Mời ra"
+                      okType="danger"
+                      cancelText="Bỏ qua"
+                      onConfirm={() => onKick(team.id)}
+                    >
+                      <Button size="small" danger type="text" icon={<UserDeleteOutlined />}>Đá ra</Button>
+                    </Popconfirm>,
+                  ]}
+                >
                   <List.Item.Meta
                     avatar={<Avatar style={{ backgroundColor: team.color }}>{team.name[0].toUpperCase()}</Avatar>}
                     title={<Text strong>{team.name}</Text>}

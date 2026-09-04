@@ -210,6 +210,22 @@ export class ArenaService {
     return { session, team };
   }
 
+  async kickTeam(sessionId: string, teamId: string) {
+    const session = await this.prisma.arenaSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    if (session.status !== ArenaStatus.LOBBY)
+      throw new BadRequestException(
+        'Chỉ có thể mời người chơi ra khi phiên đang ở sảnh chờ',
+      );
+    const team = await this.prisma.arenaTeam.findFirst({
+      where: { id: teamId, arenaSessionId: sessionId },
+    });
+    if (!team) throw new NotFoundException('Đội không tồn tại trong phiên này');
+    await this.prisma.arenaTeam.delete({ where: { id: teamId } });
+    return { teamId, teamName: team.name };
+  }
+
   async startSession(sessionId: string) {
     const session = await this.prisma.arenaSession.findUniqueOrThrow({
       where: { id: sessionId },
