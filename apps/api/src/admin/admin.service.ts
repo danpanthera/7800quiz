@@ -60,6 +60,40 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 export class AdminService {
   constructor(private prisma: PrismaService) {}
 
+  // Danh sách field cán bộ được phép ghi từ client — chặn các field hệ thống
+  // (id, createdAt, updatedAt) và các quan hệ (department, assignments) lọt vào Prisma
+  private static readonly CAN_BO_WRITABLE_FIELDS = [
+    'cbCode',
+    'fullName',
+    'email',
+    'phoneNumber',
+    'userAD',
+    'userIPCAS',
+    'maCbtd',
+    'cccd',
+    'ngayCapCmt',
+    'noiCapCmt',
+    'ngaySinh',
+    'gioiTinh',
+    'departmentId',
+    'position',
+    'isPartyMember',
+    'isUnionMember',
+    'isYouthUnionMember',
+    'isItStaff',
+    'isActive',
+  ] as const;
+
+  // Lọc payload cán bộ, chỉ giữ lại các field hợp lệ có mặt trong request
+  private pickCanBoFields<T extends Record<string, any>>(data: T): Partial<T> {
+    const picked: Partial<T> = {};
+    for (const key of AdminService.CAN_BO_WRITABLE_FIELDS) {
+      const field = key as keyof T;
+      if (data?.[field] !== undefined) picked[field] = data[field];
+    }
+    return picked;
+  }
+
   private normalizeUserAD(userAD?: string | null): string | null {
     const normalized = userAD?.trim();
     return normalized || null;
@@ -87,6 +121,25 @@ export class AdminService {
       );
   }
 
+  /**
+   * Đếm hoạt động thật của một tài khoản (bài nộp, lượt làm bài, phân công,
+   * nhật ký). Tài khoản 0 hoạt động được coi là "trống" — gộp/xoá không mất
+   * dữ liệu. Các quan hệ còn lại (lớp học, tiến độ, đội Arena) đã cấu hình
+   * cascade/set-null trong schema nên không cần đếm.
+   */
+  private async demHoatDongUser(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<number> {
+    const [submissions, attempts, assignments, auditLogs] = await Promise.all([
+      tx.submission.count({ where: { userId } }),
+      tx.quizAttempt.count({ where: { userId } }),
+      tx.assignment.count({ where: { userId } }),
+      tx.auditLog.count({ where: { userId } }),
+    ]);
+    return submissions + attempts + assignments + auditLogs;
+  }
+
   private async syncCanBoUser(
     tx: Prisma.TransactionClient,
     canBo: {
@@ -111,17 +164,37 @@ export class AdminService {
         ? userWithUsername
         : await tx.user.findUnique({ where: { username: previousUsername } });
 
+    // Cán bộ có thể đang gắn với 2 tài khoản: tài khoản cũ (theo mã CB) và tài
+    // khoản mang đúng User AD vừa gán. Gộp lại nếu một bên chưa phát sinh hoạt
+    // động; chỉ từ chối khi cả hai đều đã có dữ liệu (phải do người quyết định).
+    let user = userWithUsername ?? previousUser;
     if (
       userWithUsername &&
       previousUser &&
       userWithUsername.id !== previousUser.id
     ) {
-      throw new ConflictException(
-        `User AD "${username}" đang được dùng bởi một tài khoản khác`,
-      );
+      const [hoatDongMoi, hoatDongCu] = await Promise.all([
+        this.demHoatDongUser(tx, userWithUsername.id),
+        this.demHoatDongUser(tx, previousUser.id),
+      ]);
+
+      if (hoatDongCu > 0 && hoatDongMoi > 0) {
+        throw new ConflictException(
+          `Không thể gán User AD "${username}": tài khoản này và tài khoản cũ "${previousUsername}" đều đã có dữ liệu làm bài. Vui lòng xử lý thủ công trước khi gán.`,
+        );
+      }
+
+      if (hoatDongCu > 0) {
+        // Giữ tài khoản cũ (đang có dữ liệu), thu hồi tên đăng nhập từ tài khoản trống
+        await tx.user.delete({ where: { id: userWithUsername.id } });
+        user = previousUser;
+      } else {
+        // Tài khoản cũ trống — bỏ nó, dùng tài khoản mang đúng User AD
+        await tx.user.delete({ where: { id: previousUser.id } });
+        user = userWithUsername;
+      }
     }
 
-    const user = userWithUsername ?? previousUser;
     if (!user) {
       await tx.user.create({
         data: {
@@ -1171,13 +1244,19 @@ export class AdminService {
     });
     if (existing)
       throw new ConflictException(`Mã CB "${data.cbCode}" đã tồn tại`);
-    const { ngaySinh, username: _username, userAD: rawUserAD, ...rest } = data;
+    const {
+      ngaySinh,
+      userAD: rawUserAD,
+      ...rest
+    } = this.pickCanBoFields(data);
     const userAD = this.normalizeUserAD(rawUserAD);
     await this.ensureUserADIsAvailable(userAD);
     return this.prisma.$transaction(async (tx) => {
       const canBo = await tx.canBo.create({
         data: {
           ...rest,
+          cbCode: data.cbCode,
+          fullName: data.fullName,
           userAD,
           username: this.getLoginUsername(data.cbCode, userAD),
           ngaySinh: ngaySinh ? new Date(ngaySinh) : undefined,
@@ -1197,7 +1276,11 @@ export class AdminService {
     const existing = await this.prisma.canBo.findUniqueOrThrow({
       where: { id },
     });
-    const { ngaySinh, username: _username, userAD: rawUserAD, ...rest } = data;
+    const {
+      ngaySinh,
+      userAD: rawUserAD,
+      ...rest
+    } = this.pickCanBoFields(data);
     const userAD =
       rawUserAD === undefined
         ? existing.userAD

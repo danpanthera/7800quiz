@@ -102,7 +102,7 @@ export default function CanBoPage() {
   const updateMut = useMutation({
     mutationFn: ({ id, ...body }: { id: string } & CanBoFormValues) => api.put(`/admin/can-bo/${id}`, body).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['can-bo'] }); closeModal(); message.success('Đã cập nhật') },
-    onError: () => message.error('Lỗi khi cập nhật'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi cập nhật')),
   })
 
   const deleteMut = useMutation({
@@ -161,7 +161,23 @@ export default function CanBoPage() {
     const deptId = hasParent ? record.departmentId : undefined
     setFormUnitId(branchId)
     form.setFieldsValue({
-      ...record,
+      cbCode: record.cbCode,
+      fullName: record.fullName,
+      email: record.email,
+      phoneNumber: record.phoneNumber,
+      userAD: record.userAD,
+      userIPCAS: record.userIPCAS,
+      maCbtd: record.maCbtd,
+      cccd: record.cccd,
+      ngayCapCmt: record.ngayCapCmt,
+      noiCapCmt: record.noiCapCmt,
+      gioiTinh: record.gioiTinh,
+      position: record.position,
+      isPartyMember: record.isPartyMember,
+      isUnionMember: record.isUnionMember,
+      isYouthUnionMember: record.isYouthUnionMember,
+      isItStaff: record.isItStaff,
+      isActive: record.isActive,
       ngaySinh: record.ngaySinh ? dayjs(record.ngaySinh) : undefined,
       departmentId: deptId,
     })
