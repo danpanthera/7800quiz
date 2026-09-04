@@ -58,6 +58,36 @@ export default function QuestionsPage() {
   const isCardView = !screens.md
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null)
   const [subjectDrawerOpen, setSubjectDrawerOpen] = useState(false)
+
+  // ── Resizable subject sider (chỉ áp dụng ở view Sider, tablet ngang/desktop) ──
+  const [siderWidth, setSiderWidth] = useState(240)
+  // isResizing: state (đọc an toàn lúc render, tắt transition CSS khi đang kéo).
+  // isResizingRef: ref song song, chỉ dùng trong closure mousemove gắn trực tiếp vào window.
+  const [isResizing, setIsResizing] = useState(false)
+  const isResizingRef = useRef(false)
+  const startX = useRef(0)
+  const startW = useRef(0)
+
+  const onSiderResizeStart = useCallback((e: React.MouseEvent) => {
+    isResizingRef.current = true
+    setIsResizing(true)
+    startX.current = e.clientX
+    startW.current = siderWidth
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizingRef.current) return
+      // Sider nằm bên trái — kéo sang phải (clientX tăng) để tăng độ rộng, ngược chiều Drawer bên phải
+      const delta = ev.clientX - startX.current
+      setSiderWidth(Math.max(180, Math.min(480, startW.current + delta)))
+    }
+    const onUp = () => {
+      isResizingRef.current = false
+      setIsResizing(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [siderWidth])
   const [subjectModalOpen, setSubjectModalOpen] = useState(false)
   const [editSubject, setEditSubject] = useState<Subject | null>(null)
   const [questionDrawerOpen, setQuestionDrawerOpen] = useState(false)
@@ -393,8 +423,23 @@ export default function QuestionsPage() {
     <Layout style={{ minHeight: '100%', background: 'transparent' }}>
       {/* Sidebar lĩnh vực — chỉ hiện từ tablet ngang/desktop, phone dùng Select + Drawer bên dưới */}
       {!isCardView && (
-        <Sider width={240} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', borderRadius: 8 }}>
+        <Sider
+          width={siderWidth}
+          style={{
+            background: '#fff', borderRight: '1px solid #f0f0f0', borderRadius: 8,
+            position: 'relative', transition: isResizing ? 'none' : undefined,
+          }}
+        >
           {subjectMenu}
+          {/* Kéo để đổi độ rộng — tên lĩnh vực dài dễ bị cắt chữ ở độ rộng mặc định */}
+          <div
+            onMouseDown={onSiderResizeStart}
+            style={{
+              position: 'absolute', top: 0, bottom: 0, right: -3, width: 6,
+              cursor: 'col-resize', zIndex: 10, background: 'transparent',
+            }}
+            title="Kéo để thay đổi độ rộng"
+          />
         </Sider>
       )}
 
