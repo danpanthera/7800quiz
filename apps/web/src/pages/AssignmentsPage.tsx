@@ -2,13 +2,17 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Tag, Typography, Badge, Button, Space, Popconfirm, App,
-  Modal, Form, Select, DatePicker, Radio, Divider,
+  Modal, Form, Select, DatePicker, Radio, Divider, Input,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, ApartmentOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import type { AxiosResponse } from 'axios'
 import ManageTable from '../components/ManageTable'
 import api, { getErrorMessage } from '../lib/api'
+
+// Chuẩn hoá chuỗi tiếng Việt để tìm kiếm không phân biệt dấu
+const vn = (s: string) =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, (c) => (c === 'đ' ? 'd' : 'D')).toLowerCase()
 
 interface Assignment {
   id: string
@@ -90,6 +94,10 @@ export default function AssignmentsPage() {
   const [assignTarget, setAssignTarget] = useState<'all' | 'custom' | 'department'>('custom')
   const [filterUnitId, setFilterUnitId] = useState<string | undefined>()
   const [filterDeptId, setFilterDeptId] = useState<string | undefined>()
+
+  // State cho bộ lọc danh sách phân công (khác state lọc trong modal tạo/sửa ở trên)
+  const [searchCanBo, setSearchCanBo] = useState('')
+  const [listFilterQuizId, setListFilterQuizId] = useState<string | undefined>()
 
   const { data = [], isLoading } = useQuery<Assignment[]>({
     queryKey: ['assignments'],
@@ -240,14 +248,26 @@ export default function AssignmentsPage() {
     </Space>
   )
 
+  const tenGiaoCho = (row: Assignment) =>
+    row.canBo ? row.canBo.fullName : row.user ? row.user.fullName : (row.department?.name ?? '—')
+
+  // Lọc danh sách phân công theo Cán bộ (tên, không phân biệt dấu) và theo Bộ đề
+  const filteredData = useMemo(() => {
+    const keyword = vn(searchCanBo.trim())
+    return data.filter((row) => {
+      if (listFilterQuizId && row.quiz.id !== listFilterQuizId) return false
+      if (keyword && !vn(tenGiaoCho(row)).includes(keyword)) return false
+      return true
+    })
+  }, [data, searchCanBo, listFilterQuizId])
+
+  const hasListFilter = !!searchCanBo || !!listFilterQuizId
+
   const columns = [
     { title: 'Bộ đề', dataIndex: ['quiz', 'title'], ellipsis: true },
     {
       title: 'Giao cho',
-      render: (_: unknown, row: Assignment) =>
-        row.canBo ? row.canBo.fullName
-          : row.user ? row.user.fullName
-          : (row.department?.name ?? '—'),
+      render: (_: unknown, row: Assignment) => tenGiaoCho(row),
     },
     {
       title: 'Loại', width: 100,
@@ -285,10 +305,38 @@ export default function AssignmentsPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>Phân công quiz</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>Tạo phân công</Button>
       </div>
+
+      {/* Bộ lọc danh sách */}
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder="Tìm theo cán bộ (có dấu hoặc không dấu)..."
+          style={{ width: 280 }}
+          allowClear
+          value={searchCanBo}
+          onChange={(e) => setSearchCanBo(e.target.value)}
+        />
+        <Select
+          placeholder="Bộ đề"
+          style={{ width: 260 }}
+          allowClear
+          value={listFilterQuizId}
+          onChange={setListFilterQuizId}
+          options={quizzes.map((q) => ({ value: q.id, label: q.title }))}
+          showSearch
+          filterOption={(input, opt) => vn(opt?.label ?? '').includes(vn(input))}
+        />
+        {hasListFilter && (
+          <Button onClick={() => { setSearchCanBo(''); setListFilterQuizId(undefined) }}>
+            Xóa bộ lọc
+          </Button>
+        )}
+      </Space>
+
       <ManageTable<Assignment>
         rowKey="id"
         loading={isLoading}
-        dataSource={data}
+        dataSource={filteredData}
         columns={columns}
         pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'] }}
         size="small"
@@ -298,10 +346,7 @@ export default function AssignmentsPage() {
             text={row.status === 'ACTIVE' ? 'Đang mở' : row.status === 'DRAFT' ? 'Nháp' : 'Đã đóng'} />
         )}
         cardMeta={[
-          {
-            label: 'Giao cho',
-            render: (row) => row.canBo ? row.canBo.fullName : row.user ? row.user.fullName : (row.department?.name ?? '—'),
-          },
+          { label: 'Giao cho', render: tenGiaoCho },
           {
             label: 'Loại',
             render: (row) => row.canBo ? <Tag color="blue">Cán bộ</Tag> : row.user ? <Tag color="cyan">Tài khoản</Tag> : <Tag color="green">Phòng ban</Tag>,
