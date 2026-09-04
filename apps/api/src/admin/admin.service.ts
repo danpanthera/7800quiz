@@ -349,6 +349,14 @@ export class AdminService {
     return this.prisma.question.delete({ where: { id } });
   }
 
+  async deleteAllBankQuestions(subjectId?: string) {
+    const result = await this.prisma.question.deleteMany({
+      where: { isBank: true, ...(subjectId ? { subjectId } : {}) },
+    });
+
+    return { deleted: result.count };
+  }
+
   // ── Duplicate detection ───────────────────────────────────────────────
   async checkDuplicates(texts: string[]): Promise<
     {
@@ -796,7 +804,13 @@ export class AdminService {
   // ── Assignments ──────────────────────────────────────────────────────
   private readonly assignmentInclude = {
     quiz: { select: { id: true, title: true } },
-    user: { select: { id: true, fullName: true } },
+    user: {
+      select: {
+        id: true,
+        fullName: true,
+        department: { select: { id: true, name: true, parentId: true } },
+      },
+    },
     canBo: {
       select: {
         id: true,
@@ -872,8 +886,67 @@ export class AdminService {
     });
   }
 
-  deleteAssignment(id: string) {
+  async deleteAssignment(id: string) {
+    // Chặn sớm thay vì để lỗi khóa ngoại (P2003) rớt xuống thành 500 khi cán bộ/user
+    // đã làm bài (có QuizAttempt) — cùng nguyên tắc bảo vệ như xóa hàng loạt bên dưới.
+    const attemptCount = await this.prisma.quizAttempt.count({
+      where: { assignmentId: id },
+    });
+    if (attemptCount > 0)
+      throw new BadRequestException(
+        'Không thể xóa: cán bộ/user này đã làm bài. Không thể xóa phân công đã có người làm bài để tránh mất lịch sử chấm điểm.',
+      );
     return this.prisma.assignment.delete({ where: { id } });
+  }
+
+  // Xóa hàng loạt theo bộ đề và/hoặc chi nhánh/phòng ban. Bỏ qua (không xóa) những phân
+  // công đã có người làm bài (có QuizAttempt) để không vi phạm khóa ngoại và không mất
+  // lịch sử chấm điểm.
+  async deleteAssignmentsByFilter(quizId?: string, departmentId?: string) {
+    if (!quizId && !departmentId)
+      throw new BadRequestException(
+        'Cần chọn ít nhất bộ đề hoặc chi nhánh/phòng ban để xóa',
+      );
+
+    let departmentIds: string[] | undefined;
+    if (departmentId) {
+      const children = await this.prisma.department.findMany({
+        where: { parentId: departmentId },
+        select: { id: true },
+      });
+      departmentIds = [departmentId, ...children.map((c) => c.id)];
+    }
+
+    const where: Prisma.AssignmentWhereInput = {
+      ...(quizId ? { quizId } : {}),
+      ...(departmentIds
+        ? {
+            OR: [
+              { departmentId: { in: departmentIds } },
+              { canBo: { departmentId: { in: departmentIds } } },
+              { user: { departmentId: { in: departmentIds } } },
+            ],
+          }
+        : {}),
+    };
+
+    const matched = await this.prisma.assignment.findMany({
+      where,
+      select: { id: true, _count: { select: { attempts: true } } },
+    });
+
+    const deletableIds = matched
+      .filter((a) => a._count.attempts === 0)
+      .map((a) => a.id);
+    const skipped = matched.length - deletableIds.length;
+
+    if (deletableIds.length === 0) return { deleted: 0, skipped };
+
+    const result = await this.prisma.assignment.deleteMany({
+      where: { id: { in: deletableIds } },
+    });
+
+    return { deleted: result.count, skipped };
   }
 
   // ── Reports ──────────────────────────────────────────────────────────

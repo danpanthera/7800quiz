@@ -26,13 +26,13 @@ export default function LoginPage() {
       <section className="login-brand" aria-label="7800Quiz">
         <div className="login-brand-lockup">
           <span className="login-brand-mark"><BankOutlined /></span>
-          <Text>Hệ thống thi và đào tạo nội bộ</Text>
+          <Text>Hệ thống thi thử nghiệp vụ</Text>
         </div>
         <div className="login-brand-title">
           <Title level={1}>7800Quiz</Title>
-          <p className="login-brand-statement">Học tập chủ động.<br />Đánh giá minh bạch.</p>
+          <p className="login-brand-statement">Thi thử nghiệp vụ<br />Đấu trường kiến thức</p>
         </div>
-        <Text className="login-brand-footer">Ngân hàng 7800</Text>
+        <Text className="login-brand-footer">Agribank Chi nhánh Lai Châu</Text>
       </section>
 
       <section className="login-form-region">
@@ -68,7 +68,7 @@ export default function LoginPage() {
             >
               <Input.Password
                 prefix={<LockOutlined />}
-                placeholder="Nhập mật khẩu"
+                placeholder="Mật khẩu này độc lập với mật khẩu vào máy"
                 autoComplete="current-password"
               />
             </Form.Item>
@@ -85,7 +85,7 @@ export default function LoginPage() {
             </Form.Item>
           </Form>
 
-          <Text className="login-support">Liên hệ bộ phận đào tạo nếu tài khoản bị khóa.</Text>
+          <Text className="login-support">Liên hệ IT nếu tài khoản bị khóa.</Text>
         </div>
       </section>
     </main>

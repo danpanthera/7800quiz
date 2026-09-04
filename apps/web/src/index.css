@@ -19,6 +19,11 @@
   --sidebar-bg: #0D2045;
   --sidebar-width: 248px;
   --header-height: 64px;
+  /* Nhận diện thương hiệu Agribank: đỏ bordeaux + chữ trắng ngọc trai */
+  --agribank-red: #7A1428;
+  --agribank-red-dark: #4E0D1A;
+  --agribank-red-light: #9C2A3F;
+  --pearl-white: #F8F4EC;
   --radius: 8px;
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 16px rgba(21, 101, 192, 0.12);
@@ -466,12 +471,13 @@ select {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  color: #fff;
-  background-color: #10233f;
+  color: var(--pearl-white);
+  background-color: var(--agribank-red);
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(135deg, var(--agribank-red-dark) 0%, var(--agribank-red) 55%, var(--agribank-red-light) 100%),
+    linear-gradient(rgba(248, 244, 236, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(248, 244, 236, 0.05) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
 }
 
 .login-brand-lockup {
@@ -481,7 +487,7 @@ select {
 }
 
 .login-brand-lockup .ant-typography {
-  color: #c8d4e2;
+  color: rgba(248, 244, 236, 0.78);
   font-size: 13px;
   font-weight: 500;
 }
@@ -494,29 +500,29 @@ select {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  color: #10233f;
-  background: #f0b429;
+  color: var(--agribank-red-dark);
+  background: var(--pearl-white);
   font-size: 20px;
 }
 
 .login-brand-title h1.ant-typography {
   max-width: 700px;
   margin: 0 0 18px;
-  color: #fff;
+  color: var(--pearl-white);
   font-size: clamp(36px, 4.5vw, 64px);
   line-height: 1.18;
   letter-spacing: 0;
 }
 
 .login-brand-statement {
-  color: #7fc8b6;
+  color: var(--gold);
   font-size: clamp(22px, 2.4vw, 36px);
   font-weight: 600;
   line-height: 1.4;
 }
 
 .login-brand-footer.ant-typography {
-  color: #8fa2b8;
+  color: rgba(248, 244, 236, 0.62);
   font-size: 12px;
 }
 
@@ -539,7 +545,7 @@ select {
 }
 
 .login-form-heading > .ant-typography {
-  color: #246b5a;
+  color: var(--agribank-red);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -547,7 +553,7 @@ select {
 
 .login-form-heading h2.ant-typography {
   margin: 6px 0 0;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 34px;
   letter-spacing: 0;
 }
@@ -556,20 +562,33 @@ select {
   min-height: 48px;
 }
 
+.login-form-wrap .ant-input-affix-wrapper:hover,
+.login-form-wrap .ant-input-affix-wrapper-focused,
+.login-form-wrap .ant-input-affix-wrapper:focus-within {
+  border-color: var(--agribank-red) !important;
+  box-shadow: 0 0 0 2px rgba(122, 20, 40, 0.12) !important;
+}
+
+.login-form-wrap .ant-input-affix-wrapper .anticon {
+  color: var(--agribank-red);
+}
+
 .login-submit-row {
   margin: 8px 0 0;
 }
 
 .login-submit-row .ant-btn {
   height: 48px;
-  background: #246b5a;
-  border-color: #246b5a;
+  background: var(--agribank-red);
+  border-color: var(--agribank-red);
+  color: var(--pearl-white);
   box-shadow: none !important;
 }
 
 .login-submit-row .ant-btn:hover {
-  background: #1d594b !important;
-  border-color: #1d594b !important;
+  background: var(--agribank-red-light) !important;
+  border-color: var(--agribank-red-light) !important;
+  color: var(--pearl-white) !important;
 }
 
 .login-support.ant-typography {
@@ -599,10 +618,11 @@ select {
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #10233f;
+    color: var(--agribank-red);
     font-size: 18px;
   }
 }
+
 
 @media (max-width: 991px) {
   .portal-header {

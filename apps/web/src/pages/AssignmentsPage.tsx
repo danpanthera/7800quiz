@@ -17,7 +17,7 @@ const vn = (s: string) =>
 interface Assignment {
   id: string
   quiz: { id: string; title: string }
-  user: { id: string; fullName: string } | null
+  user: { id: string; fullName: string; department?: { id: string; name: string; parentId?: string | null } | null } | null
   canBo: { id: string; fullName: string; cbCode: string; department?: { id: string; name: string } | null } | null
   department: { id: string; name: string; parentId?: string | null } | null
   startAt: string | null
@@ -98,6 +98,8 @@ export default function AssignmentsPage() {
   // State cho bộ lọc danh sách phân công (khác state lọc trong modal tạo/sửa ở trên)
   const [searchCanBo, setSearchCanBo] = useState('')
   const [listFilterQuizId, setListFilterQuizId] = useState<string | undefined>()
+  const [listFilterUnitId, setListFilterUnitId] = useState<string | undefined>()
+  const [listFilterDeptId, setListFilterDeptId] = useState<string | undefined>()
 
   const { data = [], isLoading } = useQuery<Assignment[]>({
     queryKey: ['assignments'],
@@ -136,6 +138,17 @@ export default function AssignmentsPage() {
     return departments.filter(d => d.parentId === filterUnitId && activeCanBoDeptIds.has(d.id))
   }, [departments, filterUnitId, canBoList])
 
+  // Sub-depts của chi nhánh đang chọn trong bộ lọc danh sách (khác filterUnitId của modal) —
+  // ở đây lấy tất cả phòng ban, không giới hạn có canBo active, vì mục đích là lọc/xóa
+  const listSubDepts = useMemo(
+    () => departments.filter(d => d.parentId === listFilterUnitId),
+    [departments, listFilterUnitId]
+  )
+  const listSubDeptIds = useMemo(
+    () => new Set(listSubDepts.map(d => d.id)),
+    [listSubDepts]
+  )
+
   // CanBo lọc theo unit+dept
   const filteredCanBo = useMemo(() => {
     return canBoList.filter(c => {
@@ -172,6 +185,23 @@ export default function AssignmentsPage() {
     mutationFn: (id: string) => api.delete(`/admin/assignments/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignments'] }); message.success('Đã xóa phân công') },
     onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi xóa')),
+  })
+  // Gỡ hàng loạt phân công (bỏ giao bộ đề) của các cán bộ/user theo bộ đề và/hoặc chi nhánh/phòng ban
+  // đang lọc — KHÔNG xóa tài khoản/hồ sơ cán bộ, chỉ gỡ liên kết "được giao bộ đề"
+  const deleteByFilterMut = useMutation({
+    mutationFn: () => api.delete<{ deleted: number; skipped: number }>('/admin/assignments', {
+      params: {
+        ...(listFilterQuizId ? { quizId: listFilterQuizId } : {}),
+        ...(listFilterDeptId ? { departmentId: listFilterDeptId } : listFilterUnitId ? { departmentId: listFilterUnitId } : {}),
+      },
+    }),
+    onSuccess: (res: AxiosResponse<{ deleted: number; skipped: number }>) => {
+      const { deleted, skipped } = res.data
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      if (deleted === 0) message.info(skipped > 0 ? `Không gỡ được: cả ${skipped} cán bộ/user phù hợp đều đã làm bài` : 'Không có cán bộ/user nào phù hợp để gỡ phân công')
+      else message.success(`Đã gỡ phân công của ${deleted} cán bộ/user${skipped > 0 ? `, giữ lại ${skipped} người đã làm bài` : ''}`)
+    },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi gỡ phân công theo bộ lọc')),
   })
 
   const openNew = () => {
@@ -251,17 +281,50 @@ export default function AssignmentsPage() {
   const tenGiaoCho = (row: Assignment) =>
     row.canBo ? row.canBo.fullName : row.user ? row.user.fullName : (row.department?.name ?? '—')
 
-  // Lọc danh sách phân công theo Cán bộ (tên, không phân biệt dấu) và theo Bộ đề
+  // ID phòng ban liên quan tới 1 dòng phân công — dù giao trực tiếp cho phòng ban,
+  // cho cán bộ (theo phòng ban của cán bộ) hay cho tài khoản (theo phòng ban của user)
+  const rowDepartmentIds = (row: Assignment): string[] => {
+    const ids: string[] = []
+    if (row.department) ids.push(row.department.id)
+    if (row.canBo?.department) ids.push(row.canBo.department.id)
+    if (row.user?.department) ids.push(row.user.department.id)
+    return ids
+  }
+
+  // Khớp bộ lọc Chi nhánh/Phòng ban của danh sách — chọn phòng ban thì khớp đúng phòng ban đó,
+  // chỉ chọn chi nhánh thì khớp chi nhánh hoặc bất kỳ phòng ban con nào của chi nhánh đó
+  const matchesDeptFilter = (row: Assignment) => {
+    if (listFilterDeptId) return rowDepartmentIds(row).includes(listFilterDeptId)
+    if (listFilterUnitId) {
+      const ids = rowDepartmentIds(row)
+      return ids.includes(listFilterUnitId) || ids.some((id) => listSubDeptIds.has(id))
+    }
+    return true
+  }
+
+  // Lọc danh sách phân công theo Cán bộ (tên, không phân biệt dấu), theo Bộ đề, theo Chi nhánh/Phòng ban
   const filteredData = useMemo(() => {
     const keyword = vn(searchCanBo.trim())
     return data.filter((row) => {
       if (listFilterQuizId && row.quiz.id !== listFilterQuizId) return false
+      if (!matchesDeptFilter(row)) return false
       if (keyword && !vn(tenGiaoCho(row)).includes(keyword)) return false
       return true
     })
-  }, [data, searchCanBo, listFilterQuizId])
+  }, [data, searchCanBo, listFilterQuizId, listFilterUnitId, listFilterDeptId, listSubDeptIds])
 
-  const hasListFilter = !!searchCanBo || !!listFilterQuizId
+  const hasListFilter = !!searchCanBo || !!listFilterQuizId || !!listFilterUnitId || !!listFilterDeptId
+  // Chỉ bật xóa theo bộ lọc khi có bộ đề hoặc chi nhánh/phòng ban — tìm theo tên cán bộ
+  // không được hỗ trợ ở API xóa hàng loạt nên không tính vào điều kiện bật nút
+  const canBulkDeleteByFilter = !!listFilterQuizId || !!listFilterUnitId || !!listFilterDeptId
+
+  const bulkDeleteScopeText = () => {
+    const parts: string[] = []
+    if (listFilterQuizId) parts.push(`bộ đề "${quizzes.find((q) => q.id === listFilterQuizId)?.title ?? ''}"`)
+    if (listFilterDeptId) parts.push(`phòng ban "${departments.find((d) => d.id === listFilterDeptId)?.name ?? ''}"`)
+    else if (listFilterUnitId) parts.push(`chi nhánh "${topUnits.find((u) => u.id === listFilterUnitId)?.name ?? ''}"`)
+    return parts.join(' và ') || 'bộ lọc hiện tại'
+  }
 
   const columns = [
     { title: 'Bộ đề', dataIndex: ['quiz', 'title'], ellipsis: true },
@@ -326,11 +389,51 @@ export default function AssignmentsPage() {
           showSearch
           filterOption={(input, opt) => vn(opt?.label ?? '').includes(vn(input))}
         />
+        <Select
+          placeholder="Chi nhánh"
+          style={{ width: 200 }}
+          allowClear
+          value={listFilterUnitId}
+          onChange={(v) => { setListFilterUnitId(v); setListFilterDeptId(undefined) }}
+          options={topUnits.map((d) => ({ value: d.id, label: d.name }))}
+          showSearch
+          filterOption={(input, opt) => vn(opt?.label ?? '').includes(vn(input))}
+        />
+        <Select
+          placeholder="Phòng ban"
+          style={{ width: 200 }}
+          allowClear
+          disabled={!listFilterUnitId}
+          value={listFilterDeptId}
+          onChange={setListFilterDeptId}
+          options={listSubDepts.map((d) => {
+            const unitName = topUnits.find((u) => u.id === listFilterUnitId)?.name ?? ''
+            const label = unitName && d.name.toLowerCase().startsWith(unitName.toLowerCase())
+              ? d.name.slice(unitName.length).replace(/^\s*[-–]\s*/, '').trim()
+              : d.name
+            return { value: d.id, label }
+          })}
+          showSearch
+          filterOption={(input, opt) => vn(opt?.label ?? '').includes(vn(input))}
+        />
         {hasListFilter && (
-          <Button onClick={() => { setSearchCanBo(''); setListFilterQuizId(undefined) }}>
-            Xóa bộ lọc
+          <Button onClick={() => { setSearchCanBo(''); setListFilterQuizId(undefined); setListFilterUnitId(undefined); setListFilterDeptId(undefined) }}>
+            Bỏ lọc
           </Button>
         )}
+        <Popconfirm
+          title="Gỡ phân công hàng loạt?"
+          description={`Gỡ bỏ phân công bộ đề (KHÔNG xóa tài khoản/hồ sơ) khỏi toàn bộ cán bộ/user thuộc ${bulkDeleteScopeText()} (đang hiển thị ${filteredData.length} người). Người đã làm bài sẽ được giữ lại. Hành động này không thể hoàn tác.`}
+          okText="Gỡ phân công"
+          cancelText="Hủy"
+          okButtonProps={{ danger: true, loading: deleteByFilterMut.isPending }}
+          onConfirm={() => deleteByFilterMut.mutate()}
+          disabled={!canBulkDeleteByFilter}
+        >
+          <Button icon={<DeleteOutlined />} danger disabled={!canBulkDeleteByFilter} loading={deleteByFilterMut.isPending}>
+            Xóa cán bộ/user theo bộ lọc
+          </Button>
+        </Popconfirm>
       </Space>
 
       <ManageTable<Assignment>

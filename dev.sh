@@ -63,12 +63,15 @@ done
 [ $PG_WAIT -gt 0 ] && echo ""
 echo -e "${YELLOW}[DB]${NC} PostgreSQL ready ✓  →  localhost:${DB_PORT}"
 
-echo -e "${GREEN}[API]${NC} Khởi động API..."
-docker compose -f "$ROOT/docker-compose.yml" up -d api 2>&1 | grep -v "^$" || true
+# api/web build code NGAY TRONG image (Dockerfile COPY . . rồi build) — không mount
+# source từ host, nên bắt buộc --build ở mỗi lần chạy để luôn dùng code mới nhất.
+# Docker cache theo nội dung file COPY nên khi code không đổi vẫn chạy nhanh như cũ.
+echo -e "${GREEN}[API]${NC} Build + khởi động API (code mới nhất)..."
+docker compose -f "$ROOT/docker-compose.yml" up -d --build api 2>&1 | grep -v "^$" || true
 echo -e "${GREEN}[API]${NC} API ready ✓  →  http://localhost:${API_PORT}/api"
 
-echo -e "${CYAN}[WEB]${NC} Khởi động Web portal..."
-docker compose -f "$ROOT/docker-compose.yml" up -d web 2>&1 | grep -v "^$" || true
+echo -e "${CYAN}[WEB]${NC} Build + khởi động Web portal (code mới nhất)..."
+docker compose -f "$ROOT/docker-compose.yml" up -d --build web 2>&1 | grep -v "^$" || true
 echo -e "${CYAN}[WEB]${NC} Web ready ✓  →  http://localhost:${WEB_PORT}"
 
 # ── 4. Tóm tắt ────────────────────────────────────────────
@@ -83,5 +86,5 @@ echo -e "  🖥  Web:  ${GREEN}http://localhost:${WEB_PORT}${NC}        [Docker]
 echo ""
 echo -e "  Logs:     ${CYAN}docker compose logs -f api${NC}  |  ${CYAN}docker compose logs -f web${NC}"
 echo -e "  Stop:     ${CYAN}docker compose stop${NC}   ← giữ nguyên data"
-echo -e "  Restart:  ${CYAN}docker compose restart api${NC}"
+echo -e "  Restart (code mới): ${CYAN}docker compose up -d --build api web${NC}  ← restart thường KHÔNG lấy code mới"
 echo ""

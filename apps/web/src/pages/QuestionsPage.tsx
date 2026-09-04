@@ -168,6 +168,24 @@ export default function QuestionsPage() {
     },
   })
 
+  const deleteAllQuestionsMutation = useMutation({
+    mutationFn: (subjectId: string | null) =>
+      api.delete('/admin/bank-questions', {
+        params: subjectId ? { subjectId } : {},
+      }),
+    onSuccess: (res) => {
+      const deleted = Number(res.data?.deleted ?? 0)
+      qc.invalidateQueries({ queryKey: ['bank-questions'] })
+      qc.invalidateQueries({ queryKey: ['subjects'] })
+      message.success(
+        deleted > 0
+          ? `Đã xóa ${deleted} câu hỏi khỏi ngân hàng`
+          : 'Không có câu hỏi nào để xóa',
+      )
+    },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi xóa toàn bộ câu hỏi')),
+  })
+
   // ── Handlers ─────────────────────────────────────────────────────────
   const openNewSubjectModal = () => { setEditSubject(null); subjectForm.resetFields(); setSubjectModalOpen(true) }
   const openEditSubjectModal = (s: Subject) => {
@@ -366,6 +384,11 @@ export default function QuestionsPage() {
     </Space>
   )
 
+  const selectedSubject = selectedSubjectId ? subjects.find((s) => s.id === selectedSubjectId) ?? null : null
+  const deleteAllDescription = selectedSubject
+    ? `Bạn có chắc muốn xóa toàn bộ ${questions.length} câu hỏi của lĩnh vực "${selectedSubject.name}"? Hành động này không thể hoàn tác.`
+    : `Bạn có chắc muốn xóa sạch ${questions.length} câu hỏi trong ngân hàng câu hỏi? Hành động này không thể hoàn tác.`
+
   return (
     <Layout style={{ minHeight: '100%', background: 'transparent' }}>
       {/* Sidebar lĩnh vực — chỉ hiện từ tablet ngang/desktop, phone dùng Select + Drawer bên dưới */}
@@ -385,6 +408,24 @@ export default function QuestionsPage() {
             </Text>
           </Title>
           <Space wrap>
+            <Popconfirm
+              title="Xóa toàn bộ câu hỏi?"
+              description={deleteAllDescription}
+              okText="Xóa toàn bộ"
+              cancelText="Hủy"
+              okButtonProps={{ danger: true, loading: deleteAllQuestionsMutation.isPending }}
+              onConfirm={() => deleteAllQuestionsMutation.mutate(selectedSubjectId)}
+              disabled={questions.length === 0}
+            >
+              <Button
+                icon={<DeleteOutlined />}
+                danger
+                disabled={questions.length === 0}
+                loading={deleteAllQuestionsMutation.isPending}
+              >
+                Xóa toàn bộ
+              </Button>
+            </Popconfirm>
             <Button
               icon={<UploadOutlined />}
               onClick={() => {

@@ -83,6 +83,12 @@ export class AdminController {
     return this.adminService.deleteBankQuestion(id);
   }
 
+  @Delete('bank-questions')
+  @Roles(...TRAINING_ROLES)
+  deleteAllBankQuestions(@Query('subjectId') subjectId?: string) {
+    return this.adminService.deleteAllBankQuestions(subjectId);
+  }
+
   // ── Import Excel ─────────────────────────────────────────────────────
   @Post('bank-questions/import/sheets')
   @Roles(...TRAINING_ROLES)
@@ -219,6 +225,16 @@ export class AdminController {
   @Roles(...TRAINING_ROLES)
   deleteAssignment(@Param('id') id: string) {
     return this.adminService.deleteAssignment(id);
+  }
+
+  // Xóa hàng loạt theo bộ đề và/hoặc chi nhánh/phòng ban (dùng cho nút "Xóa theo bộ lọc")
+  @Delete('assignments')
+  @Roles(...TRAINING_ROLES)
+  deleteAssignmentsByFilter(
+    @Query('quizId') quizId?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.adminService.deleteAssignmentsByFilter(quizId, departmentId);
   }
 
   // ── Reports ───────────────────────────────────────────────────────────
