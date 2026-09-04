@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Tag, Typography, Badge, Button, Space, Popconfirm, message,
   Modal, Form, Input, InputNumber, Switch, Drawer, Select, theme,
-  Tooltip,
+  Tooltip, Divider,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined } from '@ant-design/icons'
 import ManageTable from '../components/ManageTable'
@@ -15,13 +15,38 @@ interface Quiz {
   durationMin: number; passScore?: number; isActive: boolean
   _count: { questions: number; assignments: number }
 }
-interface Subject { id: string; name: string }
+interface Subject { id: string; name: string; _count?: { questions: number } }
 interface QuestionOption { content: string; isCorrect: boolean }
 interface Question { id: string; content: string; questionType: string; points: number; options: QuestionOption[]; subject?: { name: string } }
 
 type QuizFormValues = Omit<Quiz, 'id' | '_count'>
 interface SubjectSlot { subjectId?: string; count: number }
 interface PickFormValues { subjectSlots: SubjectSlot[]; replaceAll: boolean }
+interface SubjectRatio { subjectId?: string; percent: number }
+interface QuizCreateFormValues extends QuizFormValues {
+  autoPickEnabled?: boolean
+  totalQuestionCount?: number
+  subjectRatios?: SubjectRatio[]
+}
+
+/**
+ * Quy đổi tỷ lệ % mỗi lĩnh vực thành số câu cụ thể, tổng luôn khớp chính xác
+ * `total` (không lệch do làm tròn) — dùng phương pháp phần dư lớn nhất
+ * (Largest Remainder Method): làm tròn xuống trước, phần thiếu chia cho các
+ * dòng có phần thập phân bị cắt lớn nhất.
+ */
+function phanBoTheoTyLe(total: number, ratios: SubjectRatio[]): number[] {
+  const raw = ratios.map((r) => (total * (r.percent || 0)) / 100)
+  const counts = raw.map(Math.floor)
+  let conThieu = total - counts.reduce((a, b) => a + b, 0)
+  const thuTuPhanDu = raw
+    .map((v, i) => ({ i, phanDu: v - counts[i] }))
+    .sort((a, b) => b.phanDu - a.phanDu)
+  for (let k = 0; k < thuTuPhanDu.length && conThieu > 0; k++, conThieu--) {
+    counts[thuTuPhanDu[k].i]++
+  }
+  return counts
+}
 
 export default function QuizzesPage() {
   const { token } = theme.useToken()
@@ -86,9 +111,9 @@ export default function QuizzesPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (data: QuizFormValues) => api.post('/admin/quizzes', data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['quizzes'] }); setQuizModalOpen(false); quizForm.resetFields() },
+    mutationFn: (data: QuizFormValues) => api.post<Quiz>('/admin/quizzes', data).then((r) => r.data),
   })
+  const [autoPicking, setAutoPicking] = useState(false)
 
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: { id: string } & QuizFormValues) => api.put(`/admin/quizzes/${id}`, data),
@@ -113,7 +138,15 @@ export default function QuizzesPage() {
   })
 
   // ── Handlers ─────────────────────────────────────────────────────────
-  const openNew = () => { setEditQuiz(null); quizForm.resetFields(); quizForm.setFieldsValue({ durationMin: 30, passScore: 70, isActive: true }); setQuizModalOpen(true) }
+  const openNew = () => {
+    setEditQuiz(null)
+    quizForm.resetFields()
+    quizForm.setFieldsValue({
+      durationMin: 30, passScore: 70, isActive: true,
+      autoPickEnabled: false, subjectRatios: [{ percent: 100 }],
+    })
+    setQuizModalOpen(true)
+  }
   const openEdit = (q: Quiz) => { setEditQuiz(q); quizForm.setFieldsValue(q); setQuizModalOpen(true) }
   const openDetail = (q: Quiz) => { setDetailQuiz(q); setDetailDrawerOpen(true) }
   const openPick = (q: Quiz) => {
@@ -131,9 +164,39 @@ export default function QuizzesPage() {
     }
   }, [pickTarget, pickModalOpen, pickForm])
 
-  const handleQuizSubmit = (values: QuizFormValues) => {
-    if (editQuiz) updateMutation.mutate({ id: editQuiz.id, ...values })
-    else createMutation.mutate(values)
+  const handleQuizSubmit = async (values: QuizCreateFormValues) => {
+    const { autoPickEnabled, totalQuestionCount, subjectRatios, ...quizValues } = values
+    if (editQuiz) {
+      updateMutation.mutate({ id: editQuiz.id, ...quizValues })
+      return
+    }
+    try {
+      const newQuiz = await createMutation.mutateAsync(quizValues)
+      qc.invalidateQueries({ queryKey: ['quizzes'] })
+
+      if (autoPickEnabled && totalQuestionCount && subjectRatios?.length) {
+        setAutoPicking(true)
+        const counts = phanBoTheoTyLe(totalQuestionCount, subjectRatios)
+        const subjectSlots = subjectRatios
+          .map((r, i) => ({ subjectId: r.subjectId, count: counts[i] }))
+          .filter((s) => s.count > 0)
+        try {
+          const res = await api.post<{ added: number }>(`/admin/quizzes/${newQuiz.id}/pick-random`, { subjectSlots, replaceAll: false })
+          message.success(`Đã tạo bộ đề và thêm ${res.data.added} câu hỏi theo tỷ lệ đã chọn`)
+        } catch (e) {
+          message.warning(getErrorMessage(e, 'Đã tạo bộ đề nhưng lấy câu hỏi tự động thất bại — vào "Lấy câu ngẫu nhiên" để thử lại'))
+        } finally {
+          setAutoPicking(false)
+        }
+        qc.invalidateQueries({ queryKey: ['quizzes'] })
+      } else {
+        message.success('Đã tạo bộ đề')
+      }
+      setQuizModalOpen(false)
+      quizForm.resetFields()
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Lỗi khi tạo bộ đề'))
+    }
   }
 
   const handlePick = (values: PickFormValues) => {
@@ -210,7 +273,7 @@ export default function QuizzesPage() {
         open={quizModalOpen}
         onCancel={() => { setQuizModalOpen(false); setEditQuiz(null); quizForm.resetFields() }}
         onOk={() => quizForm.submit()}
-        confirmLoading={createMutation.isPending || updateMutation.isPending}
+        confirmLoading={createMutation.isPending || updateMutation.isPending || autoPicking}
         width={540}
       >
         <Form form={quizForm} layout="vertical" onFinish={handleQuizSubmit}>
@@ -234,6 +297,107 @@ export default function QuizzesPage() {
               <Switch />
             </Form.Item>
           </Space>
+
+          {!editQuiz && (
+            <>
+              <Divider titlePlacement="left" style={{ marginTop: 4, marginBottom: 12 }}>
+                Tự động chọn câu hỏi từ ngân hàng
+              </Divider>
+              <Form.Item
+                name="autoPickEnabled"
+                label="Trộn câu hỏi theo tỷ lệ lĩnh vực"
+                valuePropName="checked"
+                tooltip='Bật để ngay khi tạo bộ đề, hệ thống tự lấy ngẫu nhiên câu hỏi từ ngân hàng theo tỷ lệ % mỗi lĩnh vực bạn ấn định — VD: 30% Tín dụng, 30% Kế toán, 10% Kiến thức chung, 25% CNTT, 5% Giao tiếp.'
+              >
+                <Switch />
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.autoPickEnabled !== cur.autoPickEnabled}>
+                {() => !quizForm.getFieldValue('autoPickEnabled') ? null : (
+                  <>
+                    <Form.Item
+                      name="totalQuestionCount"
+                      label="Tổng số câu hỏi"
+                      rules={[{ required: true, message: 'Nhập tổng số câu hỏi' }]}
+                    >
+                      <InputNumber min={1} max={500} style={{ width: 160 }} />
+                    </Form.Item>
+
+                    <Form.Item label="Tỷ lệ theo lĩnh vực (tổng phải đúng 100%)">
+                      <Form.List
+                        name="subjectRatios"
+                        rules={[{
+                          validator: async (_, ratios: SubjectRatio[]) => {
+                            if (!ratios || ratios.length === 0) return Promise.reject(new Error('Thêm ít nhất 1 lĩnh vực'))
+                            const total = ratios.reduce((s, r) => s + (r?.percent || 0), 0)
+                            if (Math.round(total) !== 100) return Promise.reject(new Error(`Tổng tỷ lệ đang là ${total}% — phải đúng 100%`))
+                          },
+                        }]}
+                      >
+                        {(fields, { add, remove }, { errors }) => (
+                          <>
+                            {fields.map(({ key, name }) => (
+                              <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                                <Form.Item name={[name, 'subjectId']} noStyle rules={[{ required: true, message: 'Chọn lĩnh vực' }]}>
+                                  <Select
+                                    showSearch
+                                    optionFilterProp="label"
+                                    placeholder="Chọn lĩnh vực"
+                                    style={{ width: 260 }}
+                                    options={subjects.map((s) => ({ value: s.id, label: `${s.name} (${s._count?.questions ?? 0} câu)` }))}
+                                  />
+                                </Form.Item>
+                                <Form.Item name={[name, 'percent']} noStyle rules={[{ required: true, message: 'Nhập %' }]}>
+                                  <InputNumber min={0} max={100} addonAfter="%" placeholder="Tỷ lệ" style={{ width: 110 }} />
+                                </Form.Item>
+                                {fields.length > 1 && (
+                                  <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f', cursor: 'pointer' }} />
+                                )}
+                              </Space>
+                            ))}
+                            <Form.ErrorList errors={errors} />
+                            <Button type="dashed" onClick={() => add({ percent: 0 })} icon={<PlusOutlined />} size="small">
+                              Thêm lĩnh vực
+                            </Button>
+                          </>
+                        )}
+                      </Form.List>
+                    </Form.Item>
+
+                    {/* Xem trước: tổng tỷ lệ, số câu quy đổi mỗi lĩnh vực, cảnh báo thiếu câu trong ngân hàng */}
+                    <Form.Item shouldUpdate noStyle>
+                      {() => {
+                        const total = quizForm.getFieldValue('totalQuestionCount') as number | undefined
+                        const ratios = (quizForm.getFieldValue('subjectRatios') ?? []) as SubjectRatio[]
+                        const tongTyLe = ratios.reduce((s, r) => s + (r?.percent || 0), 0)
+                        if (!total || ratios.length === 0) return null
+                        const counts = phanBoTheoTyLe(total, ratios)
+                        return (
+                          <div style={{ marginTop: -8, marginBottom: 12 }}>
+                            <Typography.Text type={tongTyLe === 100 ? 'secondary' : 'danger'} style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                              Tổng tỷ lệ: {tongTyLe}%{tongTyLe !== 100 && ' — phải đúng 100%'}
+                            </Typography.Text>
+                            {ratios.map((r, i) => {
+                              if (!r.subjectId) return null
+                              const subj = subjects.find((s) => s.id === r.subjectId)
+                              const available = subj?._count?.questions ?? 0
+                              const need = counts[i]
+                              const thieu = need > available
+                              return (
+                                <Typography.Text key={i} type={thieu ? 'danger' : 'secondary'} style={{ fontSize: 12, display: 'block' }}>
+                                  {subj?.name ?? '—'}: {need} câu{thieu && ` (ngân hàng chỉ có ${available} câu — không đủ!)`}
+                                </Typography.Text>
+                              )
+                            })}
+                          </div>
+                        )
+                      }}
+                    </Form.Item>
+                  </>
+                )}
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
 

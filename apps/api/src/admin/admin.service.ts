@@ -225,8 +225,11 @@ export class AdminService {
 
   // ── Subjects (Lĩnh vực) ──────────────────────────────────────────────
   getSubjects() {
+    // Chỉ đếm câu hỏi thuộc ngân hàng (isBank=true) — không tính các bản sao
+    // đã được "Lấy câu ngẫu nhiên" copy vào từng bộ đề (isBank=false), nếu
+    // không con số sẽ phình to sai lệch mỗi lần ai đó dùng tính năng đó.
     return this.prisma.subject.findMany({
-      include: { _count: { select: { questions: true } } },
+      include: { _count: { select: { questions: { where: { isBank: true } } } } },
       orderBy: { name: 'asc' },
     });
   }
