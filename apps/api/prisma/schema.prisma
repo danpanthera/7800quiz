@@ -28,8 +28,9 @@ model User {
   auditLogs    AuditLog[]
   classMembers ClassMember[]
   userProgress UserProgress?
-  attempts     QuizAttempt[]
-  arenaTeams   ArenaTeam[]
+  attempts         QuizAttempt[]
+  arenaTeamMembers ArenaTeamMember[]
+  arenaInvites     ArenaInvite[]
 
   @@map("users")
 }
@@ -421,11 +422,28 @@ model ArenaSession {
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
-  quiz   Quiz         @relation(fields: [quizId], references: [id])
-  teams  ArenaTeam[]
-  rounds ArenaRound[]
+  quiz    Quiz          @relation(fields: [quizId], references: [id])
+  teams   ArenaTeam[]
+  rounds  ArenaRound[]
+  invites ArenaInvite[]
 
   @@map("arena_sessions")
+}
+
+// Danh sách mời — nếu phiên có >=1 dòng invite thì trở thành phòng giới hạn
+// (allowlist): chỉ user có trong danh sách mới join được, kể cả khi có đúng
+// mã/mật khẩu. Không có invite nào = ai cũng join được như trước giờ.
+model ArenaInvite {
+  id             String   @id @default(uuid())
+  arenaSessionId String   @map("arena_session_id")
+  userId         String   @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([arenaSessionId, userId])
+  @@map("arena_invites")
 }
 
 enum ArenaStatus {
@@ -446,19 +464,33 @@ enum ArenaHostMode {
 model ArenaTeam {
   id             String   @id @default(uuid())
   arenaSessionId String   @map("arena_session_id")
-  userId         String?  @map("user_id") // người chơi sở hữu đội — bắt buộc từ khi Arena yêu cầu đăng nhập
   name           String
   color          String // hex color tự động assign
   score          Int      @default(0)
   rank           Int? // điền sau khi kết thúc
   joinedAt       DateTime @default(now()) @map("joined_at")
 
-  arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
-  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  arenaSession ArenaSession      @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
+  members      ArenaTeamMember[] // 1-5 người chơi cùng đội — MC gộp thủ công tại sảnh chờ
   buzzes       ArenaBuzz[]
 
-  @@unique([arenaSessionId, userId])
   @@map("arena_teams")
+}
+
+// 1 dòng = 1 người chơi thuộc 1 đội. Đội "chơi đơn" chỉ có đúng 1 member —
+// không cần khái niệm riêng cho solo vs team, MC gộp thêm member là thành team.
+model ArenaTeamMember {
+  id             String   @id @default(uuid())
+  arenaSessionId String   @map("arena_session_id") // denormalize để ràng buộc 1 user chỉ ở 1 đội / phiên
+  arenaTeamId    String   @map("arena_team_id")
+  userId         String   @map("user_id")
+  joinedAt       DateTime @default(now()) @map("joined_at")
+
+  arenaTeam ArenaTeam @relation(fields: [arenaTeamId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([arenaSessionId, userId])
+  @@map("arena_team_members")
 }
 
 model ArenaRound {

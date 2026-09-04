@@ -87,11 +87,23 @@ export class ArenaService {
       });
     }
 
+    // Danh sách mời — có >=1 userId thì phòng trở thành allowlist
+    const invitedUserIds = [...new Set(dto.invitedUserIds ?? [])];
+    if (invitedUserIds.length > 0) {
+      await this.prisma.arenaInvite.createMany({
+        data: invitedUserIds.map((userId) => ({
+          arenaSessionId: session.id,
+          userId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     return this.getSessionDetail(session.id);
   }
 
   async listSessions() {
-    return this.prisma.arenaSession.findMany({
+    const sessions = await this.prisma.arenaSession.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         quiz: { select: { id: true, title: true } },
@@ -102,11 +114,31 @@ export class ArenaService {
             color: true,
             score: true,
             rank: true,
+            members: {
+              select: {
+                userId: true,
+                user: { select: { fullName: true } },
+              },
+            },
           },
+        },
+        invites: {
+          include: { user: { select: { id: true, fullName: true } } },
         },
         _count: { select: { rounds: true } },
       },
     });
+    // Làm phẳng members về {userId, fullName} cho khớp shape các endpoint khác
+    return sessions.map((s) => ({
+      ...s,
+      teams: s.teams.map((t) => ({
+        ...t,
+        members: t.members.map((m) => ({
+          userId: m.userId,
+          fullName: m.user.fullName,
+        })),
+      })),
+    }));
   }
 
   async getSessionDetail(id: string) {
@@ -114,7 +146,17 @@ export class ArenaService {
       where: { id },
       include: {
         quiz: { select: { id: true, title: true, durationMin: true } },
-        teams: { orderBy: { score: 'desc' } },
+        teams: {
+          orderBy: { score: 'desc' },
+          include: {
+            members: {
+              include: { user: { select: { id: true, fullName: true } } },
+            },
+          },
+        },
+        invites: {
+          include: { user: { select: { id: true, fullName: true } } },
+        },
         rounds: {
           orderBy: { order: 'asc' },
           include: {
@@ -125,7 +167,17 @@ export class ArenaService {
       },
     });
     if (!session) throw new NotFoundException('Arena session không tồn tại');
-    return session;
+    // Làm phẳng members về {userId, fullName} cho khớp shape các endpoint khác
+    return {
+      ...session,
+      teams: session.teams.map((t) => ({
+        ...t,
+        members: t.members.map((m) => ({
+          userId: m.userId,
+          fullName: m.user.fullName,
+        })),
+      })),
+    };
   }
 
   async getSessionByJoinCode(joinCode: string) {
@@ -134,14 +186,19 @@ export class ArenaService {
       include: {
         quiz: { select: { id: true, title: true } },
         teams: { select: { id: true, name: true, color: true, score: true } },
+        invites: { select: { userId: true } },
         _count: { select: { rounds: true } },
       },
     });
     if (!session) throw new NotFoundException('Mã tham gia không hợp lệ');
-    // Endpoint public (chưa đăng nhập) — không được lộ giá trị mật khẩu thật,
-    // chỉ báo cho client biết có cần nhập mật khẩu hay không.
-    const { passcode, ...rest } = session;
-    return { ...rest, requiresPasscode: !!passcode };
+    // Endpoint public (chưa đăng nhập) — không được lộ giá trị mật khẩu thật
+    // hay danh sách tên được mời, chỉ báo cờ để client hiện đúng cảnh báo.
+    const { passcode, invites, ...rest } = session;
+    return {
+      ...rest,
+      requiresPasscode: !!passcode,
+      isInviteOnly: invites.length > 0,
+    };
   }
 
   async deleteSession(id: string) {
@@ -179,16 +236,39 @@ export class ArenaService {
   ) {
     const session = await this.prisma.arenaSession.findUnique({
       where: { joinCode },
-      include: { teams: true },
+      include: { teams: true, invites: true },
     });
     if (!session) throw new BadRequestException('Mã tham gia không hợp lệ');
     if (session.status !== ArenaStatus.LOBBY)
       throw new BadRequestException('Phiên đấu đã bắt đầu hoặc kết thúc');
 
     // Đã tham gia trước đó (vd: refresh trang) — trả lại đúng đội cũ, không tạo mới,
-    // không bắt nhập lại mật khẩu vì đã qua vòng kiểm tra lúc join lần đầu
-    const existingByUser = session.teams.find((t) => t.userId === userId);
-    if (existingByUser) return { session, team: existingByUser };
+    // không bắt kiểm tra lại mật khẩu/allowlist vì đã qua vòng kiểm tra lúc join lần đầu
+    const existingMembership = await this.prisma.arenaTeamMember.findUnique({
+      where: {
+        arenaSessionId_userId: { arenaSessionId: session.id, userId },
+      },
+      include: {
+        arenaTeam: {
+          include: {
+            members: {
+              include: { user: { select: { id: true, fullName: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (existingMembership)
+      return { session, team: existingMembership.arenaTeam };
+
+    // Phòng allowlist (có >=1 lời mời) — chỉ userId nằm trong danh sách mới được vào
+    if (
+      session.invites.length > 0 &&
+      !session.invites.some((i) => i.userId === userId)
+    )
+      throw new BadRequestException(
+        'Bạn không có trong danh sách được mời tham gia phòng này',
+      );
 
     if (session.passcode && session.passcode !== (passcode ?? '').trim())
       throw new BadRequestException('Sai mật khẩu phòng');
@@ -204,7 +284,17 @@ export class ArenaService {
 
     const color = TEAM_COLORS[session.teams.length];
     const team = await this.prisma.arenaTeam.create({
-      data: { arenaSessionId: session.id, userId, name: teamName, color },
+      data: {
+        arenaSessionId: session.id,
+        name: teamName,
+        color,
+        members: { create: { arenaSessionId: session.id, userId } },
+      },
+      include: {
+        members: {
+          include: { user: { select: { id: true, fullName: true } } },
+        },
+      },
     });
 
     return { session, team };
@@ -224,6 +314,73 @@ export class ArenaService {
     if (!team) throw new NotFoundException('Đội không tồn tại trong phiên này');
     await this.prisma.arenaTeam.delete({ where: { id: teamId } });
     return { teamId, teamName: team.name };
+  }
+
+  // MC gộp 2-5 người chơi (đang là đội đơn hoặc đội đã gộp trước đó) thành 1 đội
+  // chung điểm số + chung lượt buzz-in. Chỉ cho phép khi còn ở sảnh chờ vì lúc
+  // đó chắc chắn chưa có buzz nào cần xử lý dồn/tách.
+  async mergeTeams(sessionId: string, teamIds: string[], teamName?: string) {
+    const uniqueIds = [...new Set(teamIds ?? [])];
+    if (uniqueIds.length < 2)
+      throw new BadRequestException('Chọn ít nhất 2 người/đội để gộp');
+
+    const session = await this.prisma.arenaSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    if (session.status !== ArenaStatus.LOBBY)
+      throw new BadRequestException('Chỉ có thể gộp đội khi phiên đang ở sảnh chờ');
+
+    const teams = await this.prisma.arenaTeam.findMany({
+      where: { id: { in: uniqueIds }, arenaSessionId: sessionId },
+      include: { members: true },
+    });
+    if (teams.length !== uniqueIds.length)
+      throw new BadRequestException('Một số đội không tồn tại trong phiên này');
+
+    const totalMembers = teams.reduce((sum, t) => sum + t.members.length, 0);
+    if (totalMembers < 2 || totalMembers > 5)
+      throw new BadRequestException('Một đội gộp phải có từ 2 đến 5 người chơi');
+
+    // Đội sống sót = đội vào phòng sớm nhất trong nhóm chọn, các đội còn lại
+    // chuyển hết member sang rồi xoá (an toàn vì đang LOBBY, chưa có buzz nào)
+    const [survivor, ...removed] = [...teams].sort(
+      (a, b) => a.joinedAt.getTime() - b.joinedAt.getTime(),
+    );
+
+    await this.prisma.$transaction([
+      this.prisma.arenaTeamMember.updateMany({
+        where: { arenaTeamId: { in: removed.map((t) => t.id) } },
+        data: { arenaTeamId: survivor.id },
+      }),
+      this.prisma.arenaTeam.deleteMany({
+        where: { id: { in: removed.map((t) => t.id) } },
+      }),
+      ...(teamName?.trim()
+        ? [
+            this.prisma.arenaTeam.update({
+              where: { id: survivor.id },
+              data: { name: teamName.trim() },
+            }),
+          ]
+        : []),
+    ]);
+
+    const allTeams = await this.prisma.arenaTeam.findMany({
+      where: { arenaSessionId: sessionId },
+      orderBy: { joinedAt: 'asc' },
+      include: {
+        members: {
+          include: { user: { select: { id: true, fullName: true } } },
+        },
+      },
+    });
+    const survivorFresh = allTeams.find((t) => t.id === survivor.id)!;
+
+    return {
+      team: survivorFresh,
+      removedTeamIds: removed.map((t) => t.id),
+      allTeams,
+    };
   }
 
   async startSession(sessionId: string) {
@@ -309,13 +466,16 @@ export class ArenaService {
     if (round.status !== ArenaRoundStatus.ACTIVE)
       throw new BadRequestException('Round không đang active');
 
-    // Check team belongs to session và đúng người sở hữu đội mới được trả lời thay đội
+    // Check team belongs to session và phải là thành viên đội mới được trả lời thay đội
+    // (đội nhiều người: bất kỳ ai trong đội bấm trước cũng tính là câu trả lời chung)
     const team = await this.prisma.arenaTeam.findFirst({
       where: { id: teamId, arenaSessionId: round.arenaSessionId },
     });
     if (!team) throw new BadRequestException('Đội không thuộc phiên này');
-    if (team.userId !== userId)
-      throw new BadRequestException('Bạn không thuộc đội này');
+    const membership = await this.prisma.arenaTeamMember.findFirst({
+      where: { arenaTeamId: teamId, userId },
+    });
+    if (!membership) throw new BadRequestException('Bạn không thuộc đội này');
 
     // Check not already answered
     const existingBuzz = await this.prisma.arenaBuzz.findUnique({
@@ -449,6 +609,7 @@ export class ArenaService {
     const teams = await this.prisma.arenaTeam.findMany({
       where: { arenaSessionId: sessionId },
       orderBy: [{ score: 'desc' }, { joinedAt: 'asc' }],
+      include: { members: true },
     });
 
     // Assign final ranks
@@ -475,41 +636,44 @@ export class ArenaService {
     > = {};
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
-      if (!team.userId) continue; // đội cũ trước khi Arena yêu cầu đăng nhập — bỏ qua
       const rank = i + 1;
       const isWinner = rank === 1;
 
-      await this.gamification.updateActivity(team.userId);
-      if (isWinner) await this.gamification.incrementArenaWins(team.userId);
+      // Đội nhiều người: mỗi thành viên đều nhận XP tham gia/thắng như nhau
+      for (const member of team.members) {
+        const userId = member.userId;
+        await this.gamification.updateActivity(userId);
+        if (isWinner) await this.gamification.incrementArenaWins(userId);
 
-      const participateResult = await this.gamification.awardXp(
-        team.userId,
-        10,
-        XpSource.ARENA_PARTICIPATE,
-        sessionId,
-        `Tham gia Arena, hạng ${rank}`,
-      );
-      const winResult = isWinner
-        ? await this.gamification.awardXp(
-            team.userId,
-            30,
-            XpSource.ARENA_WIN,
-            sessionId,
-            'Vô địch Arena',
-          )
-        : null;
+        const participateResult = await this.gamification.awardXp(
+          userId,
+          10,
+          XpSource.ARENA_PARTICIPATE,
+          sessionId,
+          `Tham gia Arena, hạng ${rank}`,
+        );
+        const winResult = isWinner
+          ? await this.gamification.awardXp(
+              userId,
+              30,
+              XpSource.ARENA_WIN,
+              sessionId,
+              'Vô địch Arena',
+            )
+          : null;
 
-      xpResults[team.userId] = {
-        levelUp: participateResult.levelUp || (winResult?.levelUp ?? false),
-        newLevel: Math.max(
-          participateResult.newLevel,
-          winResult?.newLevel ?? 0,
-        ),
-        newBadges: [
-          ...participateResult.newBadges,
-          ...(winResult?.newBadges ?? []),
-        ],
-      };
+        xpResults[userId] = {
+          levelUp: participateResult.levelUp || (winResult?.levelUp ?? false),
+          newLevel: Math.max(
+            participateResult.newLevel,
+            winResult?.newLevel ?? 0,
+          ),
+          newBadges: [
+            ...participateResult.newBadges,
+            ...(winResult?.newBadges ?? []),
+          ],
+        };
+      }
     }
 
     return {

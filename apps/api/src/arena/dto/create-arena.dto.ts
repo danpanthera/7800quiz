@@ -52,4 +52,12 @@ export class CreateArenaDto {
   @IsInt()
   @Min(0)
   penaltyWrong?: number;
+
+  // Danh sách userId được mời — tuỳ chọn. Có >=1 phần tử thì phòng trở thành
+  // allowlist: chỉ những userId này mới join được, người khác bị từ chối dù
+  // có đúng mã/mật khẩu.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  invitedUserIds?: string[];
 }

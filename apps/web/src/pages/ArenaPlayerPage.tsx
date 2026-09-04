@@ -5,6 +5,7 @@ import {
 } from 'antd'
 import {
   TrophyOutlined, ThunderboltOutlined, CheckCircleOutlined, ArrowLeftOutlined, BankOutlined, LockOutlined,
+  TeamOutlined, MailOutlined,
 } from '@ant-design/icons'
 import { io, Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
@@ -18,7 +19,8 @@ const OPTION_COLORS = ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12']
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number }
+interface TeamMember { userId: string; fullName: string }
+interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number; members?: TeamMember[] }
 interface QuestionOption { id: string; content: string }
 interface ArenaQuestion {
   roundId: string
@@ -36,6 +38,7 @@ interface XpResult { levelUp: boolean; newLevel: number; newBadges: { code: stri
 interface SessionPreview {
   id: string; name: string; joinCode: string; status: string
   requiresPasscode: boolean
+  isInviteOnly: boolean
   quiz: { id: string; title: string }
   teams: { id: string; name: string; color: string; score: number }[]
 }
@@ -105,12 +108,29 @@ export default function ArenaPlayerPage() {
       setLobbyTeams((prev) => [...prev.filter((t) => t.id !== team.id), { ...team, score: 0 }])
     })
 
+    socket.on('arena.teams_updated', ({ teams }: { teams: ArenaTeam[] }) => {
+      setLobbyTeams(teams)
+    })
+
     socket.on('arena.started', () => setView('game'))
 
     socket.on('arena.you_were_kicked', () => {
       setView('kicked')
       socket.disconnect()
       socketRef.current = null
+    })
+
+    // MC gộp mình vào 1 đội khác — đồng bộ lại tên/màu đội đang hiển thị
+    socket.on('arena.you_were_merged', ({ teamId, teamName: newName, teamColor }: { teamId: string; teamName: string; teamColor: string }) => {
+      setMyTeamId(teamId)
+      myTeamIdRef.current = teamId
+      setTeamName(newName)
+      setMyTeamColor(teamColor)
+    })
+
+    // Đồng đội khác đã trả lời thay cả đội — không để mình treo ở màn hình chọn đáp án
+    socket.on('arena.team_answered', () => {
+      setHasAnswered(true)
     })
 
     socket.on('arena.question', (q: ArenaQuestion) => {
@@ -212,10 +232,11 @@ export default function ArenaPlayerPage() {
             <TrophyOutlined style={{ fontSize: 40, color: '#faad14' }} />
             <Title level={3} style={{ margin: '8px 0 0' }}>{preview.name}</Title>
             <Text type="secondary">{preview.quiz.title}</Text>
-            {preview.requiresPasscode && (
-              <div style={{ marginTop: 6 }}>
-                <Tag icon={<LockOutlined />} color="gold">Phòng yêu cầu mật khẩu</Tag>
-              </div>
+            {(preview.requiresPasscode || preview.isInviteOnly) && (
+              <Space style={{ marginTop: 6 }}>
+                {preview.requiresPasscode && <Tag icon={<LockOutlined />} color="gold">Phòng yêu cầu mật khẩu</Tag>}
+                {preview.isInviteOnly && <Tag icon={<MailOutlined />} color="purple">Chỉ dành cho người được mời</Tag>}
+              </Space>
             )}
           </div>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -265,14 +286,23 @@ export default function ArenaPlayerPage() {
         <List
           style={{ marginTop: 8 }}
           dataSource={lobbyTeams}
-          renderItem={(team) => (
-            <List.Item>
-              <Space>
-                <Avatar size="small" style={{ backgroundColor: team.color }}>{team.name[0]?.toUpperCase()}</Avatar>
-                <Text strong={team.id === myTeamId}>{team.name}{team.id === myTeamId ? ' (bạn)' : ''}</Text>
-              </Space>
-            </List.Item>
-          )}
+          renderItem={(team) => {
+            const members = team.members ?? []
+            return (
+              <List.Item>
+                <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                  <Space>
+                    <Avatar size="small" style={{ backgroundColor: team.color }}>{team.name[0]?.toUpperCase()}</Avatar>
+                    <Text strong={team.id === myTeamId}>{team.name}{team.id === myTeamId ? ' (bạn)' : ''}</Text>
+                    {members.length > 1 && <Tag icon={<TeamOutlined />} style={{ marginLeft: 4 }}>{members.length} người</Tag>}
+                  </Space>
+                  {members.length > 1 && (
+                    <Text type="secondary" style={{ fontSize: 12, marginLeft: 28 }}>{members.map((m) => m.fullName).join(', ')}</Text>
+                  )}
+                </Space>
+              </List.Item>
+            )
+          }}
         />
       </CenterCard>
     )

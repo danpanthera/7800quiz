@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Button, Card, Col, Form, InputNumber, Row, Select, Space, Spin, Table, Tag,
   Typography, Divider, Badge, Alert, List, Progress, Modal, Input, Radio,
-  Statistic, Avatar, Popconfirm, message,
+  Statistic, Avatar, Popconfirm, message, Checkbox,
 } from 'antd'
 import {
   TrophyOutlined, TeamOutlined, PlayCircleOutlined, CheckCircleOutlined,
   ArrowRightOutlined, StopOutlined, CopyOutlined, ReloadOutlined,
   ThunderboltOutlined, DeleteOutlined, LockOutlined, SafetyOutlined, UserDeleteOutlined,
+  UsergroupAddOutlined, MailOutlined,
 } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import { io, Socket } from 'socket.io-client'
@@ -19,7 +20,8 @@ const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number }
+interface TeamMember { userId: string; fullName: string }
+interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number; members?: TeamMember[] }
 interface QuestionOption { id: string; content: string }
 interface ArenaQuestion {
   roundId: string
@@ -34,10 +36,12 @@ interface RevealData {
   buzzes: { teamId: string; isCorrect: boolean; pointsAwarded: number }[]
   leaderboard: ArenaTeam[]
 }
+interface InvitedUser { id: string; user: { id: string; fullName: string } }
 interface ArenaSession {
   id: string; name: string; joinCode: string; status: string
   hostMode: string; autoAdvanceSec: number
   passcode?: string | null
+  invites?: InvitedUser[]
   quiz: { id: string; title: string }
   teams: ArenaTeam[]
   rounds: { id: string; order: number }[]
@@ -82,6 +86,10 @@ export default function ArenaPage() {
 
     socket.on('arena.team_kicked', ({ teamId }: { teamId: string }) => {
       setTeams((prev) => prev.filter((t) => t.id !== teamId))
+    })
+
+    socket.on('arena.teams_updated', ({ teams: t }: { teams: ArenaTeam[] }) => {
+      setTeams(t)
     })
 
     socket.on('arena.started', () => setView('game'))
@@ -145,6 +153,9 @@ export default function ArenaPage() {
   function emitReveal() { socketRef.current?.emit('arena.reveal', { sessionId: session!.id }) }
   function emitNext() { socketRef.current?.emit('arena.next', { sessionId: session!.id }) }
   function emitKick(teamId: string) { socketRef.current?.emit('arena.kick', { sessionId: session!.id, teamId }) }
+  function emitMerge(teamIds: string[], teamName?: string) {
+    socketRef.current?.emit('arena.merge', { sessionId: session!.id, teamIds, teamName })
+  }
   function emitEnd() {
     Modal.confirm({
       title: 'Kết thúc phiên đấu?',
@@ -159,7 +170,7 @@ export default function ArenaPage() {
 
   if (view === 'list') return <SessionList onNew={() => setView('create')} onOpen={(s) => { setSession(s); setTeams(s.teams); connectSocket(s.id); setView('lobby') }} />
   if (view === 'create') return <CreateForm onCreated={(s) => { setSession(s); setTeams([]); connectSocket(s.id); setView('lobby') }} onBack={() => setView('list')} />
-  if (view === 'lobby') return <Lobby session={session!} teams={teams} onStart={emitStart} onKick={emitKick} onBack={() => { disconnectSocket(); setView('list') }} />
+  if (view === 'lobby') return <Lobby session={session!} teams={teams} onStart={emitStart} onKick={emitKick} onMerge={emitMerge} onBack={() => { disconnectSocket(); setView('list') }} />
   if (view === 'game') return (
     <GameControl
       session={session!} teams={teams} currentQuestion={currentQuestion}
@@ -343,14 +354,20 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
     queryKey: ['quizzes-select'],
     queryFn: () => api.get('/admin/quizzes').then((r) => r.data),
   })
+  const { data: users } = useQuery<{ id: string; fullName: string; username: string }[]>({
+    queryKey: ['users-select'],
+    queryFn: () => api.get('/admin/users').then((r) => r.data),
+  })
 
   async function onFinish(values: Record<string, unknown>) {
     setLoading(true)
     try {
       const passcode = (values.passcode as string | undefined)?.trim()
+      const invitedUserIds = values.invitedUserIds as string[] | undefined
       const res = await api.post('/admin/arena-sessions', {
         ...values,
         passcode: passcode || undefined,
+        invitedUserIds: invitedUserIds?.length ? invitedUserIds : undefined,
         pointsForRank: (values.pointsForRank as string).split(',').map((v) => parseInt(v.trim())),
       })
       onCreated(res.data)
@@ -406,6 +423,20 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
         >
           <Input.Password placeholder="Không bắt buộc, VD: 1234" autoComplete="new-password" />
         </Form.Item>
+        <Form.Item
+          name="invitedUserIds"
+          label={<span><MailOutlined /> Mời cán bộ cụ thể (tuỳ chọn)</span>}
+          extra="Để trống thì ai có mã/QR (và đúng mật khẩu nếu có) đều join được. Chọn cán bộ ở đây thì phòng chỉ nhận đúng những người này — người khác dù đúng mã/mật khẩu vẫn bị từ chối."
+        >
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            placeholder="Không bắt buộc — để trống nếu không giới hạn"
+            optionFilterProp="label"
+            options={users?.map((u) => ({ value: u.id, label: `${u.fullName} (${u.username})` }))}
+          />
+        </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={loading} icon={<PlayCircleOutlined />} block>
             Tạo phiên & vào Lobby
@@ -418,14 +449,40 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
 
-function Lobby({ session, teams, onStart, onKick, onBack }: {
-  session: ArenaSession; teams: ArenaTeam[]; onStart: () => void; onKick: (teamId: string) => void; onBack: () => void
+function Lobby({ session, teams, onStart, onKick, onMerge, onBack }: {
+  session: ArenaSession; teams: ArenaTeam[]; onStart: () => void; onKick: (teamId: string) => void
+  onMerge: (teamIds: string[], teamName?: string) => void; onBack: () => void
 }) {
   const joinUrl = `${window.location.origin}/arena/join/${session.joinCode}`
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [mergeModalOpen, setMergeModalOpen] = useState(false)
+  const [mergeName, setMergeName] = useState('')
 
   function copyCode() {
     navigator.clipboard.writeText(session.joinCode)
   }
+
+  function toggleSelect(teamId: string) {
+    setSelectedIds((prev) => prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId])
+  }
+
+  const selectedTeams = teams.filter((t) => selectedIds.includes(t.id))
+  const selectedMemberCount = selectedTeams.reduce((sum, t) => sum + (t.members?.length ?? 1), 0)
+  const canMerge = selectedIds.length >= 2 && selectedMemberCount >= 2 && selectedMemberCount <= 5
+
+  function openMergeModal() {
+    setMergeName('')
+    setMergeModalOpen(true)
+  }
+
+  function confirmMerge() {
+    onMerge(selectedIds, mergeName.trim() || undefined)
+    setMergeModalOpen(false)
+    setSelectedIds([])
+  }
+
+  const joinedUserIds = new Set(teams.flatMap((t) => (t.members ?? []).map((m) => m.userId)))
+  const invites = session.invites ?? []
 
   return (
     <Row gutter={24}>
@@ -468,6 +525,35 @@ function Lobby({ session, teams, onStart, onKick, onBack }: {
           <Text type="secondary">Chế độ: <Tag>{session.hostMode}</Tag></Text><br />
           <Text type="secondary">{session.rounds?.length ?? 0} câu hỏi</Text>
         </Card>
+
+        {invites.length > 0 && (
+          <Card
+            style={{ marginTop: 16 }}
+            title={
+              <Space>
+                <MailOutlined style={{ color: '#faad14' }} />
+                <span>Danh sách được mời ({invites.filter((i) => joinedUserIds.has(i.user.id)).length}/{invites.length} đã vào)</span>
+              </Space>
+            }
+          >
+            <List
+              size="small"
+              dataSource={invites}
+              renderItem={(invite) => {
+                const joined = joinedUserIds.has(invite.user.id)
+                return (
+                  <List.Item>
+                    <Space>
+                      {joined ? <CheckCircleOutlined style={{ color: '#52c41a' }} /> : <Spin size="small" />}
+                      <Text type={joined ? undefined : 'secondary'}>{invite.user.fullName}</Text>
+                    </Space>
+                    {!joined && <Text type="secondary" style={{ fontSize: 12 }}>Chưa vào</Text>}
+                  </List.Item>
+                )
+              }}
+            />
+          </Card>
+        )}
       </Col>
       <Col span={14}>
         <Card
@@ -481,6 +567,19 @@ function Lobby({ session, teams, onStart, onKick, onBack }: {
             </Space>
           }
         >
+          {teams.length > 0 && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fafafa', border: '1px solid #eee', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Text type="secondary" style={{ flex: 1, fontSize: 13 }}>
+                {selectedIds.length === 0
+                  ? 'Chọn 2-5 người chơi để gộp thành 1 đội chung điểm số'
+                  : `Đã chọn ${selectedIds.length} mục — ${selectedMemberCount} người${selectedMemberCount > 5 ? ' (vượt quá 5, bỏ bớt)' : ''}`}
+              </Text>
+              {selectedIds.length > 0 && <Button size="small" onClick={() => setSelectedIds([])}>Bỏ chọn</Button>}
+              <Button size="small" type="primary" icon={<UsergroupAddOutlined />} disabled={!canMerge} onClick={openMergeModal}>
+                Gộp thành 1 đội
+              </Button>
+            </div>
+          )}
           {teams.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40 }}>
               <Spin size="large" />
@@ -491,33 +590,67 @@ function Lobby({ session, teams, onStart, onKick, onBack }: {
           ) : (
             <List
               dataSource={teams}
-              renderItem={(team) => (
-                <List.Item
-                  actions={[
-                    <Popconfirm
-                      key="kick"
-                      title="Mời người chơi này ra khỏi phòng?"
-                      description={`Đội "${team.name}" sẽ bị ngắt khỏi phòng ngay lập tức.`}
-                      okText="Mời ra"
-                      okType="danger"
-                      cancelText="Bỏ qua"
-                      onConfirm={() => onKick(team.id)}
-                    >
-                      <Button size="small" danger type="text" icon={<UserDeleteOutlined />}>Đá ra</Button>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    avatar={<Avatar style={{ backgroundColor: team.color }}>{team.name[0].toUpperCase()}</Avatar>}
-                    title={<Text strong>{team.name}</Text>}
-                  />
-                  <Badge color="green" text="Sẵn sàng" />
-                </List.Item>
-              )}
+              renderItem={(team) => {
+                const members = team.members ?? []
+                return (
+                  <List.Item
+                    actions={[
+                      <Popconfirm
+                        key="kick"
+                        title="Mời người chơi này ra khỏi phòng?"
+                        description={`Đội "${team.name}"${members.length > 1 ? ` (${members.length} người)` : ''} sẽ bị ngắt khỏi phòng ngay lập tức.`}
+                        okText="Mời ra"
+                        okType="danger"
+                        cancelText="Bỏ qua"
+                        onConfirm={() => onKick(team.id)}
+                      >
+                        <Button size="small" danger type="text" icon={<UserDeleteOutlined />}>Đá ra</Button>
+                      </Popconfirm>,
+                    ]}
+                  >
+                    <Checkbox
+                      checked={selectedIds.includes(team.id)}
+                      onChange={() => toggleSelect(team.id)}
+                      style={{ marginRight: 12 }}
+                    />
+                    <List.Item.Meta
+                      avatar={<Avatar style={{ backgroundColor: team.color }}>{team.name[0].toUpperCase()}</Avatar>}
+                      title={
+                        <Space>
+                          <Text strong>{team.name}</Text>
+                          {members.length > 1 && <Tag icon={<TeamOutlined />}>{members.length} người</Tag>}
+                        </Space>
+                      }
+                      description={members.length > 1 ? members.map((m) => m.fullName).join(', ') : undefined}
+                    />
+                    <Badge color="green" text="Sẵn sàng" />
+                  </List.Item>
+                )
+              }}
             />
           )}
         </Card>
       </Col>
+
+      <Modal
+        title="Gộp thành 1 đội"
+        open={mergeModalOpen}
+        onOk={confirmMerge}
+        onCancel={() => setMergeModalOpen(false)}
+        okText="Gộp đội"
+        cancelText="Hủy"
+      >
+        <Text type="secondary">
+          Gộp {selectedMemberCount} người ({selectedTeams.map((t) => t.name).join(', ')}) thành 1 đội chung điểm số.
+        </Text>
+        <Input
+          style={{ marginTop: 12 }}
+          placeholder="Tên đội mới (để trống thì giữ tên đội vào phòng sớm nhất)"
+          value={mergeName}
+          onChange={(e) => setMergeName(e.target.value)}
+          maxLength={30}
+        />
+      </Modal>
     </Row>
   )
 }

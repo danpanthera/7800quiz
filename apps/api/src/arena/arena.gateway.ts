@@ -105,7 +105,15 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Broadcast new team to everyone in room
       this.server.to(this.getRoomName(session.id)).emit('arena.team_joined', {
-        team: { id: team.id, name: team.name, color: team.color },
+        team: {
+          id: team.id,
+          name: team.name,
+          color: team.color,
+          members: team.members.map((m) => ({
+            userId: m.userId,
+            fullName: m.user.fullName,
+          })),
+        },
       });
 
       // Send private confirmation back to joining client with their teamId
@@ -179,6 +187,56 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  // ─── Admin: gộp 2-5 người chơi thành 1 đội ──────────────────────────────────
+
+  @SubscribeMessage('arena.merge')
+  async handleMerge(
+    @MessageBody()
+    data: { sessionId: string; teamIds: string[]; teamName?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const host = this.extractUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
+    try {
+      const result = await this.arenaService.mergeTeams(
+        data.sessionId,
+        data.teamIds,
+        data.teamName,
+      );
+      const survivorRoom = this.getTeamRoomName(result.team.id);
+      // Di chuyển toàn bộ socket của các đội bị gộp sang room của đội sống sót
+      // để họ tiếp tục nhận đúng sự kiện riêng (bị kick, đồng đội đã trả lời...)
+      for (const removedId of result.removedTeamIds) {
+        await this.server
+          .in(this.getTeamRoomName(removedId))
+          .socketsJoin(survivorRoom);
+      }
+      this.server.to(survivorRoom).emit('arena.you_were_merged', {
+        teamId: result.team.id,
+        teamName: result.team.name,
+        teamColor: result.team.color,
+      });
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.teams_updated', {
+          teams: result.allTeams.map((t) => ({
+            id: t.id,
+            name: t.name,
+            color: t.color,
+            score: t.score,
+            members: t.members.map((m) => ({
+              userId: m.userId,
+              fullName: m.user.fullName,
+            })),
+          })),
+        });
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  }
+
   // ─── Người chơi: nộp đáp án (buzz-in) ───────────────────────────────────────
 
   @SubscribeMessage('arena.answer')
@@ -203,6 +261,11 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         teamName: result.teamName,
         teamColor: result.teamColor,
       });
+      // Đội nhiều người: báo riêng cho các đồng đội còn lại là đội đã trả lời
+      // rồi (tránh họ vẫn thấy màn hình đang chờ chọn đáp án)
+      this.server
+        .to(this.getTeamRoomName(data.teamId))
+        .emit('arena.team_answered', {});
       return { ok: true };
     } catch (err) {
       return { error: err.message };
