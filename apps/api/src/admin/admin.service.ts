@@ -384,10 +384,17 @@ export class AdminService {
     });
   }
   // ── Import Excel ──────────────────────────────────────────────────────
+  /** Đọc danh sách tên sheet của file Excel — dùng để hỏi người dùng chọn sheet khi file có nhiều hơn 1 sheet. */
+  getExcelSheetNames(buffer: Buffer): string[] {
+    const wb = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
+    return wb.SheetNames;
+  }
+
   async importQuestionsFromExcel(
     buffer: Buffer,
     subjectId: string,
     dryRun = false,
+    sheetName?: string,
   ): Promise<{
     preview?: {
       rowNumber: number;
@@ -407,7 +414,11 @@ export class AdminService {
       throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
 
     const wb = XLSX.read(buffer, { type: 'buffer' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const resolvedSheetName =
+      sheetName && wb.SheetNames.includes(sheetName)
+        ? sheetName
+        : wb.SheetNames[0];
+    const ws = wb.Sheets[resolvedSheetName];
     const rows: any[][] = XLSX.utils.sheet_to_json(ws, {
       header: 1,
       defval: null,

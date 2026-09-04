@@ -84,6 +84,14 @@ export class AdminController {
   }
 
   // ── Import Excel ─────────────────────────────────────────────────────
+  @Post('bank-questions/import/sheets')
+  @Roles(...TRAINING_ROLES)
+  @UseInterceptors(FileInterceptor('file'))
+  getImportSheetNames(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Chưa chọn file');
+    return { sheetNames: this.adminService.getExcelSheetNames(file.buffer) };
+  }
+
   @Post('bank-questions/import')
   @Roles(...TRAINING_ROLES)
   @UseInterceptors(FileInterceptor('file'))
@@ -91,11 +99,13 @@ export class AdminController {
     @UploadedFile() file: Express.Multer.File,
     @Body('subjectId') subjectId: string,
     @Body('dryRun') dryRun?: string,
+    @Body('sheetName') sheetName?: string,
   ) {
     return this.adminService.importQuestionsFromExcel(
       file.buffer,
       subjectId,
       dryRun === 'true',
+      sheetName,
     );
   }
 

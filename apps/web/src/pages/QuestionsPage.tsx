@@ -80,6 +80,10 @@ export default function QuestionsPage() {
   const [previewData, setPreviewData] = useState<PreviewRow[]>([])
   const [previewErrors, setPreviewErrors] = useState<string[]>([])
   const [previewing, setPreviewing] = useState(false)
+  // Danh sách sheet của file đang chọn — hỏi người dùng chọn sheet khi file có > 1 sheet
+  const [sheetNames, setSheetNames] = useState<string[]>([])
+  const [selectedSheet, setSelectedSheet] = useState<string | undefined>()
+  const [loadingSheets, setLoadingSheets] = useState(false)
 
   const checkContent = useCallback(async (text: string) => {
     if (!text || text.trim().length < 5) { setDupWarnings([]); setSpellWarnings([]); return }
@@ -224,6 +228,7 @@ export default function QuestionsPage() {
       const formData = new FormData()
       formData.append('file', importFile.originFileObj as File)
       formData.append('subjectId', selectedSubjectId)
+      if (selectedSheet) formData.append('sheetName', selectedSheet)
       const res = await api.post('/admin/bank-questions/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -249,6 +254,7 @@ export default function QuestionsPage() {
       formData.append('file', importFile.originFileObj as File)
       formData.append('subjectId', selectedSubjectId)
       formData.append('dryRun', 'true')
+      if (selectedSheet) formData.append('sheetName', selectedSheet)
       const res = await api.post('/admin/bank-questions/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
@@ -260,9 +266,31 @@ export default function QuestionsPage() {
     } finally { setPreviewing(false) }
   }
 
+  // Chọn file xong: hỏi ngay server file có bao nhiêu sheet — chỉ hiện lựa chọn khi > 1 sheet
+  const handleFileSelected = async (file: UploadFile | null) => {
+    setImportFile(file)
+    setSheetNames([])
+    setSelectedSheet(undefined)
+    if (!file?.originFileObj) return
+    setLoadingSheets(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file.originFileObj as File)
+      const res = await api.post('/admin/bank-questions/import/sheets', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const names: string[] = res.data.sheetNames ?? []
+      setSheetNames(names)
+      setSelectedSheet(names[0])
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Không đọc được danh sách sheet trong file'))
+    } finally { setLoadingSheets(false) }
+  }
+
   const closeImportModal = () => {
     setImportModalOpen(false); setImportFile(null)
     setPreviewStep('upload'); setPreviewData([]); setPreviewErrors([])
+    setSheetNames([]); setSelectedSheet(undefined)
   }
 
   // ── Columns ───────────────────────────────────────────────────────────
@@ -608,7 +636,11 @@ export default function QuestionsPage() {
           previewStep === 'upload' ? (
             <Space>
               <Button onClick={closeImportModal}>Hủy</Button>
-              <Button loading={previewing} onClick={handlePreviewImport} disabled={!importFile}>
+              <Button
+                loading={previewing}
+                onClick={handlePreviewImport}
+                disabled={!importFile || loadingSheets || (sheetNames.length > 1 && !selectedSheet)}
+              >
                 Kiểm tra
               </Button>
             </Space>
@@ -639,12 +671,30 @@ export default function QuestionsPage() {
                 accept=".xlsx,.xls"
                 maxCount={1}
                 beforeUpload={() => false}
-                onChange={({ fileList }) => setImportFile(fileList[0] ?? null)}
+                onChange={({ fileList }) => handleFileSelected(fileList[0] ?? null)}
               >
                 <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                 <p>Kéo thả hoặc click để chọn file .xlsx</p>
               </Upload.Dragger>
             </div>
+            {loadingSheets && (
+              <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+                Đang đọc danh sách sheet trong file...
+              </Text>
+            )}
+            {!loadingSheets && sheetNames.length > 1 && (
+              <div style={{ marginTop: 16 }}>
+                <Text strong style={{ display: 'block', marginBottom: 6 }}>
+                  File có {sheetNames.length} sheet — chọn sheet chứa câu hỏi cần import:
+                </Text>
+                <Select
+                  style={{ width: '100%' }}
+                  value={selectedSheet}
+                  onChange={setSelectedSheet}
+                  options={sheetNames.map((name) => ({ value: name, label: name }))}
+                />
+              </div>
+            )}
           </>
         ) : (
           <>
