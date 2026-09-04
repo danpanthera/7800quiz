@@ -31,3 +31,8 @@ Thumbs.db
 
 # Prisma
 apps/api/prisma/migrations/dev.db
+
+# Dữ liệu nhân sự thật (GAHR26 chứa CCCD, ngày sinh, số điện thoại,
+# địa chỉ, số tài khoản... của cán bộ) — tuyệt đối không đưa lên git
+apps/web/Mau/**/gahr26*
+apps/web/Mau/**/GAHR26*
