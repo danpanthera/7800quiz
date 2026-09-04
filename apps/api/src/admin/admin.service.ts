@@ -1413,13 +1413,11 @@ export class AdminService {
       const fullName = (row['EMPNM'] ?? row['FULLNAME'] ?? row['NAME'] ?? '')
         ?.toString()
         .trim();
-      // Cột AD (tên đăng nhập Active Directory) – thử nhiều tên cột phổ biến
-      const adValue =
-        (row['AD'] ?? row['USERADM'] ?? row['USER_AD'] ?? row['ADUSER'])
-          ?.toString()
-          .trim() || null;
-      // Username đăng nhập: ưu tiên AD, fallback về EMPNO
-      const loginUsername = adValue || empno;
+      // Lưu ý: cột "AD" trong file GAHR26 là hệ số phụ cấp (giá trị 0/1, giống
+      // PO/AR/HO/HA/RE/OT/RD/MT), KHÔNG PHẢI username Active Directory. File
+      // GAHR26 không bao giờ chứa username AD — AD chỉ nhập tay qua form quản
+      // lý cán bộ. Vì vậy import không được đọc cột này, cũng không được ghi đè
+      // userAD đã lưu; username lấy theo userAD hiện có, không có thì dùng EMPNO.
 
       if (!empno) {
         errors.push(`Dòng ${lineNo}: EMPNO trống`);
@@ -1475,12 +1473,12 @@ export class AdminService {
           where: { cbCode: empno },
         });
 
+        const loginUsername = this.getLoginUsername(empno, existing?.userAD);
         const resolvedFullName = fullName || existing?.fullName || empno;
         const data: any = {
           fullName: resolvedFullName,
           departmentId,
           username: loginUsername,
-          ...(adValue !== null ? { userAD: adValue } : {}),
           ...(position !== null ? { position } : {}),
           ...(gioiTinh !== null ? { gioiTinh } : {}),
           ...(ngaySinh !== null ? { ngaySinh } : {}),
@@ -1496,7 +1494,6 @@ export class AdminService {
             branchName: brnm,
             deptName: deptnm ?? undefined,
             position: position ?? undefined,
-            userAD: adValue ?? undefined,
             action: 'updated',
           });
         } else {
@@ -1509,15 +1506,13 @@ export class AdminService {
             branchName: brnm,
             deptName: deptnm ?? undefined,
             position: position ?? undefined,
-            userAD: adValue ?? undefined,
             action: 'created',
           });
         }
 
-        // Tạo / cập nhật User tương ứng (username = AD từ GAHR26, mk mặc định Abcd@1234)
-        // Tìm user: ưu tiên loginUsername (AD), fallback tương thích ngược theo empno cũ
+        // Tạo / cập nhật User tương ứng (username = EMPNO, mk mặc định Abcd@1234)
         const existingUser = await this.prisma.user.findFirst({
-          where: { OR: [{ username: loginUsername }, { username: empno }] },
+          where: { username: loginUsername },
         });
         if (!existingUser) {
           const passwordHash = await bcrypt.hash('Abcd@1234', 10);
@@ -1529,16 +1524,6 @@ export class AdminService {
               role: 'STAFF',
               isActive: true,
               mustChangePassword: true,
-              departmentId,
-            },
-          });
-        } else if (existingUser.username !== loginUsername) {
-          // Migrate username cũ (empno) → loginUsername (AD)
-          await this.prisma.user.update({
-            where: { id: existingUser.id },
-            data: {
-              username: loginUsername,
-              fullName: resolvedFullName,
               departmentId,
             },
           });

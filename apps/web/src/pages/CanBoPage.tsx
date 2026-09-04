@@ -564,7 +564,8 @@ export default function CanBoPage() {
         <div style={{ marginBottom: 12 }}>
           <p style={{ margin: '0 0 8px', color: '#555', fontSize: 13 }}>
             Chọn file <strong>*gahr26*.csv</strong> hoặc <strong>.xls/.xlsx</strong>.
-            File cần có cột: <code>EMPNO</code>, <code>BRCD</code>, <code>BRNM</code>, <code>DEPTNM</code>, <code>AD</code>, <code>POSITION</code>, <code>SEX</code>, <code>BIRTHDT</code>.
+            File cần có cột: <code>EMPNO</code>, <code>BRCD</code>, <code>BRNM</code>, <code>DEPTNM</code>, <code>POSITION</code>, <code>SEX</code>, <code>BIRTHDT</code>.
+            Username đăng nhập luôn lấy theo <code>EMPNO</code> (mã cán bộ).
           </p>
           <Upload
             accept=".csv,.xls,.xlsx"
@@ -612,7 +613,6 @@ export default function CanBoPage() {
                 { title: 'Mã CN (BRCD)', dataIndex: 'branchCode', width: 110 },
                 { title: 'Tên chi nhánh (BRNM)', dataIndex: 'branchName', width: 200 },
                 { title: 'Phòng ban (DEPTNM)', dataIndex: 'deptName', width: 180 },
-                { title: 'UserAD (AD)', dataIndex: 'userAD', width: 130 },
                 { title: 'Chức vụ (POSITION)', dataIndex: 'position', width: 160 },
                 {
                   title: 'Kết quả', dataIndex: 'action', width: 100,
