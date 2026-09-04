@@ -391,7 +391,7 @@ export default function QuestionsPage() {
 
         <ManageTable<Question>
           rowKey="id" dataSource={questions} columns={columns} loading={isLoading}
-          pagination={{ showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], defaultPageSize: 20 }}
+          pagination={{ showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'], defaultPageSize: 50 }}
           expandable={{
             expandedRowRender: (r) => (
               <div style={{ padding: '4px 0' }}>

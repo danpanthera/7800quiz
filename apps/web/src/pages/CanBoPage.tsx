@@ -69,7 +69,7 @@ export default function CanBoPage() {
   const [filterUnitId, setFilterUnitId] = useState<string | undefined>()
   const [filterDeptId, setFilterDeptId] = useState<string | undefined>()
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(50)
   const [resetResultOpen, setResetResultOpen] = useState(false)
   const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean }[] } | null>(null)
   const [importOpen, setImportOpen] = useState(false)

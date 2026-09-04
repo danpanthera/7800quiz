@@ -150,7 +150,7 @@ export default function AchievementsPage() {
             columns={leaderboardCols}
             rowKey="userId"
             loading={leaderboardQ.isLoading}
-            pagination={{ pageSize: 20, showSizeChanger: true }}
+            pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'] }}
             size="middle"
             cardHeading={(row) => (
               <Space>
@@ -226,7 +226,7 @@ export default function AchievementsPage() {
             columns={xpHistoryCols}
             rowKey="id"
             loading={xpHistoryQ.isLoading}
-            pagination={{ pageSize: 20, showSizeChanger: true }}
+            pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'] }}
             size="small"
             cardHeading={(row) => <Tag>{row.source.replace('_', ' ')}</Tag>}
             cardMeta={[

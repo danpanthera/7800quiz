@@ -34,6 +34,13 @@ export interface ManageTableProps<T extends Record<string, any>>
   emptyText?: string
 }
 
+/** Phân trang mặc định cho các trang quản lý — 50 dòng/trang, cho phép đổi */
+const PHAN_TRANG_MAC_DINH = {
+  defaultPageSize: 50,
+  showSizeChanger: true,
+  pageSizeOptions: ['20', '50', '100', '200'],
+}
+
 /**
  * Bảng dữ liệu thích ứng thiết bị: hiển thị Table antd bình thường từ tablet ngang/desktop (≥768px),
  * chuyển sang danh sách thẻ (List/Card) trên phone — tổng quát hoá pattern đã dùng ở QuizzesPage.
@@ -50,6 +57,8 @@ export default function ManageTable<T extends Record<string, any>>(props: Manage
   } = props
   const { screens } = useDeviceType()
   const isCardView = !screens.md
+  // `pagination={false}` (tắt hẳn) vẫn được giữ nguyên, chỉ điền mặc định khi trang không khai báo
+  const phanTrang = pagination ?? PHAN_TRANG_MAC_DINH
 
   const getKey = (record: T): string =>
     typeof rowKey === 'function' ? rowKey(record) : String(record[rowKey])
@@ -62,7 +71,7 @@ export default function ManageTable<T extends Record<string, any>>(props: Manage
         dataSource={dataSource}
         loading={loading}
         size={size ?? 'small'}
-        pagination={pagination}
+        pagination={phanTrang}
         rowSelection={rowSelection}
         {...restTableProps}
       />
@@ -77,7 +86,7 @@ export default function ManageTable<T extends Record<string, any>>(props: Manage
       loading={loading}
       dataSource={dataSource}
       // Cấu hình phân trang Table/List của antd tương thích cấu trúc nhưng khai báo type riêng — ép kiểu về đúng type của List
-      pagination={pagination as PaginationConfig | false | undefined}
+      pagination={phanTrang as PaginationConfig | false | undefined}
       locale={{ emptyText: emptyText ?? 'Không có dữ liệu' }}
       renderItem={(record) => {
         const key = getKey(record)

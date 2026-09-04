@@ -327,7 +327,7 @@ export default function ReportsPage() {
         loading={isLoading}
         dataSource={filtered}
         columns={columns}
-        pagination={{ pageSize: 30, showTotal: (t) => `${t} bài thi` }}
+        pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'], showTotal: (t) => `${t} bài thi` }}
         size="small"
         scroll={{ x: 'max-content' }}
         components={{ header: { cell: ResizableTitle } }}
