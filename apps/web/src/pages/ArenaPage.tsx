@@ -12,7 +12,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { io, Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
-import api from '../lib/api'
+import api, { getErrorMessage } from '../lib/api'
 
 const { Title, Text } = Typography
 const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
@@ -183,8 +183,8 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
       await api.patch(`/admin/arena-sessions/${id}/cancel`)
       message.success('Đã hủy phiên đấu')
       refetch()
-    } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Hủy thất bại')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Hủy thất bại'))
     }
   }
 
@@ -193,8 +193,8 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
       await api.patch(`/admin/arena-sessions/${id}/stop`)
       message.success('Đã dừng phiên đấu')
       refetch()
-    } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Dừng thất bại')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Dừng thất bại'))
     }
   }
 
@@ -203,8 +203,8 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
       await api.delete(`/admin/arena-sessions/${id}`)
       message.success('Đã xóa phiên đấu')
       refetch()
-    } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Xóa thất bại')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Xóa thất bại'))
     }
   }
 

@@ -138,8 +138,12 @@ export default function QuizPlayerPage() {
   const answerRevisionRef = useRef(answerRevision)
   const submissionStarted = useRef(false)
 
-  answersRef.current = answers
-  answerRevisionRef.current = answerRevision
+  // Đồng bộ ref theo state mới nhất qua effect (không ghi ref ngay trong lúc render) — để các
+  // callback/timer đăng ký 1 lần (debounce lưu draft, cảnh báo rời tab...) luôn đọc được giá trị mới nhất.
+  useEffect(() => {
+    answersRef.current = answers
+    answerRevisionRef.current = answerRevision
+  }, [answers, answerRevision])
 
   const attemptQuery = useQuery<AttemptData>({
     queryKey: ['attempt', attemptId],

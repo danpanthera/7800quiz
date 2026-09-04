@@ -21,4 +21,13 @@ api.interceptors.response.use(
   },
 )
 
+/** Lấy message lỗi từ response API (nếu có) — dùng trong catch/onError thay cho ép kiểu `any`. */
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: string } | undefined
+    return data?.message ?? fallback
+  }
+  return fallback
+}
+
 export default api

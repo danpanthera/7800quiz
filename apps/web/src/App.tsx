@@ -146,6 +146,16 @@ export default function App() {
                   </RequireAuth>
                 }
               />
+              {/* Full-screen, không lồng trong AppLayout — học viên quét QR vào chơi trên điện thoại
+                  không cần Header/Sider/Drawer của portal quản trị. Vẫn yêu cầu đăng nhập. */}
+              <Route
+                path="/arena/join/:joinCode"
+                element={
+                  <RequireAuth>
+                    <ArenaPlayerPage />
+                  </RequireAuth>
+                }
+              />
               <Route
                 element={
                   <RequireAuth>
@@ -159,7 +169,6 @@ export default function App() {
                   <Route path="my/quizzes" element={<MyQuizzesPage />} />
                   <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
                   <Route path="my/results/:submissionId" element={<QuizResultPage />} />
-                  <Route path="arena/join/:joinCode" element={<ArenaPlayerPage />} />
                 </Route>
 
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>

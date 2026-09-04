@@ -8,7 +8,8 @@ import {
   TeamOutlined, UserAddOutlined, UserDeleteOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import api from '../lib/api'
+import ManageTable from '../components/ManageTable'
+import api, { getErrorMessage } from '../lib/api'
 
 interface AcademicYear { id: string; name: string }
 interface User { id: string; fullName: string; username: string; email?: string; department?: { name: string } }
@@ -17,10 +18,14 @@ interface ClassItem {
   academicYearId?: string; academicYear?: { name: string }
   _count?: { members: number; examSessions: number }
 }
+// Dữ liệu form tạo/sửa lớp học — bỏ các field server tự sinh (id, academicYear object, _count)
+type ClassFormValues = Omit<ClassItem, 'id' | 'academicYear' | '_count'>
 interface ClassDetail extends ClassItem {
   members: { id: string; joinedAt: string; user: User }[]
   examSessions: { id: string; name: string; status: string; quiz: { title: string } }[]
 }
+// 1 dòng trong bảng thành viên của lớp (drawer chi tiết)
+type ClassMemberRow = ClassDetail['members'][number]
 
 export default function ClassesPage() {
   const qc = useQueryClient()
@@ -55,13 +60,13 @@ export default function ClassesPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (body: any) => api.post('/admin/classes', body).then((r) => r.data),
+    mutationFn: (body: ClassFormValues) => api.post('/admin/classes', body).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['classes'] }); closeModal(); message.success('Đã tạo lớp học') },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi khi tạo lớp'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi tạo lớp')),
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, ...body }: any) => api.put(`/admin/classes/${id}`, body).then((r) => r.data),
+    mutationFn: ({ id, ...body }: { id: string } & ClassFormValues) => api.put(`/admin/classes/${id}`, body).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['classes'] }); closeModal(); message.success('Đã cập nhật') },
     onError: () => message.error('Lỗi khi cập nhật'),
   })
@@ -103,7 +108,7 @@ export default function ClassesPage() {
   }
   function closeModal() { setModalOpen(false); setEditing(null); form.resetFields() }
 
-  function onFinish(values: any) {
+  function onFinish(values: ClassFormValues) {
     if (editing) updateMut.mutate({ id: editing.id, ...values })
     else createMut.mutate(values)
   }
@@ -111,6 +116,18 @@ export default function ClassesPage() {
   // Users chưa có trong lớp
   const existingMemberIds = new Set(detail?.members.map((m) => m.user.id) ?? [])
   const availableUsers = allUsers.filter((u) => !existingMemberIds.has(u.id))
+
+  const renderClassActions = (row: ClassItem) => (
+    <Space>
+      <Tooltip title="Xem chi tiết / quản lý thành viên">
+        <Button size="small" icon={<TeamOutlined />} onClick={() => setDetailId(row.id)} />
+      </Tooltip>
+      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
+      <Popconfirm title="Xóa lớp học?" onConfirm={() => deleteMut.mutate(row.id)}>
+        <Button size="small" danger icon={<DeleteOutlined />} />
+      </Popconfirm>
+    </Space>
+  )
 
   const columns = [
     {
@@ -126,17 +143,7 @@ export default function ClassesPage() {
     { title: 'Đợt thi', dataIndex: ['_count', 'examSessions'], width: 80, render: (v: number) => v ?? 0 },
     {
       title: 'Thao tác', width: 160,
-      render: (_: any, row: ClassItem) => (
-        <Space>
-          <Tooltip title="Xem chi tiết / quản lý thành viên">
-            <Button size="small" icon={<TeamOutlined />} onClick={() => setDetailId(row.id)} />
-          </Tooltip>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
-          <Popconfirm title="Xóa lớp học?" onConfirm={() => deleteMut.mutate(row.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, row: ClassItem) => renderClassActions(row),
     },
   ]
 
@@ -157,7 +164,22 @@ export default function ClassesPage() {
         </Space>
       </div>
 
-      <Table rowKey="id" loading={isLoading} dataSource={classes} columns={columns} />
+      <ManageTable<ClassItem>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={classes}
+        columns={columns}
+        cardHeading={(row) => (
+          <Button type="link" style={{ padding: 0 }} onClick={() => setDetailId(row.id)}>{row.name}</Button>
+        )}
+        cardMeta={[
+          { label: 'Mã lớp', render: (row) => <Tag>{row.code}</Tag> },
+          { label: 'Năm học', render: (row) => row.academicYear?.name ?? '—' },
+          { label: 'Học viên', render: (row) => row._count?.members ?? 0 },
+          { label: 'Đợt thi', render: (row) => row._count?.examSessions ?? 0 },
+        ]}
+        cardActions={renderClassActions}
+      />
 
       {/* Modal tạo/sửa lớp */}
       <Modal
@@ -209,6 +231,7 @@ export default function ClassesPage() {
                 rowKey="id"
                 size="small"
                 pagination={false}
+                scroll={{ x: 'max-content' }}
                 dataSource={detail.members}
                 columns={[
                   { title: 'Họ tên', dataIndex: ['user', 'fullName'] },
@@ -216,7 +239,7 @@ export default function ClassesPage() {
                   { title: 'Phòng ban', dataIndex: ['user', 'department', 'name'], width: 140, render: (v) => v ?? '—' },
                   {
                     title: '', width: 50,
-                    render: (_: any, row: any) => (
+                    render: (_: unknown, row: ClassMemberRow) => (
                       <Popconfirm title="Xóa học viên khỏi lớp?" onConfirm={() => removeMemberMut.mutate({ classId: detailId!, userId: row.user.id })}>
                         <Button size="small" danger icon={<UserDeleteOutlined />} />
                       </Popconfirm>
@@ -231,7 +254,7 @@ export default function ClassesPage() {
               <Empty description="Chưa có đợt thi" />
             ) : (
               <Table
-                rowKey="id" size="small" pagination={false}
+                rowKey="id" size="small" pagination={false} scroll={{ x: 'max-content' }}
                 dataSource={detail.examSessions}
                 columns={[
                   { title: 'Tên đợt thi', dataIndex: 'name' },

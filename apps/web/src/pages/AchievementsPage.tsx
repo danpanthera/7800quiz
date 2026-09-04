@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Table, Tabs, Tag, Space, Select, Typography, Card, Badge, Avatar, Tooltip } from 'antd'
+import { Tabs, Tag, Space, Select, Typography, Card, Badge, Avatar, Tooltip } from 'antd'
 import { TrophyOutlined, StarOutlined, HistoryOutlined, UserOutlined } from '@ant-design/icons'
+import ManageTable from '../components/ManageTable'
 import api from '../lib/api'
 
 const { Title, Text } = Typography
@@ -144,13 +145,30 @@ export default function AchievementsPage() {
           }
           title={<Title level={5} style={{ margin: 0 }}>Top XP</Title>}
         >
-          <Table
-            dataSource={leaderboardQ.data}
+          <ManageTable<LeaderboardRow>
+            dataSource={leaderboardQ.data ?? []}
             columns={leaderboardCols}
             rowKey="userId"
             loading={leaderboardQ.isLoading}
             pagination={{ pageSize: 20, showSizeChanger: true }}
             size="middle"
+            cardHeading={(row) => (
+              <Space>
+                <Avatar size="small" icon={<UserOutlined />} />
+                <Text strong>{row.fullName}</Text>
+              </Space>
+            )}
+            cardBadge={(row) => {
+              if (row.rank === 1) return <Text style={{ fontSize: 20 }}>🥇</Text>
+              if (row.rank === 2) return <Text style={{ fontSize: 20 }}>🥈</Text>
+              if (row.rank === 3) return <Text style={{ fontSize: 20 }}>🥉</Text>
+              return <Text strong>#{row.rank}</Text>
+            }}
+            cardMeta={[
+              { label: 'Đơn vị', render: (row) => row.department ?? '—' },
+              { label: 'XP', render: (row) => <Tag color="gold">⭐ {row.xp.toLocaleString()} XP</Tag> },
+              { label: 'Cấp', render: (row) => row.level ? <Tag color="blue">Cấp {row.level}</Tag> : '—' },
+            ]}
           />
         </Card>
       ),
@@ -203,13 +221,19 @@ export default function AchievementsPage() {
       ),
       children: (
         <Card bordered={false} title={<Title level={5} style={{ margin: 0 }}>Lịch sử giao dịch XP</Title>}>
-          <Table
+          <ManageTable<XpTx>
             dataSource={xpHistoryQ.data?.items ?? []}
             columns={xpHistoryCols}
             rowKey="id"
             loading={xpHistoryQ.isLoading}
             pagination={{ pageSize: 20, showSizeChanger: true }}
             size="small"
+            cardHeading={(row) => <Tag>{row.source.replace('_', ' ')}</Tag>}
+            cardMeta={[
+              { label: 'Thời gian', render: (row) => new Date(row.createdAt).toLocaleString('vi-VN') },
+              { label: 'XP', render: (row) => <Text style={{ color: row.amount > 0 ? '#52c41a' : '#ff4d4f' }}>+{row.amount}</Text> },
+              { label: 'Ghi chú', render: (row) => row.note ?? '—' },
+            ]}
           />
         </Card>
       ),
@@ -217,7 +241,7 @@ export default function AchievementsPage() {
   ]
 
   return (
-    <div style={{ padding: 24 }}>
+    <div>
       <Title level={3}>
         <TrophyOutlined style={{ marginRight: 8, color: '#faad14' }} />
         Thành tích & Xếp hạng

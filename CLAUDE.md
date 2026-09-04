@@ -57,7 +57,7 @@ npm run lint
 
 - **Quiz version**: sửa nội dung quiz đã có bài làm phải tạo `QuizVersion` mới, không sửa trực tiếp version cũ (tránh lệch đề với bài đã nộp).
 - **Luồng làm bài**: `attempts.module.ts` quản lý trạng thái đang làm (start/save/finalize), tạo `Submission` khi nộp — không quay lại mô hình ghi local rồi đồng bộ sau (offline-first) vì đã bỏ app mobile, giờ là online-first thuần.
-- **Arena WebSocket**: `arena.gateway.ts` xử lý real-time buzz-in — không đưa logic tính điểm/reveal đáp án vào REST controller, giữ trong `arena.service.ts` để cả REST và Gateway dùng chung. Lưu ý: phía "người chơi" (join bằng joinCode, buzz-in) hiện **chưa có giao diện web** — cần dựng trang tương ứng trước khi dùng Arena thật.
+- **Arena WebSocket**: `arena.gateway.ts` xử lý real-time buzz-in — không đưa logic tính điểm/reveal đáp án vào REST controller, giữ trong `arena.service.ts` để cả REST và Gateway dùng chung. Phía "người chơi" (join bằng joinCode, buzz-in) đã có giao diện web tại `ArenaPlayerPage.tsx` (route `/arena/join/:joinCode`) — route này đứng **ngoài** `AppLayout`, chạy full-screen độc lập (vẫn yêu cầu đăng nhập qua `RequireAuth`) vì học viên thường quét QR vào chơi bằng điện thoại, không cần Header/Sider của portal quản trị.
 - **Gamification**: mọi thao tác cộng XP phải đi qua `gamification.service.ts` (ghi `XpTransaction` + cập nhật `UserProgress`), không cộng thẳng field `xp` từ chỗ khác để tránh mất lịch sử.
 
 ## Tài khoản seed (dev)
@@ -66,3 +66,5 @@ npm run lint
 |----------|----------|------|
 | `admin` | `Admin@1234` | ADMIN |
 | `nhanvien01` | `Staff@1234` | STAFF |
+
+> Mật khẩu trên là giá trị mặc định trong `apps/api/prisma/seed.ts` (áp dụng khi seed lại từ đầu). Mật khẩu `admin` trên môi trường dev hiện tại đã được đổi thủ công thành `Abcd@1234` — dùng giá trị này khi test đăng nhập thật trên dev, trừ khi seed lại DB.

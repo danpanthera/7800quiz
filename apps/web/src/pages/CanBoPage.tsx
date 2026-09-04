@@ -7,7 +7,8 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
-import api from '../lib/api'
+import ManageTable from '../components/ManageTable'
+import api, { getErrorMessage } from '../lib/api'
 
 interface Department { id: string; name: string; code: string; parentId?: string | null; parent?: { id: string; name: string; code: string } | null; _count?: { children: number; canBo: number } }
 
@@ -54,6 +55,8 @@ interface CanBoItem {
   position?: string; isPartyMember: boolean; isUnionMember: boolean;
   isYouthUnionMember: boolean; isItStaff: boolean; isActive: boolean;
 }
+// Dữ liệu form thêm/sửa cán bộ — bỏ các field server tự sinh (id, username, department object)
+type CanBoFormValues = Omit<CanBoItem, 'id' | 'username' | 'department'>
 
 export default function CanBoPage() {
   const qc = useQueryClient()
@@ -91,13 +94,13 @@ export default function CanBoPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (body: any) => api.post('/admin/can-bo', body).then(r => r.data),
+    mutationFn: (body: CanBoFormValues) => api.post('/admin/can-bo', body).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['can-bo'] }); closeModal(); message.success('Đã thêm cán bộ') },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi khi thêm'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi thêm')),
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, ...body }: any) => api.put(`/admin/can-bo/${id}`, body).then(r => r.data),
+    mutationFn: ({ id, ...body }: { id: string } & CanBoFormValues) => api.put(`/admin/can-bo/${id}`, body).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['can-bo'] }); closeModal(); message.success('Đã cập nhật') },
     onError: () => message.error('Lỗi khi cập nhật'),
   })
@@ -139,7 +142,7 @@ export default function CanBoPage() {
       qc.invalidateQueries({ queryKey: ['departments'] })
       setImportResult(data)
     },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi khi import file'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi import file')),
   })
 
   function openAdd() {
@@ -217,18 +220,35 @@ export default function CanBoPage() {
     }
   }
 
+  const renderCanBoActions = (record: CanBoItem) => (
+    <Space>
+      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+      <Popconfirm
+        title={`Reset MK về "Abcd@1234"?`}
+        description="Mật khẩu mới = Abcd@1234 (mặc định)"
+        onConfirm={() => resetMut.mutate([record.id])}
+        okText="Reset" cancelText="Hủy"
+      >
+        <Button size="small" icon={<LockOutlined />} title="Reset mật khẩu" />
+      </Popconfirm>
+      <Popconfirm title="Xác nhận xóa cán bộ này?" onConfirm={() => deleteMut.mutate(record.id)} okText="Xóa" cancelText="Hủy">
+        <Button size="small" danger icon={<DeleteOutlined />} />
+      </Popconfirm>
+    </Space>
+  )
+
   const columns = [
-    { title: 'STT', render: (_: any, __: any, i: number) => i + 1, width: 55 },
+    { title: 'STT', render: (_: unknown, __: unknown, i: number) => i + 1, width: 55 },
     { title: 'Mã CB', dataIndex: 'cbCode', width: 110, sorter: (a: CanBoItem, b: CanBoItem) => a.cbCode.localeCompare(b.cbCode) },
     { title: 'Họ tên', dataIndex: 'fullName', width: 180 },
     { title: 'UserAD', dataIndex: 'userAD', width: 130 },
     { title: 'Phòng ban', dataIndex: ['department', 'name'], width: 200,
-      render: (_: any, r: CanBoItem) => r.department
+      render: (_: unknown, r: CanBoItem) => r.department
         ? <span>{r.department.name}</span>
         : '-'
     },
     { title: 'Chi nhánh', width: 200,
-      render: (_: any, r: CanBoItem) => {
+      render: (_: unknown, r: CanBoItem) => {
         const parent = r.department?.parent
         return parent ? <span style={{ color: '#1677ff' }}>{parent.name}</span> : '-'
       }
@@ -242,28 +262,13 @@ export default function CanBoPage() {
     },
     {
       title: 'Thao tác', width: 120, fixed: 'right' as const,
-      render: (_: any, record: CanBoItem) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm
-            title={`Reset MK về "Abcd@1234"?`}
-            description="Mật khẩu mới = Abcd@1234 (mặc định)"
-            onConfirm={() => resetMut.mutate([record.id])}
-            okText="Reset" cancelText="Hủy"
-          >
-            <Button size="small" icon={<LockOutlined />} title="Reset mật khẩu" />
-          </Popconfirm>
-          <Popconfirm title="Xác nhận xóa cán bộ này?" onConfirm={() => deleteMut.mutate(record.id)} okText="Xóa" cancelText="Hủy">
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, record: CanBoItem) => renderCanBoActions(record),
     },
   ]
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Typography.Title level={4} style={{ margin: 0 }}><IdcardOutlined /> Quản lý cán bộ</Typography.Title>
         <Space wrap>
           <Select
@@ -333,7 +338,7 @@ export default function CanBoPage() {
         </Space>
       </div>
 
-      <Table
+      <ManageTable<CanBoItem>
         rowKey="id"
         dataSource={sortedCanBo}
         columns={columns}
@@ -346,6 +351,25 @@ export default function CanBoPage() {
           onChange: setSelectedRowKeys,
           preserveSelectedRowKeys: true,
         }}
+        cardHeading={(record) => (
+          <>
+            <Typography.Title level={5}>{record.fullName}</Typography.Title>
+            <Tag>{record.cbCode}</Tag>
+          </>
+        )}
+        cardBadge={(record) => <Tag color={record.isActive ? 'green' : 'red'}>{record.isActive ? 'Hoạt động' : 'Nghỉ'}</Tag>}
+        cardMeta={[
+          { label: 'Phòng ban', render: (record) => record.department?.name ?? '-' },
+          {
+            label: 'Chi nhánh',
+            render: (record) => record.department?.parent
+              ? <span style={{ color: '#1677ff' }}>{record.department.parent.name}</span>
+              : '-',
+          },
+          { label: 'Chức vụ', render: (record) => record.position ?? '-' },
+          { label: 'SĐT', render: (record) => record.phoneNumber ?? '-' },
+        ]}
+        cardActions={renderCanBoActions}
       />
 
       <Modal
@@ -581,6 +605,7 @@ export default function CanBoPage() {
               rowKey="empno"
               dataSource={importResult.rows}
               pagination={{ pageSize: 10, size: 'small' }}
+              scroll={{ x: 900 }}
               columns={[
                 { title: 'EMPNO', dataIndex: 'empno', width: 110 },
                 { title: 'Họ tên', dataIndex: 'fullName', width: 160 },

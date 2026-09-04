@@ -4,12 +4,12 @@ import {
   Button, Card, Input, Space, Spin, Typography, Tag, Avatar, List, Result, Alert,
 } from 'antd'
 import {
-  TrophyOutlined, ThunderboltOutlined, CheckCircleOutlined, ArrowLeftOutlined,
+  TrophyOutlined, ThunderboltOutlined, CheckCircleOutlined, ArrowLeftOutlined, BankOutlined,
 } from '@ant-design/icons'
 import { io, Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
-import { useAuth } from '../lib/auth'
+import { useAuth } from '../lib/useAuth'
 import { playCorrectSound, playWrongSound, playWinSound, fireConfettiBurst } from '../lib/feedback-fx'
 
 const { Title, Text } = Typography
@@ -168,21 +168,23 @@ export default function ArenaPlayerPage() {
     })
   }
 
-  // ─── View: join ────────────────────────────────────────────────────────────
+  // ─── Nội dung theo view ──────────────────────────────────────────────────
+  // Gom thành 1 điểm return duy nhất để chỉ vẽ topbar (brand + nút Thoát) một lần,
+  // thay vì lặp lại ở mỗi nhánh view như trước.
+
+  let body: React.ReactNode
 
   if (view === 'join') {
     if (previewLoading) {
-      return <CenterCard key={view}><Spin size="large" /></CenterCard>
-    }
-    if (previewFailed || !preview) {
-      return (
+      body = <CenterCard key={view}><Spin size="large" /></CenterCard>
+    } else if (previewFailed || !preview) {
+      body = (
         <CenterCard key={view}>
           <Result status="error" title="Mã tham gia không hợp lệ" subTitle="Kiểm tra lại mã hoặc quét lại mã QR từ MC." />
         </CenterCard>
       )
-    }
-    if (preview.status !== 'LOBBY') {
-      return (
+    } else if (preview.status !== 'LOBBY') {
+      body = (
         <CenterCard key={view}>
           <Result
             status="warning"
@@ -191,42 +193,39 @@ export default function ArenaPlayerPage() {
           />
         </CenterCard>
       )
-    }
-    return (
-      <CenterCard key={view}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <TrophyOutlined style={{ fontSize: 40, color: '#faad14' }} />
-          <Title level={3} style={{ margin: '8px 0 0' }}>{preview.name}</Title>
-          <Text type="secondary">{preview.quiz.title}</Text>
-        </div>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <div>
-            <Text strong>Tên đội / tên bạn</Text>
-            <Input
-              size="large"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              onPressEnter={handleJoin}
-              maxLength={30}
-              placeholder="VD: Đội Tín dụng"
-            />
+    } else {
+      body = (
+        <CenterCard key={view}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <TrophyOutlined style={{ fontSize: 40, color: '#faad14' }} />
+            <Title level={3} style={{ margin: '8px 0 0' }}>{preview.name}</Title>
+            <Text type="secondary">{preview.quiz.title}</Text>
           </div>
-          {joinError && <Alert type="error" message={joinError} showIcon />}
-          <Button type="primary" size="large" block loading={joining} onClick={handleJoin} icon={<ThunderboltOutlined />}>
-            Tham gia ngay
-          </Button>
-          <Text type="secondary" style={{ fontSize: 12, textAlign: 'center', display: 'block' }}>
-            Đã có {preview.teams.length} đội tham gia
-          </Text>
-        </Space>
-      </CenterCard>
-    )
-  }
-
-  // ─── View: lobby ───────────────────────────────────────────────────────────
-
-  if (view === 'lobby') {
-    return (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>Tên đội / tên bạn</Text>
+              <Input
+                size="large"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                onPressEnter={handleJoin}
+                maxLength={30}
+                placeholder="VD: Đội Tín dụng"
+              />
+            </div>
+            {joinError && <Alert type="error" message={joinError} showIcon />}
+            <Button type="primary" size="large" block loading={joining} onClick={handleJoin} icon={<ThunderboltOutlined />}>
+              Tham gia ngay
+            </Button>
+            <Text type="secondary" style={{ fontSize: 12, textAlign: 'center', display: 'block' }}>
+              Đã có {preview.teams.length} đội tham gia
+            </Text>
+          </Space>
+        </CenterCard>
+      )
+    }
+  } else if (view === 'lobby') {
+    body = (
       <CenterCard key={view}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <Spin size="large" />
@@ -248,13 +247,9 @@ export default function ArenaPlayerPage() {
         />
       </CenterCard>
     )
-  }
-
-  // ─── View: game ────────────────────────────────────────────────────────────
-
-  if (view === 'game' && currentQuestion) {
+  } else if (view === 'game' && currentQuestion) {
     const isRevealed = !!revealData
-    return (
+    body = (
       <div key={currentQuestion.roundId} className="arena-view-transition" style={{ maxWidth: 560, margin: '0 auto', padding: '16px 12px' }}>
         <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
           <Tag color={myTeamColor}>{teamName}</Tag>
@@ -326,13 +321,9 @@ export default function ArenaPlayerPage() {
         </Card>
       </div>
     )
-  }
-
-  // ─── View: result ──────────────────────────────────────────────────────────
-
-  if (view === 'result') {
+  } else if (view === 'result') {
     const myRank = finalRanking.find((t) => t.id === myTeamId)
-    return (
+    body = (
       <CenterCard key={view}>
         <div style={{ textAlign: 'center' }}>
           <Title level={3}><TrophyOutlined style={{ color: '#faad14' }} /> Kết quả Đấu trường</Title>
@@ -376,9 +367,19 @@ export default function ArenaPlayerPage() {
         </div>
       </CenterCard>
     )
+  } else {
+    body = <CenterCard key={view}><Spin size="large" /></CenterCard>
   }
 
-  return <CenterCard key={view}><Spin size="large" /></CenterCard>
+  return (
+    <div className="arena-player-shell">
+      <header className="arena-player-topbar">
+        <span className="arena-player-brand"><BankOutlined /> 7800Quiz</span>
+        <Button size="small" type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>Thoát</Button>
+      </header>
+      {body}
+    </div>
+  )
 }
 
 // ─── Layout helper ──────────────────────────────────────────────────────────

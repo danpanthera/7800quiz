@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Avatar, Button, Drawer, Dropdown, Grid, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
+import { useState, type ReactNode } from 'react'
+import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
 import {
   BankOutlined,
   BarChartOutlined,
@@ -17,7 +17,8 @@ import {
   UserOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../lib/auth'
+import { useAuth } from '../lib/useAuth'
+import { useDeviceType } from '../hooks/useDeviceType'
 import type { UserRole } from '../lib/permissions'
 
 const { Sider, Header, Content } = Layout
@@ -79,11 +80,18 @@ export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
-  const screens = Grid.useBreakpoint()
-  const isDesktop = screens.lg === true
+  const { category } = useDeviceType()
+  const isDesktop = category === 'desktop'
   const [navigationOpen, setNavigationOpen] = useState(false)
 
-  useEffect(() => setNavigationOpen(false), [location.pathname])
+  // Đóng Drawer khi đổi route — cập nhật state ngay trong lúc render (theo khuyến nghị của React
+  // cho việc "điều chỉnh state theo thay đổi của prop") thay vì dùng useEffect, tránh 1 nhịp render
+  // thừa hiển thị Drawer cũ trước khi effect kịp chạy.
+  const [lastPathname, setLastPathname] = useState(location.pathname)
+  if (location.pathname !== lastPathname) {
+    setLastPathname(location.pathname)
+    setNavigationOpen(false)
+  }
 
   if (!user) return null
 
@@ -156,9 +164,12 @@ export default function AppLayout() {
         open={!isDesktop && navigationOpen}
         onClose={() => setNavigationOpen(false)}
         placement="left"
-        width={280}
+        size={280}
         title={<PortalBrand role={user.role} />}
-        styles={{ body: { padding: '8px 0', background: '#10233f' } }}
+        styles={{
+          wrapper: { width: 'min(280px, 86vw)' },
+          body: { padding: '8px 0', background: '#10233f' },
+        }}
       >
         {navigationMenu}
       </Drawer>

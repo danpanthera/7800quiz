@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Layout, Menu, Button, Table, Space, Tag, Popconfirm, message,
@@ -7,11 +7,13 @@ import {
 } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, EditOutlined,
-  UploadOutlined, InboxOutlined, WarningOutlined, CheckCircleOutlined,
+  UploadOutlined, InboxOutlined, WarningOutlined, CheckCircleOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import type { ColumnType } from 'antd/es/table'
-import api from '../lib/api'
+import ManageTable from '../components/ManageTable'
+import { useDeviceType } from '../hooks/useDeviceType'
+import api, { getErrorMessage } from '../lib/api'
 
 const { Sider, Content } = Layout
 const { Title, Text } = Typography
@@ -24,6 +26,13 @@ interface Question {
   points: number; subjectId?: string
   options: QuestionOption[]
   subject?: { id: string; name: string }
+}
+
+interface SubjectFormValues { name: string; description?: string }
+interface QuestionFormValues {
+  content: string; imageUrl?: string; explanation?: string
+  subjectId: string; questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING'; points: number
+  options: QuestionOption[]
 }
 
 interface DupMatch { id: string; content: string; score: number; level: 'exact' | 'high' | 'medium' }
@@ -45,7 +54,10 @@ interface PreviewRow {
 export default function QuestionsPage() {
   const { token } = theme.useToken()
   const qc = useQueryClient()
+  const { screens } = useDeviceType()
+  const isCardView = !screens.md
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null)
+  const [subjectDrawerOpen, setSubjectDrawerOpen] = useState(false)
   const [subjectModalOpen, setSubjectModalOpen] = useState(false)
   const [editSubject, setEditSubject] = useState<Subject | null>(null)
   const [questionDrawerOpen, setQuestionDrawerOpen] = useState(false)
@@ -87,10 +99,13 @@ export default function QuestionsPage() {
     debounceRef.current = setTimeout(() => checkContent(text), 300)
   }, [checkContent])
 
-  // Reset warnings when drawer closes
-  useEffect(() => {
+  // Reset cảnh báo khi Drawer đóng — cập nhật ngay trong lúc render thay vì dùng useEffect
+  // (theo khuyến nghị của React cho việc "điều chỉnh state theo thay đổi của prop")
+  const [wasDrawerOpen, setWasDrawerOpen] = useState(questionDrawerOpen)
+  if (questionDrawerOpen !== wasDrawerOpen) {
+    setWasDrawerOpen(questionDrawerOpen)
     if (!questionDrawerOpen) { setDupWarnings([]); setSpellWarnings([]) }
-  }, [questionDrawerOpen])
+  }
 
   // ── Subjects ──────────────────────────────────────────────────────────
   const { data: subjects = [] } = useQuery<Subject[]>({
@@ -99,13 +114,13 @@ export default function QuestionsPage() {
   })
 
   const createSubjectMutation = useMutation({
-    mutationFn: (data: { name: string; description?: string }) => api.post('/admin/subjects', data),
+    mutationFn: (data: SubjectFormValues) => api.post('/admin/subjects', data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); setSubjectModalOpen(false); subjectForm.resetFields() },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi tạo lĩnh vực'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi tạo lĩnh vực')),
   })
 
   const updateSubjectMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string; name: string; description?: string }) =>
+    mutationFn: ({ id, ...data }: { id: string } & SubjectFormValues) =>
       api.put(`/admin/subjects/${id}`, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); setSubjectModalOpen(false); setEditSubject(null); subjectForm.resetFields() },
   })
@@ -124,7 +139,7 @@ export default function QuestionsPage() {
   })
 
   const createQuestionMutation = useMutation({
-    mutationFn: (data: any) => api.post('/admin/bank-questions', data),
+    mutationFn: (data: QuestionFormValues) => api.post('/admin/bank-questions', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bank-questions'] })
       qc.invalidateQueries({ queryKey: ['subjects'] })
@@ -133,7 +148,7 @@ export default function QuestionsPage() {
   })
 
   const updateQuestionMutation = useMutation({
-    mutationFn: ({ id, ...data }: any) => api.put(`/admin/bank-questions/${id}`, data),
+    mutationFn: ({ id, ...data }: { id: string } & Partial<QuestionFormValues>) => api.put(`/admin/bank-questions/${id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bank-questions'] })
       setQuestionDrawerOpen(false); setEditQuestion(null); questionForm.resetFields()
@@ -154,7 +169,7 @@ export default function QuestionsPage() {
   const openEditSubjectModal = (s: Subject) => {
     setEditSubject(s); subjectForm.setFieldsValue({ name: s.name, description: s.description }); setSubjectModalOpen(true)
   }
-  const handleSubjectSubmit = (values: any) => {
+  const handleSubjectSubmit = (values: SubjectFormValues) => {
     if (editSubject) updateSubjectMutation.mutate({ id: editSubject.id, ...values })
     else createSubjectMutation.mutate(values)
   }
@@ -185,7 +200,7 @@ export default function QuestionsPage() {
     setQuestionDrawerOpen(true)
   }
 
-  const handleQuestionSubmit = (values: any) => {
+  const handleQuestionSubmit = (values: QuestionFormValues) => {
     if (editQuestion) {
       updateQuestionMutation.mutate({
         id: editQuestion.id,
@@ -195,7 +210,7 @@ export default function QuestionsPage() {
     } else {
       // Thứ tự hiển thị/đúng (câu ORDERING) lấy theo vị trí cuối cùng trong danh sách,
       // không phụ thuộc orderIndex khởi tạo ban đầu — để nút ↑↓ có tác dụng thật.
-      const options = (values.options ?? []).map((opt: QuestionOption, idx: number) => ({ ...opt, orderIndex: idx + 1 }))
+      const options = (values.options ?? []).map((opt, idx) => ({ ...opt, orderIndex: idx + 1 }))
       createQuestionMutation.mutate({ ...values, options })
     }
   }
@@ -219,8 +234,8 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['bank-questions'] })
       qc.invalidateQueries({ queryKey: ['subjects'] })
       closeImportModal()
-    } catch (e: any) {
-      message.error(e.response?.data?.message ?? 'Lỗi import')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Lỗi import'))
     } finally { setImporting(false) }
   }
 
@@ -240,8 +255,8 @@ export default function QuestionsPage() {
       setPreviewData(res.data.preview ?? [])
       setPreviewErrors(res.data.errors ?? [])
       setPreviewStep('preview')
-    } catch (e: any) {
-      message.error(e.response?.data?.message ?? 'Lỗi kiểm tra file')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Lỗi kiểm tra file'))
     } finally { setPreviewing(false) }
   }
 
@@ -271,67 +286,77 @@ export default function QuestionsPage() {
     { title: 'Điểm', dataIndex: 'points', width: 70 },
     {
       title: '', width: 100,
-      render: (_: any, r: Question) => (
-        <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEditQuestion(r)} />
-          <Popconfirm title="Xóa câu hỏi?" onConfirm={() => deleteQuestionMutation.mutate(r.id)}>
-            <Button icon={<DeleteOutlined />} size="small" danger />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, r: Question) => renderQuestionActions(r),
     },
   ]
 
+  const subjectMenu = (
+    <>
+      <div style={{ padding: '16px 12px 8px' }}>
+        <Title level={5} style={{ margin: 0 }}>Lĩnh vực</Title>
+      </div>
+      <div style={{ padding: '0 12px 8px' }}>
+        <Button icon={<PlusOutlined />} size="small" block onClick={openNewSubjectModal}>
+          Tạo lĩnh vực
+        </Button>
+      </div>
+      <Menu
+        mode="inline"
+        selectedKeys={selectedSubjectId ? [selectedSubjectId] : ['__all__']}
+        onClick={({ key }) => { setSelectedSubjectId(key === '__all__' ? null : key); setSubjectDrawerOpen(false) }}
+        items={[
+          {
+            key: '__all__',
+            label: `Tất cả (${subjects.reduce((s, x) => s + (x._count?.questions ?? 0), 0)})`,
+          },
+          ...subjects.map((s) => ({
+            key: s.id,
+            label: (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                <Space size={4} onClick={(e) => e.stopPropagation()}>
+                  <Tag style={{ marginRight: 0 }}>{s._count?.questions ?? 0}</Tag>
+                  <Button type="text" icon={<EditOutlined />} size="small" onClick={() => openEditSubjectModal(s)} />
+                  <Popconfirm title="Xóa lĩnh vực?" onConfirm={() => deleteSubjectMutation.mutate(s.id)}>
+                    <Button type="text" icon={<DeleteOutlined />} size="small" danger />
+                  </Popconfirm>
+                </Space>
+              </div>
+            ),
+          })),
+        ]}
+      />
+    </>
+  )
+
+  const renderQuestionActions = (r: Question) => (
+    <Space>
+      <Button icon={<EditOutlined />} size="small" onClick={() => openEditQuestion(r)} />
+      <Popconfirm title="Xóa câu hỏi?" onConfirm={() => deleteQuestionMutation.mutate(r.id)}>
+        <Button icon={<DeleteOutlined />} size="small" danger />
+      </Popconfirm>
+    </Space>
+  )
+
   return (
     <Layout style={{ minHeight: '100%', background: 'transparent' }}>
-      {/* Sidebar lĩnh vực */}
-      <Sider width={240} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', borderRadius: 8 }}>
-        <div style={{ padding: '16px 12px 8px' }}>
-          <Title level={5} style={{ margin: 0 }}>Lĩnh vực</Title>
-        </div>
-        <div style={{ padding: '0 12px 8px' }}>
-          <Button icon={<PlusOutlined />} size="small" block onClick={openNewSubjectModal}>
-            Tạo lĩnh vực
-          </Button>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={selectedSubjectId ? [selectedSubjectId] : ['__all__']}
-          onClick={({ key }) => setSelectedSubjectId(key === '__all__' ? null : key)}
-          items={[
-            {
-              key: '__all__',
-              label: `Tất cả (${subjects.reduce((s, x) => s + (x._count?.questions ?? 0), 0)})`,
-            },
-            ...subjects.map((s) => ({
-              key: s.id,
-              label: (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
-                  <Space size={4} onClick={(e) => e.stopPropagation()}>
-                    <Tag style={{ marginRight: 0 }}>{s._count?.questions ?? 0}</Tag>
-                    <Button type="text" icon={<EditOutlined />} size="small" onClick={() => openEditSubjectModal(s)} />
-                    <Popconfirm title="Xóa lĩnh vực?" onConfirm={() => deleteSubjectMutation.mutate(s.id)}>
-                      <Button type="text" icon={<DeleteOutlined />} size="small" danger />
-                    </Popconfirm>
-                  </Space>
-                </div>
-              ),
-            })),
-          ]}
-        />
-      </Sider>
+      {/* Sidebar lĩnh vực — chỉ hiện từ tablet ngang/desktop, phone dùng Select + Drawer bên dưới */}
+      {!isCardView && (
+        <Sider width={240} style={{ background: '#fff', borderRight: '1px solid #f0f0f0', borderRadius: 8 }}>
+          {subjectMenu}
+        </Sider>
+      )}
 
       {/* Main content */}
-      <Content style={{ padding: '0 0 0 16px' }}>
-        <div style={{ background: '#fff', padding: 16, borderRadius: 8, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Content style={{ padding: isCardView ? 0 : '0 0 0 16px' }}>
+        <div style={{ background: '#fff', padding: 16, borderRadius: 8, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <Title level={5} style={{ margin: 0 }}>
             {selectedSubjectId ? subjects.find((s) => s.id === selectedSubjectId)?.name : 'Tất cả câu hỏi'}
             <Text type="secondary" style={{ fontWeight: 'normal', fontSize: 14, marginLeft: 8 }}>
               ({questions.length} câu)
             </Text>
           </Title>
-          <Space>
+          <Space wrap>
             <Button
               icon={<UploadOutlined />}
               onClick={() => {
@@ -347,8 +372,25 @@ export default function QuestionsPage() {
           </Space>
         </div>
 
-        <Table
-          rowKey="id" dataSource={questions} columns={columns} loading={isLoading} size="small"
+        {isCardView && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <Select
+              style={{ flex: 1, minWidth: 0 }}
+              value={selectedSubjectId ?? '__all__'}
+              onChange={(v) => setSelectedSubjectId(v === '__all__' ? null : v)}
+              options={[
+                { value: '__all__', label: `Tất cả (${subjects.reduce((s, x) => s + (x._count?.questions ?? 0), 0)})` },
+                ...subjects.map((s) => ({ value: s.id, label: `${s.name} (${s._count?.questions ?? 0})` })),
+              ]}
+            />
+            <Tooltip title="Quản lý lĩnh vực">
+              <Button icon={<SettingOutlined />} onClick={() => setSubjectDrawerOpen(true)} aria-label="Quản lý lĩnh vực" />
+            </Tooltip>
+          </div>
+        )}
+
+        <ManageTable<Question>
+          rowKey="id" dataSource={questions} columns={columns} loading={isLoading}
           pagination={{ showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], defaultPageSize: 20 }}
           expandable={{
             expandedRowRender: (r) => (
@@ -367,7 +409,40 @@ export default function QuestionsPage() {
               </div>
             ),
           }}
+          cardHeading={(q) => <Title level={5} style={{ margin: 0 }}>{q.content}</Title>}
+          cardBadge={(q) => {
+            const label = q.questionType === 'SINGLE' ? 'Chọn 1' : q.questionType === 'MULTIPLE' ? 'Chọn nhiều' : 'Sắp xếp'
+            const color = q.questionType === 'SINGLE' ? 'blue' : q.questionType === 'MULTIPLE' ? 'purple' : 'gold'
+            return <Tag color={color}>{label}</Tag>
+          }}
+          cardMeta={[
+            { label: 'Lĩnh vực', render: (q) => q.subject?.name ? <Tag color="cyan">{q.subject.name}</Tag> : '-' },
+            { label: 'Điểm', render: (q) => q.points },
+          ]}
+          cardExtra={(q) => (
+            <div>
+              {q.options.slice().sort((a, b) => a.orderIndex - b.orderIndex).map((o, i) => (
+                <div key={i} style={{ padding: '3px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {q.questionType === 'ORDERING'
+                    ? <Tag>{i + 1}</Tag>
+                    : (o.isCorrect ? <Tag color="green">✔</Tag> : <Tag color="default">✗</Tag>)}
+                  {o.content}
+                </div>
+              ))}
+            </div>
+          )}
+          cardActions={renderQuestionActions}
         />
+
+        <Drawer
+          title="Lĩnh vực"
+          placement="left"
+          size={280}
+          open={isCardView && subjectDrawerOpen}
+          onClose={() => setSubjectDrawerOpen(false)}
+        >
+          {subjectMenu}
+        </Drawer>
       </Content>
 
       {/* Modal: Subject */}

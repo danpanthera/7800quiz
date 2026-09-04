@@ -3,7 +3,7 @@ import { KeyOutlined, LockOutlined } from '@ant-design/icons'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
-import { useAuth } from '../lib/auth'
+import { useAuth } from '../lib/useAuth'
 import { getDefaultRoute } from '../lib/permissions'
 
 const { Title, Text } = Typography

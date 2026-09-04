@@ -2,6 +2,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
 
 /* ── CSS Variables ────────────────────────────────────────────────────────── */
+/*
+ * Thang breakpoint dùng trong toàn bộ file này PHẢI khớp apps/web/src/lib/breakpoints.ts
+ * và antd Grid mặc định (sm=576, md=768, lg=992, xl=1200). CSS custom property không dùng
+ * được bên trong @media nên các mốc dưới đây phải tự tay giữ đồng bộ thủ công khi thay đổi:
+ *   max-width: 575px  ↔ dưới sm (phone)
+ *   max-width: 767px  ↔ dưới md
+ *   max-width: 991px  ↔ dưới lg (phone + tablet, khớp AppLayout Drawer/Sider)
+ */
 :root {
   --primary: #1565C0;
   --primary-light: #1976D2;
@@ -16,6 +24,12 @@
   --shadow-md: 0 4px 16px rgba(21, 101, 192, 0.12);
   --shadow-lg: 0 8px 32px rgba(21, 101, 192, 0.18);
   --transition: all 0.2s ease;
+
+  /* Vùng an toàn trên thiết bị có tai thỏ/thanh cử chỉ (iPhone) — cần viewport-fit=cover trong index.html mới có giá trị khác 0 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 
   font-family: 'Be Vietnam Pro', sans-serif;
   font-size: 14px;
@@ -33,6 +47,7 @@ body {
   min-width: 320px;
   background: var(--bg-layout);
   color: #1A1A2E;
+  padding-bottom: var(--safe-bottom);
 }
 
 #root {
@@ -105,7 +120,7 @@ select {
 }
 
 .portal-navigation .ant-menu-item {
-  min-height: 42px;
+  min-height: 44px;
   margin-inline: 0;
   border-radius: 6px;
 }
@@ -119,8 +134,8 @@ select {
 }
 
 .portal-header {
-  height: var(--header-height) !important;
-  padding: 0 24px !important;
+  height: calc(var(--header-height) + var(--safe-top)) !important;
+  padding: var(--safe-top) calc(24px + var(--safe-right)) 0 calc(24px + var(--safe-left)) !important;
   background: rgba(255, 255, 255, 0.96) !important;
   border-bottom: 1px solid #dfe5ec;
   display: flex !important;
@@ -132,8 +147,8 @@ select {
 }
 
 .portal-menu-trigger {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
 }
 
@@ -190,7 +205,7 @@ select {
   width: min(100%, 1600px);
   margin: 0 auto !important;
   padding: 24px;
-  min-height: calc(100svh - var(--header-height));
+  min-height: calc(100svh - var(--header-height) - var(--safe-top));
 }
 
 .portal-drawer .ant-drawer-header {
@@ -204,6 +219,10 @@ select {
   margin-inline-end: 8px;
 }
 
+.portal-drawer .ant-drawer-body {
+  padding-left: calc(8px + var(--safe-left));
+}
+
 .page-stack {
   display: grid;
   gap: 20px;
@@ -212,6 +231,7 @@ select {
 .management-page-header {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -243,6 +263,11 @@ select {
   white-space: nowrap;
 }
 
+.manage-record-select {
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+
 .manage-record-heading h5.ant-typography {
   margin: 0 0 8px;
   color: #10233f;
@@ -250,27 +275,16 @@ select {
   line-height: 1.5;
 }
 
+/* auto-fit thay vì repeat(3,1fr) cố định — ManageTable dùng chung cho nhiều trang có số field meta khác nhau,
+   nếu xuống dòng thì border-right theo vị trí (first/last-child) sẽ sai điểm ngắt nên bỏ hẳn divider dọc */
 .manage-record-meta {
   margin: 20px 0;
   padding: 14px 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 12px 16px;
   border-top: 1px solid #edf0f4;
   border-bottom: 1px solid #edf0f4;
-}
-
-.manage-record-meta div {
-  padding: 0 12px;
-  border-right: 1px solid #edf0f4;
-}
-
-.manage-record-meta div:first-child {
-  padding-left: 0;
-}
-
-.manage-record-meta div:last-child {
-  padding-right: 0;
-  border-right: 0;
 }
 
 .manage-record-meta dt,
@@ -288,6 +302,13 @@ select {
   color: #1f2d3d;
   font-size: 13px;
   font-weight: 700;
+}
+
+.manage-record-extra {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: #f5f7fa;
+  border-radius: 8px;
 }
 
 .manage-record-actions {
@@ -559,7 +580,7 @@ select {
   text-align: center;
 }
 
-@media (max-width: 899px) {
+@media (max-width: 991px) {
   .login-page {
     grid-template-columns: 1fr;
   }
@@ -585,11 +606,11 @@ select {
 
 @media (max-width: 991px) {
   .portal-header {
-    padding: 0 16px !important;
+    padding: var(--safe-top) calc(16px + var(--safe-right)) 0 calc(16px + var(--safe-left)) !important;
   }
 
   .portal-content {
-    padding: 20px 16px;
+    padding: 20px calc(16px + var(--safe-right)) 20px calc(16px + var(--safe-left));
   }
 }
 
@@ -599,7 +620,7 @@ select {
   }
 
   .portal-content {
-    padding: 18px 12px;
+    padding: 18px calc(12px + var(--safe-right)) 18px calc(12px + var(--safe-left));
   }
 
   .page-title-row {
@@ -696,6 +717,10 @@ select {
   font-variant-numeric: tabular-nums;
   font-size: 18px;
   font-weight: 700;
+  /* Dính lại khi cuộn đề dài — không mất dấu thời gian còn lại giữa lúc làm bài */
+  position: sticky;
+  top: calc(var(--header-height) + var(--safe-top) + 8px);
+  z-index: 5;
 }
 
 .quiz-timer-warning {
@@ -839,6 +864,12 @@ select {
   align-items: center !important;
 }
 
+/* Nút ↑↓ sắp xếp câu hỏi ORDERING — size="small" mặc định của antd (~24px) quá nhỏ để bấm chính xác trên phone */
+.quiz-ordering-item .ant-btn {
+  width: 40px;
+  height: 40px;
+}
+
 .quiz-option-letter {
   width: 24px;
   height: 24px;
@@ -947,7 +978,7 @@ select {
   font-size: 13px;
 }
 
-@media (max-width: 899px) {
+@media (max-width: 991px) {
   .quiz-player-layout {
     grid-template-columns: 1fr;
   }
@@ -1298,6 +1329,33 @@ select {
 
 .arena-view-transition {
   animation: fadeIn 0.28s ease;
+}
+
+/* ArenaPlayerPage đứng ngoài AppLayout (không có .portal-header lo sẵn) nên tự xử lý safe-area riêng */
+.arena-player-shell {
+  min-height: 100svh;
+  background: var(--bg-layout);
+}
+
+.arena-player-topbar {
+  padding: calc(10px + var(--safe-top)) calc(16px + var(--safe-right)) 10px calc(16px + var(--safe-left));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #dfe5ec;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.arena-player-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #10233f;
 }
 
 

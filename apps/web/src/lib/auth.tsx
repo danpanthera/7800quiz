@@ -1,23 +1,6 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
-import { isUserRole, type UserRole } from './permissions'
-
-export interface AuthUser {
-  id: string
-  username: string
-  fullName: string
-  role: UserRole
-  mustChangePassword: boolean
-}
-
-interface AuthContextType {
-  user: AuthUser | null
-  token: string | null
-  login: (token: string, user: AuthUser) => void
-  markPasswordChanged: () => void
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthContextType | null>(null)
+import { useState, type ReactNode } from 'react'
+import { isUserRole } from './permissions'
+import { AuthContext, type AuthUser } from './useAuth'
 
 function getStoredUser(): AuthUser | null {
   const raw = localStorage.getItem('user')
@@ -77,10 +60,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
-  return ctx
 }

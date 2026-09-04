@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import {
-  Button, Table, Space, Tag, Modal, Form, InputNumber,
+  Button, Space, Tag, Modal, Form, InputNumber,
   Popconfirm, Typography, message,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import ManageTable from '../components/ManageTable'
 import api from '../lib/api'
 
 interface AcademicYear {
@@ -15,6 +16,14 @@ interface AcademicYear {
   isActive: boolean
   createdAt: string
   _count?: { classes: number }
+}
+
+/** Dữ liệu gửi lên khi tạo/cập nhật năm học (bỏ field server tự sinh) */
+type AcademicYearFormValues = Omit<AcademicYear, 'id' | 'createdAt' | '_count' | 'isActive'>
+
+/** Giá trị Form nhập năm học (chỉ có 1 trường "year") */
+interface AcademicYearFormInput {
+  year: number
 }
 
 export default function AcademicYearsPage() {
@@ -29,13 +38,13 @@ export default function AcademicYearsPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (body: any) => api.post('/admin/academic-years', body).then((r) => r.data),
+    mutationFn: (body: AcademicYearFormValues) => api.post('/admin/academic-years', body).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['academic-years'] }); closeModal(); message.success('Đã tạo năm học') },
     onError: () => message.error('Lỗi khi tạo năm học'),
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, ...body }: any) => api.put(`/admin/academic-years/${id}`, body).then((r) => r.data),
+    mutationFn: ({ id, ...body }: { id: string } & AcademicYearFormValues) => api.put(`/admin/academic-years/${id}`, body).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['academic-years'] }); closeModal(); message.success('Đã cập nhật') },
     onError: () => message.error('Lỗi khi cập nhật'),
   })
@@ -69,7 +78,7 @@ export default function AcademicYearsPage() {
     form.resetFields()
   }
 
-  function onFinish(values: any) {
+  function onFinish(values: AcademicYearFormInput) {
     const { year, ...rest } = values
     const payload = { ...rest, startYear: year, endYear: year, name: `Năm ${year}` }
     if (editing) {
@@ -78,6 +87,20 @@ export default function AcademicYearsPage() {
       createMut.mutate(payload)
     }
   }
+
+  const renderAcademicYearActions = (row: AcademicYear) => (
+    <Space>
+      {!row.isActive && (
+        <Popconfirm title="Đặt làm năm học hiện tại?" onConfirm={() => setActiveMut.mutate(row.id)}>
+          <Button size="small" type="link">Đặt active</Button>
+        </Popconfirm>
+      )}
+      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
+      <Popconfirm title="Xóa năm học này?" onConfirm={() => deleteMut.mutate(row.id)}>
+        <Button size="small" danger icon={<DeleteOutlined />} />
+      </Popconfirm>
+    </Space>
+  )
 
   const columns = [
     {
@@ -96,35 +119,35 @@ export default function AcademicYearsPage() {
     {
       title: 'Thao tác',
       width: 200,
-      render: (_: any, row: AcademicYear) => (
-        <Space>
-          {!row.isActive && (
-            <Popconfirm title="Đặt làm năm học hiện tại?" onConfirm={() => setActiveMut.mutate(row.id)}>
-              <Button size="small" type="link">Đặt active</Button>
-            </Popconfirm>
-          )}
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
-          <Popconfirm title="Xóa năm học này?" onConfirm={() => deleteMut.mutate(row.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, row: AcademicYear) => renderAcademicYearActions(row),
     },
   ]
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>Quản lý Năm học</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Thêm năm học</Button>
       </div>
 
-      <Table
+      <ManageTable<AcademicYear>
         rowKey="id"
         loading={isLoading}
         dataSource={years}
         columns={columns}
         pagination={false}
+        cardHeading={(row) => (
+          <>
+            <Typography.Title level={5}>{row.name}</Typography.Title>
+            {row.isActive && <Tag color="green" icon={<CheckCircleOutlined />}>Đang hoạt động</Tag>}
+          </>
+        )}
+        cardMeta={[
+          { label: 'Năm bắt đầu', render: (row) => row.startYear },
+          { label: 'Năm kết thúc', render: (row) => row.endYear },
+          { label: 'Số lớp', render: (row) => row._count?.classes ?? 0 },
+        ]}
+        cardActions={renderAcademicYearActions}
       />
 
       <Modal

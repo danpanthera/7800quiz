@@ -2,13 +2,14 @@ import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Button, Card, Col, Input, Popconfirm, Progress, Row,
-  Select, Space, Statistic, Table, Tag, Typography, message,
+  Select, Space, Statistic, Tag, Typography, message,
 } from 'antd'
 import { DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { Resizable } from 'react-resizable'
 import type { ResizeCallbackData } from 'react-resizable'
 import 'react-resizable/css/styles.css'
+import ManageTable from '../components/ManageTable'
 import api from '../lib/api'
 
 interface ReportRow {
@@ -159,6 +160,19 @@ export default function ReportsPage() {
     : 0
   const passCount = gradedRows.filter((r) => (r.score ?? 0) >= 60).length
 
+  const renderReportActions = (r: ReportRow) => (
+    <Popconfirm
+      title="Xóa bài thi?"
+      description="Hành động không thể hoàn tác."
+      okText="Xóa"
+      cancelText="Hủy"
+      okButtonProps={{ danger: true }}
+      onConfirm={() => deleteMut.mutate(r.id)}
+    >
+      <Button type="text" danger icon={<DeleteOutlined />} size="small" />
+    </Popconfirm>
+  )
+
   const baseColumns: ColumnsType<ReportRow> = [
     {
       title: 'Cán bộ',
@@ -208,18 +222,7 @@ export default function ReportsPage() {
     },
     {
       title: '',
-      render: (_, r) => (
-        <Popconfirm
-          title="Xóa bài thi?"
-          description="Hành động không thể hoàn tác."
-          okText="Xóa"
-          cancelText="Hủy"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => deleteMut.mutate(r.id)}
-        >
-          <Button type="text" danger icon={<DeleteOutlined />} size="small" />
-        </Popconfirm>
-      ),
+      render: (_, r) => renderReportActions(r),
     },
   ]
 
@@ -242,16 +245,16 @@ export default function ReportsPage() {
 
       {/* Thống kê tổng quan */}
       <Row gutter={12} style={{ marginBottom: 16 }}>
-        <Col span={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card size="small"><Statistic title="Tổng bài thi" value={filtered.length} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card size="small"><Statistic title="Đã chấm điểm" value={gradedRows.length} /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card size="small"><Statistic title="Điểm TB" value={avgScore} suffix="%" /></Card>
         </Col>
-        <Col span={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card size="small">
             <Statistic
               title="Đạt (≥ 60%)"
@@ -319,7 +322,7 @@ export default function ReportsPage() {
         )}
       </Space>
 
-      <Table
+      <ManageTable<ReportRow>
         rowKey="id"
         loading={isLoading}
         dataSource={filtered}
@@ -328,6 +331,29 @@ export default function ReportsPage() {
         size="small"
         scroll={{ x: 'max-content' }}
         components={{ header: { cell: ResizableTitle } }}
+        cardHeading={(r) => <Typography.Title level={5}>{r.fullName}</Typography.Title>}
+        cardBadge={(r) => <Tag color={STATUS_COLOR[r.status] ?? 'default'}>{STATUS_LABEL[r.status] ?? r.status}</Tag>}
+        cardMeta={[
+          {
+            label: 'Chi nhánh',
+            render: (r) => r.parentDepartment ?? (r.parentDepartmentId ? '' : r.department) ?? '—',
+          },
+          { label: 'Phòng ban', render: (r) => r.department },
+          { label: 'Bộ đề', render: (r) => r.quizTitle },
+          {
+            label: 'Điểm',
+            render: (r) => r.score !== null ? (
+              <Space>
+                <Progress percent={Math.round(r.score)} size="small" style={{ width: 90 }} />
+                <Tag color={(r.score >= 60) ? 'success' : 'error'}>{r.score >= 60 ? 'Đạt' : 'Chưa đạt'}</Tag>
+              </Space>
+            ) : (
+              <Tag>Chưa nộp</Tag>
+            ),
+          },
+          { label: 'Thời gian nộp', render: (r) => r.submittedAt ? new Date(r.submittedAt).toLocaleString('vi-VN') : '—' },
+        ]}
+        cardActions={renderReportActions}
       />
     </>
   )

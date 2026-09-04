@@ -14,7 +14,8 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
-import api from '../lib/api'
+import ManageTable from '../components/ManageTable'
+import api, { getErrorMessage } from '../lib/api'
 
 interface AcademicYear { id: string; name: string }
 interface ClassItem { id: string; name: string; code: string }
@@ -29,6 +30,12 @@ interface ExamSession {
   quiz?: { id: string; title: string; durationMin: number }
   class?: { id: string; name: string; code: string }
 }
+// Dữ liệu Form modal tạo/sửa đợt thi — "range" là RangePicker, tách thành startAt/endAt khi submit
+type ExamSessionFormValues = Omit<ExamSession, 'id' | 'status' | 'quiz' | 'class' | 'startAt' | 'endAt'> & {
+  range: [dayjs.Dayjs, dayjs.Dayjs]
+}
+// Body thực gửi lên API sau khi tách range → startAt/endAt (dùng chung cho create/update)
+type ExamSessionBody = Omit<ExamSession, 'id' | 'status' | 'quiz' | 'class'>
 interface GradebookEntry {
   user: { id: string; fullName: string; username: string }
   attempts: number; finalScore: number | null; isPassed: boolean | null
@@ -166,12 +173,12 @@ export default function ExamSessionsPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (body: any) => api.post('/admin/exam-sessions', body).then((r) => r.data),
+    mutationFn: (body: ExamSessionBody) => api.post('/admin/exam-sessions', body).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['exam-sessions'] }); closeModal(); message.success('Đã tạo đợt thi') },
     onError: () => message.error('Lỗi khi tạo đợt thi'),
   })
   const updateMut = useMutation({
-    mutationFn: ({ id, ...body }: any) => api.put(`/admin/exam-sessions/${id}`, body).then((r) => r.data),
+    mutationFn: ({ id, ...body }: { id: string } & ExamSessionBody) => api.put(`/admin/exam-sessions/${id}`, body).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['exam-sessions'] }); closeModal(); message.success('Đã cập nhật') },
     onError: () => message.error('Lỗi khi cập nhật'),
   })
@@ -199,7 +206,7 @@ export default function ExamSessionsPage() {
   }
   function closeModal() { setModalOpen(false); setEditing(null); form.resetFields() }
   function openGradebook(row: ExamSession) { setGradebookId(row.id); setActiveTab('gradebook'); setAttemptUser(null) }
-  function onFinish(values: any) {
+  function onFinish(values: ExamSessionFormValues) {
     const { range, ...rest } = values
     const body = { ...rest, startAt: range[0].toISOString(), endAt: range[1].toISOString() }
     if (editing) updateMut.mutate({ id: editing.id, ...body })
@@ -227,8 +234,8 @@ export default function ExamSessionsPage() {
     try {
       const res = await api.get(`/admin/exam-sessions/${gradebookId}/certificate/${userId}`)
       openCertificatePrint(res.data as CertificateData)
-    } catch (e: any) {
-      message.error(e?.response?.data?.message ?? 'Học viên chưa đạt để cấp chứng nhận')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Học viên chưa đạt để cấp chứng nhận'))
     } finally { setCertLoading(null) }
   }
 
@@ -243,6 +250,26 @@ export default function ExamSessionsPage() {
   const passed = gradebook.filter((g) => g.isPassed).length
   const total = gradebook.length
   const sortedByDifficulty = [...questionStats].sort((a, b) => (a.correctRate ?? 101) - (b.correctRate ?? 101))
+
+  const renderExamSessionActions = (row: ExamSession) => (
+    <Space>
+      <Button size="small" icon={<BarChartOutlined />} onClick={() => openGradebook(row)}>Bảng điểm</Button>
+      {row.status === 'DRAFT' && (
+        <Popconfirm title="Mở đợt thi?" onConfirm={() => setStatusMut.mutate({ id: row.id, status: 'OPEN' })}>
+          <Button size="small" type="primary" icon={<PlayCircleOutlined />} />
+        </Popconfirm>
+      )}
+      {row.status === 'OPEN' && (
+        <Popconfirm title="Đóng đợt thi?" onConfirm={() => setStatusMut.mutate({ id: row.id, status: 'CLOSED' })}>
+          <Button size="small" danger icon={<StopOutlined />} />
+        </Popconfirm>
+      )}
+      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
+      <Popconfirm title="Xóa đợt thi?" onConfirm={() => deleteMut.mutate(row.id)}>
+        <Button size="small" danger icon={<DeleteOutlined />} />
+      </Popconfirm>
+    </Space>
+  )
 
   // ── Table columns ──────────────────────────────────────────────────────
   const columns = [
@@ -259,7 +286,7 @@ export default function ExamSessionsPage() {
     },
     {
       title: 'Thời gian', width: 200,
-      render: (_: any, row: ExamSession) => (
+      render: (_: unknown, row: ExamSession) => (
         <Space direction="vertical" size={0} style={{ fontSize: 12 }}>
           <span>Từ: {dayjs(row.startAt).format('DD/MM/YYYY HH:mm')}</span>
           <span>Đến: {dayjs(row.endAt).format('DD/MM/YYYY HH:mm')}</span>
@@ -273,30 +300,12 @@ export default function ExamSessionsPage() {
     },
     {
       title: '', width: 200,
-      render: (_: any, row: ExamSession) => (
-        <Space>
-          <Button size="small" icon={<BarChartOutlined />} onClick={() => openGradebook(row)}>Bảng điểm</Button>
-          {row.status === 'DRAFT' && (
-            <Popconfirm title="Mở đợt thi?" onConfirm={() => setStatusMut.mutate({ id: row.id, status: 'OPEN' })}>
-              <Button size="small" type="primary" icon={<PlayCircleOutlined />} />
-            </Popconfirm>
-          )}
-          {row.status === 'OPEN' && (
-            <Popconfirm title="Đóng đợt thi?" onConfirm={() => setStatusMut.mutate({ id: row.id, status: 'CLOSED' })}>
-              <Button size="small" danger icon={<StopOutlined />} />
-            </Popconfirm>
-          )}
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
-          <Popconfirm title="Xóa đợt thi?" onConfirm={() => deleteMut.mutate(row.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, row: ExamSession) => renderExamSessionActions(row),
     },
   ]
 
   const gradebookColumns = [
-    { title: '#', width: 40, render: (_: any, __: any, i: number) => i + 1 },
+    { title: '#', width: 40, render: (_: unknown, __: unknown, i: number) => i + 1 },
     {
       title: 'Họ tên', dataIndex: ['user', 'fullName'],
       render: (v: string, r: GradebookEntry) => (
@@ -319,7 +328,7 @@ export default function ExamSessionsPage() {
     },
     {
       title: '', width: 80,
-      render: (_: any, r: GradebookEntry) => r.isPassed ? (
+      render: (_: unknown, r: GradebookEntry) => r.isPassed ? (
         <Tooltip title="Cấp chứng nhận">
           <Button size="small" icon={<SafetyCertificateOutlined />} type="dashed"
             loading={certLoading === r.user.id}
@@ -344,7 +353,30 @@ export default function ExamSessionsPage() {
         </Space>
       </div>
 
-      <Table rowKey="id" loading={isLoading} dataSource={sessions} columns={columns} />
+      <ManageTable<ExamSession>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={sessions}
+        columns={columns}
+        cardHeading={(row) => (
+          <Button type="link" style={{ padding: 0 }} onClick={() => openGradebook(row)}>{row.name}</Button>
+        )}
+        cardBadge={(row) => <Tag color={STATUS_MAP[row.status]?.color}>{STATUS_MAP[row.status]?.label}</Tag>}
+        cardMeta={[
+          { label: 'Bộ đề', render: (row) => row.quiz?.title ?? '—' },
+          { label: 'Lớp', render: (row) => <span>{row.class?.name} <Tag style={{ fontSize: 10 }}>{row.class?.code}</Tag></span> },
+          {
+            label: 'Thời gian', render: (row) => (
+              <Space direction="vertical" size={0} style={{ fontSize: 12 }}>
+                <span>Từ: {dayjs(row.startAt).format('DD/MM/YYYY HH:mm')}</span>
+                <span>Đến: {dayjs(row.endAt).format('DD/MM/YYYY HH:mm')}</span>
+              </Space>
+            ),
+          },
+          { label: 'Số lần', render: (row) => row.maxAttempts === 0 ? '∞' : row.maxAttempts },
+        ]}
+        cardActions={renderExamSessionActions}
+      />
 
       {/* ── Modal tạo/sửa ───────────────────────────────────────────────── */}
       <Modal title={editing ? 'Chỉnh sửa đợt thi' : 'Tạo đợt thi mới'}
@@ -433,7 +465,7 @@ export default function ExamSessionsPage() {
             ) : (
               <Table rowKey={(r) => r.user.id} loading={gradebookLoading} size="small"
                 dataSource={[...gradebook].sort((a, b) => (b.finalScore ?? -1) - (a.finalScore ?? -1))}
-                pagination={false} columns={gradebookColumns} />
+                pagination={false} scroll={{ x: 'max-content' }} columns={gradebookColumns} />
             ),
           },
           {
@@ -441,7 +473,7 @@ export default function ExamSessionsPage() {
             label: <Space><TrophyOutlined />Leaderboard</Space>,
             children: leaderboard.length === 0 && !lbLoading ? <Empty description="Chưa có ai nộp bài" /> : (
               <Table rowKey={(r) => r.user.id} loading={lbLoading} size="small"
-                dataSource={leaderboard} pagination={false}
+                dataSource={leaderboard} pagination={false} scroll={{ x: 'max-content' }}
                 columns={[
                   {
                     title: 'Hạng', dataIndex: 'rank', width: 60,
@@ -470,7 +502,7 @@ export default function ExamSessionsPage() {
                   </div>
                 )}
                 <Table rowKey="id" loading={statsLoading} size="small"
-                  dataSource={questionStats} pagination={false}
+                  dataSource={questionStats} pagination={false} scroll={{ x: 'max-content' }}
                   columns={[
                     { title: '#', dataIndex: 'index', width: 40 },
                     {
@@ -523,9 +555,9 @@ export default function ExamSessionsPage() {
                   ? <Empty description="Tất cả học viên đã làm bài 🎉" />
                   : (
                     <Table rowKey="id" loading={naLoading} size="small"
-                      dataSource={notAttempted} pagination={false}
+                      dataSource={notAttempted} pagination={false} scroll={{ x: 'max-content' }}
                       columns={[
-                        { title: '#', width: 40, render: (_: any, __: any, i: number) => i + 1 },
+                        { title: '#', width: 40, render: (_: unknown, __: unknown, i: number) => i + 1 },
                         { title: 'Họ tên', dataIndex: 'fullName' },
                         { title: 'Username', dataIndex: 'username', width: 130 },
                         { title: 'Email', dataIndex: 'email', ellipsis: true },
@@ -545,7 +577,7 @@ export default function ExamSessionsPage() {
         {attempts.length === 0 && !attemptsLoading
           ? <Empty description="Học viên này chưa nộp bài nào" />
           : (
-            <Table rowKey="id" loading={attemptsLoading} size="small" dataSource={attempts} pagination={false}
+            <Table rowKey="id" loading={attemptsLoading} size="small" dataSource={attempts} pagination={false} scroll={{ x: 'max-content' }}
               columns={[
                 { title: 'Lần', dataIndex: 'attempt', width: 60 },
                 { title: 'Điểm', dataIndex: 'score', width: 80, render: (v: number | null) => v !== null ? <Typography.Text strong>{v.toFixed(1)}</Typography.Text> : '—' },

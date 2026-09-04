@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Table, Button, Modal, Form, Input, InputNumber, Space,
+  Button, Modal, Form, Input, InputNumber, Space,
   Popconfirm, Tag, Typography, App,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, TrophyOutlined } from '@ant-design/icons'
+import ManageTable from '../components/ManageTable'
 import api from '../lib/api'
 import type { Color } from 'antd/es/color-picker'
 
@@ -74,6 +75,22 @@ export default function LevelsPage() {
     setModalOpen(true)
   }
 
+  const renderLevelActions = (record: LevelDef) => (
+    <Space>
+      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+      <Popconfirm
+        title="Xóa cấp độ này?"
+        description="Chú ý: không thể xóa nếu có người dùng đang ở cấp này."
+        onConfirm={() => deleteMut.mutate(record.id)}
+        okText="Xóa"
+        cancelText="Hủy"
+        okButtonProps={{ danger: true }}
+      >
+        <Button size="small" danger icon={<DeleteOutlined />} />
+      </Popconfirm>
+    </Space>
+  )
+
   const columns = [
     {
       title: 'Cấp',
@@ -126,27 +143,13 @@ export default function LevelsPage() {
     {
       title: 'Hành động',
       width: 120,
-      render: (_: unknown, record: LevelDef) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm
-            title="Xóa cấp độ này?"
-            description="Chú ý: không thể xóa nếu có người dùng đang ở cấp này."
-            onConfirm={() => deleteMut.mutate(record.id)}
-            okText="Xóa"
-            cancelText="Hủy"
-            okButtonProps={{ danger: true }}
-          >
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, record: LevelDef) => renderLevelActions(record),
     },
   ]
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>
           <TrophyOutlined style={{ marginRight: 8, color: '#faad14' }} />
           Quản lý cấp độ
@@ -156,13 +159,51 @@ export default function LevelsPage() {
         </Button>
       </div>
 
-      <Table
-        dataSource={levelsQ.data}
+      <ManageTable<LevelDef>
+        dataSource={levelsQ.data ?? []}
         columns={columns}
         rowKey="id"
         loading={levelsQ.isLoading}
         pagination={false}
         size="middle"
+        cardHeading={(rec) => (
+          <>
+            <span
+              style={{
+                display: 'inline-block',
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: rec.color,
+                marginRight: 8,
+              }}
+            />
+            <Typography.Title level={5} style={{ display: 'inline' }}>{rec.name}</Typography.Title>
+          </>
+        )}
+        cardBadge={(rec) => <Tag color="blue">Cấp {rec.level}</Tag>}
+        cardMeta={[
+          { label: 'Điểm tối thiểu', render: (rec) => <Tag color="gold">⭐ {rec.minXp.toLocaleString()} XP</Tag> },
+          {
+            label: 'Màu',
+            render: (rec) => (
+              <Space>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 20,
+                    height: 20,
+                    borderRadius: 4,
+                    background: rec.color,
+                    border: '1px solid #eee',
+                  }}
+                />
+                <code style={{ fontSize: 12 }}>{rec.color}</code>
+              </Space>
+            ),
+          },
+        ]}
+        cardActions={renderLevelActions}
       />
 
       <Modal

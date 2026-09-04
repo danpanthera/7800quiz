@@ -1,12 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Table, Tag, Typography, Badge, Button, Space, Popconfirm, message,
+  Tag, Typography, Badge, Button, Space, Popconfirm, message,
   Modal, Form, Input, InputNumber, Switch, Drawer, Select, theme,
-  Card, Grid, List, Tooltip,
+  Tooltip,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined } from '@ant-design/icons'
-import api from '../lib/api'
+import ManageTable from '../components/ManageTable'
+import { useDeviceType } from '../hooks/useDeviceType'
+import api, { getErrorMessage } from '../lib/api'
 
 interface Quiz {
   id: string; title: string; description?: string; topic?: string
@@ -17,10 +19,14 @@ interface Subject { id: string; name: string }
 interface QuestionOption { content: string; isCorrect: boolean }
 interface Question { id: string; content: string; questionType: string; points: number; options: QuestionOption[]; subject?: { name: string } }
 
+type QuizFormValues = Omit<Quiz, 'id' | '_count'>
+interface SubjectSlot { subjectId?: string; count: number }
+interface PickFormValues { subjectSlots: SubjectSlot[]; replaceAll: boolean }
+
 export default function QuizzesPage() {
   const { token } = theme.useToken()
-  const screens = Grid.useBreakpoint()
-  const isCompactView = screens.md !== true
+  const { screens } = useDeviceType()
+  const isCompactView = !screens.md
   const qc = useQueryClient()
   const [quizModalOpen, setQuizModalOpen] = useState(false)
   const [editQuiz, setEditQuiz] = useState<Quiz | null>(null)
@@ -33,20 +39,30 @@ export default function QuizzesPage() {
 
   // ── Resizable drawer ──────────────────────────────────────────────────
   const [drawerWidth, setDrawerWidth] = useState(640)
-  const isResizing = useRef(false)
+  // isResizing: state (đọc được an toàn trong lúc render, dùng để tắt transition CSS khi đang kéo).
+  // isResizingRef: ref song song, chỉ dùng trong closure của listener mousemove gắn trực tiếp vào
+  // window (không phải render React) — tránh closure cũ đọc nhầm giá trị isResizing đã lỗi thời.
+  const [isResizing, setIsResizing] = useState(false)
+  const isResizingRef = useRef(false)
   const startX = useRef(0)
   const startW = useRef(0)
 
   const onResizeStart = useCallback((e: React.MouseEvent) => {
-    isResizing.current = true
+    isResizingRef.current = true
+    setIsResizing(true)
     startX.current = e.clientX
     startW.current = drawerWidth
     const onMove = (ev: MouseEvent) => {
-      if (!isResizing.current) return
+      if (!isResizingRef.current) return
       const delta = startX.current - ev.clientX
       setDrawerWidth(Math.max(360, Math.min(window.innerWidth - 100, startW.current + delta)))
     }
-    const onUp = () => { isResizing.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    const onUp = () => {
+      isResizingRef.current = false
+      setIsResizing(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }, [drawerWidth])
@@ -70,30 +86,30 @@ export default function QuizzesPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.post('/admin/quizzes', data),
+    mutationFn: (data: QuizFormValues) => api.post('/admin/quizzes', data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['quizzes'] }); setQuizModalOpen(false); quizForm.resetFields() },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: any) => api.put(`/admin/quizzes/${id}`, data),
+    mutationFn: ({ id, ...data }: { id: string } & QuizFormValues) => api.put(`/admin/quizzes/${id}`, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['quizzes'] }); setQuizModalOpen(false); setEditQuiz(null); quizForm.resetFields() },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/quizzes/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['quizzes'] }); message.success('Đã xóa bộ đề') },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi khi xóa bộ đề'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi xóa bộ đề')),
   })
 
   const pickMutation = useMutation({
-    mutationFn: ({ id, ...data }: any) => api.post(`/admin/quizzes/${id}/pick-random`, data),
+    mutationFn: ({ id, ...data }: { id: string } & PickFormValues) => api.post(`/admin/quizzes/${id}/pick-random`, data),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['quizzes'] })
       qc.invalidateQueries({ queryKey: ['quiz-detail', pickTarget?.id] })
       message.success(`Đã thêm ${res.data.added} câu hỏi vào bộ đề`)
       setPickModalOpen(false); pickForm.resetFields()
     },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi')),
   })
 
   // ── Handlers ─────────────────────────────────────────────────────────
@@ -113,14 +129,14 @@ export default function QuizzesPage() {
         replaceAll: false,
       })
     }
-  }, [pickTarget, pickModalOpen])
+  }, [pickTarget, pickModalOpen, pickForm])
 
-  const handleQuizSubmit = (values: any) => {
+  const handleQuizSubmit = (values: QuizFormValues) => {
     if (editQuiz) updateMutation.mutate({ id: editQuiz.id, ...values })
     else createMutation.mutate(values)
   }
 
-  const handlePick = (values: any) => {
+  const handlePick = (values: PickFormValues) => {
     pickMutation.mutate({ id: pickTarget!.id, subjectSlots: values.subjectSlots, replaceAll: values.replaceAll })
   }
 
@@ -156,7 +172,7 @@ export default function QuizzesPage() {
     },
     {
       title: '', width: 160,
-      render: (_: any, quiz: Quiz) => renderQuizActions(quiz),
+      render: (_: unknown, quiz: Quiz) => renderQuizActions(quiz),
     },
   ]
 
@@ -166,34 +182,27 @@ export default function QuizzesPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>Quản lý bộ đề</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>Tạo bộ đề</Button>
       </div>
-      {isCompactView ? (
-        <List
-          className="manage-card-list"
-          loading={isLoading}
-          dataSource={quizzes}
-          renderItem={(quiz) => (
-            <List.Item>
-              <Card className="manage-record-card" bordered={false}>
-                <div className="manage-record-heading">
-                  <div>
-                    <Typography.Title level={5}>{quiz.title}</Typography.Title>
-                    {quiz.topic && <Tag color="geekblue">{quiz.topic}</Tag>}
-                  </div>
-                  <Badge status={quiz.isActive ? 'success' : 'default'} text={quiz.isActive ? 'Hoạt động' : 'Tắt'} />
-                </div>
-                <dl className="manage-record-meta">
-                  <div><dt>Thời gian</dt><dd>{quiz.durationMin} phút</dd></div>
-                  <div><dt>Câu hỏi</dt><dd>{quiz._count.questions}</dd></div>
-                  <div><dt>Phân công</dt><dd>{quiz._count.assignments}</dd></div>
-                </dl>
-                <div className="manage-record-actions">{renderQuizActions(quiz)}</div>
-              </Card>
-            </List.Item>
-          )}
-        />
-      ) : (
-        <Table rowKey="id" loading={isLoading} dataSource={quizzes} columns={columns} size="small" />
-      )}
+      <ManageTable<Quiz>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={quizzes}
+        columns={columns}
+        cardHeading={(quiz) => (
+          <>
+            <Typography.Title level={5}>{quiz.title}</Typography.Title>
+            {quiz.topic && <Tag color="geekblue">{quiz.topic}</Tag>}
+          </>
+        )}
+        cardBadge={(quiz) => (
+          <Badge status={quiz.isActive ? 'success' : 'default'} text={quiz.isActive ? 'Hoạt động' : 'Tắt'} />
+        )}
+        cardMeta={[
+          { label: 'Thời gian', render: (quiz) => `${quiz.durationMin} phút` },
+          { label: 'Câu hỏi', render: (quiz) => quiz._count.questions },
+          { label: 'Phân công', render: (quiz) => quiz._count.assignments },
+        ]}
+        cardActions={renderQuizActions}
+      />
 
       {/* Modal: Create / Edit Quiz */}
       <Modal
@@ -238,7 +247,7 @@ export default function QuizzesPage() {
             Lấy câu ngẫu nhiên
           </Button>
         }
-        styles={{ wrapper: { width: isCompactView ? '100%' : drawerWidth, transition: isResizing.current ? 'none' : undefined } }}
+        styles={{ wrapper: { width: isCompactView ? '100%' : drawerWidth, transition: isResizing ? 'none' : undefined } }}
       >
         {/* Resize handle */}
         {!isCompactView && (
@@ -310,7 +319,7 @@ export default function QuizzesPage() {
               rules={[{
                 validator: async (_, slots) => {
                   if (!slots || slots.length === 0) return Promise.reject('Thêm ít nhất 1 dòng')
-                  const total = (slots as any[]).reduce((s: number, r: any) => s + (r?.count || 0), 0)
+                  const total = (slots as SubjectSlot[]).reduce((s, r) => s + (r?.count || 0), 0)
                   if (total <= 0) return Promise.reject('Tổng số câu phải lớn hơn 0')
                 },
               }]}
@@ -354,8 +363,8 @@ export default function QuizzesPage() {
           {/* Tóm tắt kết quả dự kiến */}
           <Form.Item shouldUpdate noStyle>
             {() => {
-              const slots = pickForm.getFieldValue('subjectSlots') ?? []
-              const total = (slots as any[]).reduce((s: number, r: any) => s + (r?.count || 0), 0)
+              const slots = (pickForm.getFieldValue('subjectSlots') ?? []) as SubjectSlot[]
+              const total = slots.reduce((s, r) => s + (r?.count || 0), 0)
               const replaceAll = pickForm.getFieldValue('replaceAll')
               const current = pickTarget?._count.questions ?? 0
               const after = replaceAll ? total : current + total

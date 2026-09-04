@@ -1,12 +1,14 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Table, Tag, Typography, Badge, Button, Space, Popconfirm, App,
+  Tag, Typography, Badge, Button, Space, Popconfirm, App,
   Modal, Form, Select, DatePicker, Radio, Divider,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, ApartmentOutlined } from '@ant-design/icons'
-import dayjs from 'dayjs'
-import api from '../lib/api'
+import dayjs, { type Dayjs } from 'dayjs'
+import type { AxiosResponse } from 'axios'
+import ManageTable from '../components/ManageTable'
+import api, { getErrorMessage } from '../lib/api'
 
 interface Assignment {
   id: string
@@ -28,6 +30,50 @@ interface CanBoItem {
   id: string; fullName: string; cbCode: string; username?: string | null; isActive: boolean;
   departmentId?: string | null;
   department?: { id: string; name: string; code: string; parentId?: string | null; parent?: { id: string; name: string; code: string } | null } | null;
+}
+
+/** Giá trị các trường trong Form tạo/sửa phân công */
+interface AssignmentFormValues {
+  quizId: string
+  departmentIds?: string[]
+  canBoIds?: string[]
+  status: string
+  startAt?: Dayjs | null
+  endAt?: Dayjs | null
+}
+
+/** Dữ liệu gửi lên khi tạo 1 phân công (giao cho đúng 1 cán bộ) */
+interface AssignmentCreatePayload {
+  quizId: string
+  canBoId: string
+  status: string
+  startAt: string | null
+  endAt: string | null
+}
+
+/** Dữ liệu gửi lên khi tạo hàng loạt phân công (tất cả / theo phòng ban / nhiều cán bộ) */
+interface AssignmentBulkPayload {
+  quizId: string
+  canBoIds?: string[] | 'all'
+  departmentIds?: string[]
+  status: string
+  startAt: string | null
+  endAt: string | null
+}
+
+/** Dữ liệu gửi lên khi sửa 1 phân công đã có */
+interface AssignmentUpdatePayload {
+  quizId: string
+  status: string
+  startAt: string | null
+  endAt: string | null
+  departmentId?: string
+  canBoId?: string
+}
+
+/** Kết quả trả về từ API tạo hàng loạt phân công */
+interface BulkAssignmentResult {
+  count: number
 }
 
 // Thứ tự đơn vị cố định
@@ -96,28 +142,28 @@ export default function AssignmentsPage() {
   }, [canBoList, filterUnitId, filterDeptId])
 
   const createMut = useMutation({
-    mutationFn: (d: any) => api.post('/admin/assignments', d),
+    mutationFn: (d: AssignmentCreatePayload) => api.post('/admin/assignments', d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignments'] }); closeModal(); message.success('Đã tạo phân công') },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi')),
   })
   const bulkMut = useMutation({
-    mutationFn: (d: any) => api.post('/admin/assignments/bulk', d),
-    onSuccess: (res: any) => {
+    mutationFn: (d: AssignmentBulkPayload) => api.post<BulkAssignmentResult>('/admin/assignments/bulk', d),
+    onSuccess: (res: AxiosResponse<BulkAssignmentResult>) => {
       qc.invalidateQueries({ queryKey: ['assignments'] })
       closeModal()
       message.success(`Đã tạo ${res.data.count} phân công`)
     },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi')),
   })
   const updateMut = useMutation({
-    mutationFn: ({ id, ...d }: any) => api.put(`/admin/assignments/${id}`, d),
+    mutationFn: ({ id, ...d }: { id: string } & AssignmentUpdatePayload) => api.put(`/admin/assignments/${id}`, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignments'] }); closeModal(); message.success('Đã cập nhật') },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi')),
   })
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/assignments/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignments'] }); message.success('Đã xóa phân công') },
-    onError: (e: any) => message.error(e.response?.data?.message ?? 'Lỗi khi xóa'),
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi xóa')),
   })
 
   const openNew = () => {
@@ -143,14 +189,14 @@ export default function AssignmentsPage() {
     setModalOpen(false)
   }
 
-  const handleSubmit = (values: any) => {
+  const handleSubmit = (values: AssignmentFormValues) => {
     const base = {
       status: values.status,
       startAt: values.startAt ? values.startAt.toISOString() : null,
       endAt: values.endAt ? values.endAt.toISOString() : null,
     }
     if (editItem) {
-      const updatePayload: any = { ...base, quizId: values.quizId }
+      const updatePayload: AssignmentUpdatePayload = { ...base, quizId: values.quizId }
       if (assignTarget === 'all') {
         // Giao cho tất cả: không thay đổi đối tượng
       } else if (assignTarget === 'department') {
@@ -185,6 +231,15 @@ export default function AssignmentsPage() {
     }
   }
 
+  const renderAssignmentActions = (row: Assignment) => (
+    <Space>
+      <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(row)} />
+      <Popconfirm title="Xóa phân công này?" onConfirm={() => deleteMut.mutate(row.id)}>
+        <Button icon={<DeleteOutlined />} size="small" danger />
+      </Popconfirm>
+    </Space>
+  )
+
   const columns = [
     { title: 'Bộ đề', dataIndex: ['quiz', 'title'], ellipsis: true },
     {
@@ -218,14 +273,7 @@ export default function AssignmentsPage() {
     },
     {
       title: '', width: 90,
-      render: (_: unknown, row: Assignment) => (
-        <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(row)} />
-          <Popconfirm title="Xóa phân công này?" onConfirm={() => deleteMut.mutate(row.id)}>
-            <Button icon={<DeleteOutlined />} size="small" danger />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: unknown, row: Assignment) => renderAssignmentActions(row),
     },
   ]
 
@@ -233,11 +281,36 @@ export default function AssignmentsPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>Phân công quiz</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>Tạo phân công</Button>
       </div>
-      <Table rowKey="id" loading={isLoading} dataSource={data} columns={columns} pagination={{ pageSize: 20 }} size="small" />
+      <ManageTable<Assignment>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={data}
+        columns={columns}
+        pagination={{ pageSize: 20 }}
+        size="small"
+        cardHeading={(row) => <Typography.Title level={5}>{row.quiz.title}</Typography.Title>}
+        cardBadge={(row) => (
+          <Badge status={row.status === 'ACTIVE' ? 'success' : row.status === 'DRAFT' ? 'warning' : 'default'}
+            text={row.status === 'ACTIVE' ? 'Đang mở' : row.status === 'DRAFT' ? 'Nháp' : 'Đã đóng'} />
+        )}
+        cardMeta={[
+          {
+            label: 'Giao cho',
+            render: (row) => row.canBo ? row.canBo.fullName : row.user ? row.user.fullName : (row.department?.name ?? '—'),
+          },
+          {
+            label: 'Loại',
+            render: (row) => row.canBo ? <Tag color="blue">Cán bộ</Tag> : row.user ? <Tag color="cyan">Tài khoản</Tag> : <Tag color="green">Phòng ban</Tag>,
+          },
+          { label: 'Mở từ', render: (row) => row.startAt ? new Date(row.startAt).toLocaleDateString('vi-VN') : '—' },
+          { label: 'Đến', render: (row) => row.endAt ? new Date(row.endAt).toLocaleDateString('vi-VN') : '—' },
+        ]}
+        cardActions={renderAssignmentActions}
+      />
 
       <Modal
         title={editItem ? 'Sửa phân công' : 'Tạo phân công mới'}
