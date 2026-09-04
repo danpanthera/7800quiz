@@ -99,7 +99,43 @@ export class ArenaService {
       });
     }
 
+    // Đội đặt trước — tối đa 8 đội, 0 người ban đầu, người chơi tự chọn vào lúc join
+    const presetNames = (dto.presetTeamNames ?? [])
+      .map((n) => n.trim())
+      .filter(Boolean);
+    if (presetNames.length > 0) {
+      await this.prisma.arenaTeam.createMany({
+        data: presetNames.map((name, idx) => ({
+          arenaSessionId: session.id,
+          name,
+          color: TEAM_COLORS[idx % TEAM_COLORS.length],
+          isPreset: true,
+        })),
+      });
+    }
+
     return this.getSessionDetail(session.id);
+  }
+
+  // Danh sách đội đã làm phẳng members về {userId, fullName} — dùng lại cho
+  // các thao tác thay đổi roster (kick/merge/move) để trả cùng 1 shape
+  private async getTeamsFlat(sessionId: string) {
+    const teams = await this.prisma.arenaTeam.findMany({
+      where: { arenaSessionId: sessionId },
+      orderBy: { joinedAt: 'asc' },
+      include: {
+        members: {
+          include: { user: { select: { id: true, fullName: true } } },
+        },
+      },
+    });
+    return teams.map((t) => ({
+      ...t,
+      members: t.members.map((m) => ({
+        userId: m.userId,
+        fullName: m.user.fullName,
+      })),
+    }));
   }
 
   async listSessions() {
@@ -114,6 +150,7 @@ export class ArenaService {
             color: true,
             score: true,
             rank: true,
+            isPreset: true,
             members: {
               select: {
                 userId: true,
@@ -185,7 +222,16 @@ export class ArenaService {
       where: { joinCode },
       include: {
         quiz: { select: { id: true, title: true } },
-        teams: { select: { id: true, name: true, color: true, score: true } },
+        teams: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            score: true,
+            isPreset: true,
+            _count: { select: { members: true } },
+          },
+        },
         invites: { select: { userId: true } },
         _count: { select: { rounds: true } },
       },
@@ -196,6 +242,14 @@ export class ArenaService {
     const { passcode, invites, ...rest } = session;
     return {
       ...rest,
+      teams: rest.teams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        score: t.score,
+        isPreset: t.isPreset,
+        memberCount: t._count.members,
+      })),
       requiresPasscode: !!passcode,
       isInviteOnly: invites.length > 0,
     };
@@ -230,13 +284,12 @@ export class ArenaService {
 
   async joinTeam(
     joinCode: string,
-    teamName: string,
     userId: string,
-    passcode?: string,
+    opts: { teamName?: string; teamId?: string; passcode?: string },
   ) {
     const session = await this.prisma.arenaSession.findUnique({
       where: { joinCode },
-      include: { teams: true, invites: true },
+      include: { teams: { include: { members: true } }, invites: true },
     });
     if (!session) throw new BadRequestException('Mã tham gia không hợp lệ');
     if (session.status !== ArenaStatus.LOBBY)
@@ -270,8 +323,38 @@ export class ArenaService {
         'Bạn không có trong danh sách được mời tham gia phòng này',
       );
 
-    if (session.passcode && session.passcode !== (passcode ?? '').trim())
+    if (session.passcode && session.passcode !== (opts.passcode ?? '').trim())
       throw new BadRequestException('Sai mật khẩu phòng');
+
+    const presetTeams = session.teams.filter((t) => t.isPreset);
+
+    // Có đội đặt trước sẵn — bắt buộc chọn 1 đội, không tự gõ tên đội mới
+    if (presetTeams.length > 0) {
+      if (!opts.teamId)
+        throw new BadRequestException('Chọn 1 đội để tham gia');
+      const target = presetTeams.find((t) => t.id === opts.teamId);
+      if (!target)
+        throw new BadRequestException('Đội không tồn tại trong phiên này');
+      if (target.members.length >= 5)
+        throw new BadRequestException('Đội đã đủ 5 người, chọn đội khác');
+
+      await this.prisma.arenaTeamMember.create({
+        data: { arenaSessionId: session.id, arenaTeamId: target.id, userId },
+      });
+      const team = await this.prisma.arenaTeam.findUniqueOrThrow({
+        where: { id: target.id },
+        include: {
+          members: {
+            include: { user: { select: { id: true, fullName: true } } },
+          },
+        },
+      });
+      return { session, team };
+    }
+
+    // Không có đội đặt trước — giữ hành vi cũ: tự gõ tên đội mới
+    const teamName = opts.teamName?.trim();
+    if (!teamName) throw new BadRequestException('Nhập tên đội để tham gia');
 
     if (session.teams.length >= 9)
       throw new BadRequestException('Phiên đã đủ 9 đội');
@@ -312,13 +395,113 @@ export class ArenaService {
       where: { id: teamId, arenaSessionId: sessionId },
     });
     if (!team) throw new NotFoundException('Đội không tồn tại trong phiên này');
-    await this.prisma.arenaTeam.delete({ where: { id: teamId } });
-    return { teamId, teamName: team.name };
+
+    if (team.isPreset) {
+      // Đội đặt trước: chỉ xoá hết thành viên, giữ lại slot cho người khác chọn vào
+      await this.prisma.arenaTeamMember.deleteMany({
+        where: { arenaTeamId: teamId },
+      });
+    } else {
+      await this.prisma.arenaTeam.delete({ where: { id: teamId } });
+    }
+    return {
+      teamId,
+      teamName: team.name,
+      allTeams: await this.getTeamsFlat(sessionId),
+    };
+  }
+
+  // MC gỡ 1 người chơi cụ thể khỏi đội (khác kickTeam — không đụng các thành
+  // viên còn lại trong cùng đội)
+  async kickMember(sessionId: string, teamId: string, userId: string) {
+    const session = await this.prisma.arenaSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    if (session.status !== ArenaStatus.LOBBY)
+      throw new BadRequestException(
+        'Chỉ có thể mời người chơi ra khi phiên đang ở sảnh chờ',
+      );
+    const member = await this.prisma.arenaTeamMember.findFirst({
+      where: { arenaTeamId: teamId, userId, arenaSessionId: sessionId },
+      include: { arenaTeam: true },
+    });
+    if (!member) throw new NotFoundException('Người chơi không thuộc đội này');
+
+    await this.prisma.arenaTeamMember.delete({ where: { id: member.id } });
+
+    // Đội tự phát sinh (không phải đặt trước) mà hết người thì dọn luôn
+    if (!member.arenaTeam.isPreset) {
+      const remaining = await this.prisma.arenaTeamMember.count({
+        where: { arenaTeamId: teamId },
+      });
+      if (remaining === 0)
+        await this.prisma.arenaTeam.delete({ where: { id: teamId } });
+    }
+
+    return { userId, allTeams: await this.getTeamsFlat(sessionId) };
+  }
+
+  // MC chuyển 1 người chơi sang đội khác trong cùng phiên (đội đích tối đa 5 người)
+  async moveMember(sessionId: string, userId: string, targetTeamId: string) {
+    const session = await this.prisma.arenaSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    if (session.status !== ArenaStatus.LOBBY)
+      throw new BadRequestException(
+        'Chỉ có thể chuyển đội khi phiên đang ở sảnh chờ',
+      );
+
+    const member = await this.prisma.arenaTeamMember.findUnique({
+      where: {
+        arenaSessionId_userId: { arenaSessionId: sessionId, userId },
+      },
+    });
+    if (!member)
+      throw new BadRequestException('Người chơi không thuộc phiên này');
+    if (member.arenaTeamId === targetTeamId)
+      throw new BadRequestException('Người chơi đã ở đội này');
+
+    const targetTeam = await this.prisma.arenaTeam.findFirst({
+      where: { id: targetTeamId, arenaSessionId: sessionId },
+      include: { members: true },
+    });
+    if (!targetTeam)
+      throw new NotFoundException('Đội đích không tồn tại trong phiên này');
+    if (targetTeam.members.length >= 5)
+      throw new BadRequestException('Đội đích đã đủ 5 người');
+
+    const sourceTeamId = member.arenaTeamId;
+    await this.prisma.arenaTeamMember.update({
+      where: { id: member.id },
+      data: { arenaTeamId: targetTeamId },
+    });
+
+    // Dọn đội nguồn nếu hết người và không phải đội đặt trước
+    const sourceTeam = await this.prisma.arenaTeam.findUnique({
+      where: { id: sourceTeamId },
+    });
+    if (sourceTeam && !sourceTeam.isPreset) {
+      const remaining = await this.prisma.arenaTeamMember.count({
+        where: { arenaTeamId: sourceTeamId },
+      });
+      if (remaining === 0)
+        await this.prisma.arenaTeam.delete({ where: { id: sourceTeamId } });
+    }
+
+    return {
+      userId,
+      sourceTeamId,
+      targetTeamId,
+      targetTeamName: targetTeam.name,
+      targetTeamColor: targetTeam.color,
+      allTeams: await this.getTeamsFlat(sessionId),
+    };
   }
 
   // MC gộp 2-5 người chơi (đang là đội đơn hoặc đội đã gộp trước đó) thành 1 đội
   // chung điểm số + chung lượt buzz-in. Chỉ cho phép khi còn ở sảnh chờ vì lúc
-  // đó chắc chắn chưa có buzz nào cần xử lý dồn/tách.
+  // đó chắc chắn chưa có buzz nào cần xử lý dồn/tách. Không áp dụng cho đội
+  // đặt trước (dùng "Chuyển đội" để điều chỉnh đội đặt trước thay vì gộp).
   async mergeTeams(sessionId: string, teamIds: string[], teamName?: string) {
     const uniqueIds = [...new Set(teamIds ?? [])];
     if (uniqueIds.length < 2)
@@ -336,6 +519,11 @@ export class ArenaService {
     });
     if (teams.length !== uniqueIds.length)
       throw new BadRequestException('Một số đội không tồn tại trong phiên này');
+
+    if (teams.some((t) => t.isPreset))
+      throw new BadRequestException(
+        'Không thể gộp đội đã đặt tên trước — dùng chức năng "Chuyển đội" để điều chỉnh',
+      );
 
     const totalMembers = teams.reduce((sum, t) => sum + t.members.length, 0);
     if (totalMembers < 2 || totalMembers > 5)
@@ -365,15 +553,7 @@ export class ArenaService {
         : []),
     ]);
 
-    const allTeams = await this.prisma.arenaTeam.findMany({
-      where: { arenaSessionId: sessionId },
-      orderBy: { joinedAt: 'asc' },
-      include: {
-        members: {
-          include: { user: { select: { id: true, fullName: true } } },
-        },
-      },
-    });
+    const allTeams = await this.getTeamsFlat(sessionId);
     const survivorFresh = allTeams.find((t) => t.id === survivor.id)!;
 
     return {
@@ -386,12 +566,17 @@ export class ArenaService {
   async startSession(sessionId: string) {
     const session = await this.prisma.arenaSession.findUniqueOrThrow({
       where: { id: sessionId },
-      include: { teams: true, rounds: { orderBy: { order: 'asc' } } },
+      include: {
+        teams: { include: { members: true } },
+        rounds: { orderBy: { order: 'asc' } },
+      },
     });
     if (session.status !== ArenaStatus.LOBBY)
       throw new BadRequestException('Phiên không ở trạng thái LOBBY');
-    if (session.teams.length < 2)
-      throw new BadRequestException('Cần ít nhất 2 đội để bắt đầu');
+    // Đội đặt trước có thể còn 0 người — chỉ tính đội đã có người tham gia
+    const teamsWithMembers = session.teams.filter((t) => t.members.length > 0);
+    if (teamsWithMembers.length < 2)
+      throw new BadRequestException('Cần ít nhất 2 đội có người chơi để bắt đầu');
     if (session.rounds.length === 0)
       throw new BadRequestException('Quiz không có câu hỏi');
 

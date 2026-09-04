@@ -60,4 +60,13 @@ export class CreateArenaDto {
   @IsArray()
   @IsString({ each: true })
   invitedUserIds?: string[];
+
+  // Tên các đội đặt trước — tuỳ chọn, tối đa 8 đội. Có >=1 tên thì lúc join
+  // người chơi bắt buộc chọn 1 trong các đội này (không được tự gõ tên đội
+  // mới), mỗi đội tối đa 5 người.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  presetTeamNames?: string[];
 }

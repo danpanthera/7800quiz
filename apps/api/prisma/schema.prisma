@@ -469,9 +469,14 @@ model ArenaTeam {
   score          Int      @default(0)
   rank           Int? // điền sau khi kết thúc
   joinedAt       DateTime @default(now()) @map("joined_at")
+  // true = MC đặt tên trước lúc tạo phòng (tối đa 8 đội) — giữ lại làm "slot"
+  // ngay cả khi hết member, để người chơi khác còn chọn vào. false = đội tự
+  // phát sinh khi người chơi tự gõ tên lúc join hoặc do MC gộp thủ công —
+  // xoá luôn khi rỗng.
+  isPreset       Boolean  @default(false) @map("is_preset")
 
   arenaSession ArenaSession      @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
-  members      ArenaTeamMember[] // 1-5 người chơi cùng đội — MC gộp thủ công tại sảnh chờ
+  members      ArenaTeamMember[] // tối đa 5 người chơi cùng đội
   buzzes       ArenaBuzz[]
 
   @@map("arena_teams")

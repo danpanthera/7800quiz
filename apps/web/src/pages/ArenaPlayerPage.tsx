@@ -40,7 +40,7 @@ interface SessionPreview {
   requiresPasscode: boolean
   isInviteOnly: boolean
   quiz: { id: string; title: string }
-  teams: { id: string; name: string; color: string; score: number }[]
+  teams: { id: string; name: string; color: string; score: number; isPreset: boolean; memberCount: number }[]
 }
 
 type View = 'join' | 'lobby' | 'game' | 'result' | 'kicked'
@@ -59,6 +59,7 @@ export default function ArenaPlayerPage() {
 
   const [view, setView] = useState<View>('join')
   const [teamName, setTeamName] = useState(user?.fullName ?? '')
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
   const [passcode, setPasscode] = useState('')
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState('')
@@ -84,10 +85,16 @@ export default function ArenaPlayerPage() {
 
   const myScore = lobbyTeams.find((t) => t.id === myTeamId)?.score ?? 0
   const myRevealResult = revealData?.buzzes.find((b) => b.teamId === myTeamId)
+  const presetTeams = preview?.teams.filter((t) => t.isPreset) ?? []
 
   const handleJoin = useCallback(() => {
-    const name = teamName.trim()
-    if (!name) { setJoinError('Nhập tên đội/tên bạn để tham gia'); return }
+    const usePreset = presetTeams.length > 0
+    if (usePreset) {
+      if (!selectedTeamId) { setJoinError('Chọn 1 đội để tham gia'); return }
+    } else {
+      const name = teamName.trim()
+      if (!name) { setJoinError('Nhập tên đội/tên bạn để tham gia'); return }
+    }
     if (preview?.requiresPasscode && !passcode.trim()) {
       setJoinError('Phòng này yêu cầu mật khẩu — nhập mật khẩu do MC cung cấp')
       return
@@ -120,13 +127,15 @@ export default function ArenaPlayerPage() {
       socketRef.current = null
     })
 
-    // MC gộp mình vào 1 đội khác — đồng bộ lại tên/màu đội đang hiển thị
-    socket.on('arena.you_were_merged', ({ teamId, teamName: newName, teamColor }: { teamId: string; teamName: string; teamColor: string }) => {
+    // MC gộp mình vào 1 đội khác, hoặc chuyển mình sang đội khác — đồng bộ lại tên/màu đội đang hiển thị
+    const syncTeamChange = ({ teamId, teamName: newName, teamColor }: { teamId: string; teamName: string; teamColor: string }) => {
       setMyTeamId(teamId)
       myTeamIdRef.current = teamId
       setTeamName(newName)
       setMyTeamColor(teamColor)
-    })
+    }
+    socket.on('arena.you_were_merged', syncTeamChange)
+    socket.on('arena.you_were_moved', syncTeamChange)
 
     // Đồng đội khác đã trả lời thay cả đội — không để mình treo ở màn hình chọn đáp án
     socket.on('arena.team_answered', () => {
@@ -165,8 +174,13 @@ export default function ArenaPlayerPage() {
 
     socket.emit(
       'arena.join',
-      { joinCode, teamName: name, passcode: passcode.trim() || undefined },
-      (res: { ok?: boolean; teamId?: string; teamColor?: string; error?: string }) => {
+      {
+        joinCode,
+        teamName: usePreset ? undefined : teamName.trim(),
+        teamId: usePreset ? selectedTeamId! : undefined,
+        passcode: passcode.trim() || undefined,
+      },
+      (res: { ok?: boolean; teamId?: string; teamName?: string; teamColor?: string; error?: string }) => {
         setJoining(false)
         if (!res?.ok) {
           setJoinError(res?.error ?? 'Tham gia thất bại')
@@ -176,11 +190,12 @@ export default function ArenaPlayerPage() {
         }
         setMyTeamId(res.teamId!)
         myTeamIdRef.current = res.teamId!
+        setTeamName(res.teamName!)
         setMyTeamColor(res.teamColor!)
         setView('lobby')
       },
     )
-  }, [joinCode, teamName, passcode, preview?.requiresPasscode, user])
+  }, [joinCode, teamName, passcode, selectedTeamId, presetTeams.length, preview?.requiresPasscode, user])
 
   function toggleOption(optionId: string, questionType: 'SINGLE' | 'MULTIPLE') {
     if (hasAnswered) return
@@ -240,17 +255,45 @@ export default function ArenaPlayerPage() {
             )}
           </div>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <div>
-              <Text strong>Tên đội / tên bạn</Text>
-              <Input
-                size="large"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                onPressEnter={handleJoin}
-                maxLength={30}
-                placeholder="VD: Đội Tín dụng"
-              />
-            </div>
+            {presetTeams.length > 0 ? (
+              <div>
+                <Text strong>Chọn đội để tham gia</Text>
+                <Space direction="vertical" style={{ width: '100%', marginTop: 8 }} size={8}>
+                  {presetTeams.map((t) => {
+                    const isFull = t.memberCount >= 5
+                    const isSelected = selectedTeamId === t.id
+                    return (
+                      <Button
+                        key={t.id}
+                        block size="large"
+                        type={isSelected ? 'primary' : 'default'}
+                        disabled={isFull}
+                        onClick={() => setSelectedTeamId(t.id)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                      >
+                        <Space>
+                          <Avatar size="small" style={{ backgroundColor: t.color }}>{t.name[0]?.toUpperCase()}</Avatar>
+                          {t.name}
+                        </Space>
+                        <Tag color={isFull ? 'red' : undefined}>{isFull ? 'Đầy' : `${t.memberCount}/5`}</Tag>
+                      </Button>
+                    )
+                  })}
+                </Space>
+              </div>
+            ) : (
+              <div>
+                <Text strong>Tên đội / tên bạn</Text>
+                <Input
+                  size="large"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  onPressEnter={handleJoin}
+                  maxLength={30}
+                  placeholder="VD: Đội Tín dụng"
+                />
+              </div>
+            )}
             {preview.requiresPasscode && (
               <div>
                 <Text strong>Mật khẩu phòng</Text>

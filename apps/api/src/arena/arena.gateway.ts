@@ -39,10 +39,16 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `arena-${sessionId}`;
   }
 
-  // Room riêng cho từng đội — dùng để gửi sự kiện riêng tư (vd: bị kick)
-  // đúng client sở hữu đội đó, không phát cho cả phòng
+  // Room riêng cho từng đội — dùng để gửi sự kiện chung cho cả đội (vd: đồng
+  // đội đã trả lời, cả đội bị kick, cả đội vừa được gộp vào)
   private getTeamRoomName(teamId: string) {
     return `arena-team-${teamId}`;
+  }
+
+  // Room riêng cho từng user — dùng để gửi sự kiện CHỈ đúng 1 người (vd: bị
+  // gỡ khỏi đội, được chuyển sang đội khác) mà không ảnh hưởng đồng đội còn lại
+  private getUserRoomName(userId: string) {
+    return `arena-user-${userId}`;
   }
 
   private extractUser(
@@ -85,7 +91,12 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('arena.join')
   async handleJoin(
     @MessageBody()
-    data: { joinCode: string; teamName: string; passcode?: string },
+    data: {
+      joinCode: string;
+      teamName?: string;
+      teamId?: string;
+      passcode?: string;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const player = this.extractUser(client);
@@ -93,12 +104,16 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const { session, team } = await this.arenaService.joinTeam(
         data.joinCode,
-        data.teamName,
         player.userId,
-        data.passcode,
+        {
+          teamName: data.teamName,
+          teamId: data.teamId,
+          passcode: data.passcode,
+        },
       );
       client.join(this.getRoomName(session.id));
       client.join(this.getTeamRoomName(team.id));
+      client.join(this.getUserRoomName(player.userId));
       client.data.sessionId = session.id;
       client.data.teamId = team.id;
       client.data.userId = player.userId;
@@ -126,6 +141,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return {
         ok: true,
         teamId: team.id,
+        teamName: team.name,
         sessionId: session.id,
         teamColor: team.color,
       };
@@ -173,14 +189,82 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.sessionId,
         data.teamId,
       );
-      // Báo riêng cho client của đội bị kick để họ tự thoát khỏi phòng
+      // Báo riêng cho cả đội bị kick (tất cả thành viên) để họ tự thoát khỏi phòng
       this.server
         .to(this.getTeamRoomName(data.teamId))
         .emit('arena.you_were_kicked', { teamName: result.teamName });
       // Báo cho cả phòng (host + các đội khác) để cập nhật danh sách
       this.server
         .to(this.getRoomName(data.sessionId))
-        .emit('arena.team_kicked', result);
+        .emit('arena.teams_updated', { teams: result.allTeams });
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  }
+
+  // ─── Admin: gỡ 1 người chơi cụ thể khỏi đội (đội nhiều người) ───────────────
+
+  @SubscribeMessage('arena.kick_member')
+  async handleKickMember(
+    @MessageBody() data: { sessionId: string; teamId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const host = this.extractUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
+    try {
+      const result = await this.arenaService.kickMember(
+        data.sessionId,
+        data.teamId,
+        data.userId,
+      );
+      // Chỉ báo riêng đúng người bị gỡ — không ảnh hưởng đồng đội còn lại
+      this.server
+        .to(this.getUserRoomName(data.userId))
+        .emit('arena.you_were_kicked', { teamName: undefined });
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.teams_updated', { teams: result.allTeams });
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  }
+
+  // ─── Admin: chuyển 1 người chơi sang đội khác ───────────────────────────────
+
+  @SubscribeMessage('arena.move_member')
+  async handleMoveMember(
+    @MessageBody()
+    data: { sessionId: string; userId: string; targetTeamId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const host = this.extractUser(client);
+    if (!host || !ARENA_HOST_ROLES.includes(host.role))
+      return { error: 'Không có quyền' };
+    try {
+      const result = await this.arenaService.moveMember(
+        data.sessionId,
+        data.userId,
+        data.targetTeamId,
+      );
+      const userRoom = this.getUserRoomName(data.userId);
+      // Di chuyển đúng socket của người này sang room đội mới, rời room đội cũ
+      await this.server.in(userRoom).socketsJoin(this.getTeamRoomName(data.targetTeamId));
+      if (result.sourceTeamId) {
+        await this.server
+          .in(userRoom)
+          .socketsLeave(this.getTeamRoomName(result.sourceTeamId));
+      }
+      this.server.to(userRoom).emit('arena.you_were_moved', {
+        teamId: result.targetTeamId,
+        teamName: result.targetTeamName,
+        teamColor: result.targetTeamColor,
+      });
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.teams_updated', { teams: result.allTeams });
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -219,18 +303,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
       this.server
         .to(this.getRoomName(data.sessionId))
-        .emit('arena.teams_updated', {
-          teams: result.allTeams.map((t) => ({
-            id: t.id,
-            name: t.name,
-            color: t.color,
-            score: t.score,
-            members: t.members.map((m) => ({
-              userId: m.userId,
-              fullName: m.user.fullName,
-            })),
-          })),
-        });
+        .emit('arena.teams_updated', { teams: result.allTeams });
       return { ok: true };
     } catch (err) {
       return { error: err.message };
