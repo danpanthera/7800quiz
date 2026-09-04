@@ -94,6 +94,53 @@ export class AdminService {
     return picked;
   }
 
+  // Ánh xạ mã chi nhánh trong file GAHR26 (BRCD) → mã chi nhánh chuẩn trong hệ thống.
+  // CN Lai Châu (7800) đã hoà chung vào Hội Sở sau đợt hợp nhất 9 chi nhánh.
+  private static readonly BRCD_TO_UNIT_CODE: Record<string, string> = {
+    '7800': '01-HS',
+    '7801': '02-BL',
+    '7802': '03-PT',
+    '7803': '04-SH',
+    '7804': '05-BT',
+    '7805': '06-TU',
+    '7806': '07-DK',
+    '7807': '08-TAU',
+    '7808': '09-NH',
+  };
+
+  // Nhận diện loại phòng ban từ tên trong file GAHR26 (DEPTNM) → hậu tố mã + tên
+  // chuẩn, để mọi biến thể chính tả ("Phòng giao dịch số 5" / "PGD Số 5") cùng
+  // rơi vào một phòng ban duy nhất thay vì tạo bản trùng mỗi lần import.
+  private classifyDepartment(
+    deptName: string,
+  ): { suffix: string; name: string } | null {
+    const n = deptName.toLowerCase();
+    const pgd = n.match(/(?:pgd|phòng giao dịch)\s*(?:số)?\s*(\d+)/);
+    if (pgd)
+      return { suffix: `PGD${pgd[1]}`, name: `Phòng Giao dịch số ${pgd[1]}` };
+    if (n.includes('giám đốc')) return { suffix: 'BGD', name: 'Ban Giám đốc' };
+    if (n.includes('doanh nghiệp') || n.includes('khdn'))
+      return { suffix: 'KHDN', name: 'Phòng Khách hàng Doanh nghiệp' };
+    if (n.includes('cá nhân') || n.includes('khcn'))
+      return { suffix: 'KHCN', name: 'Phòng Khách hàng Cá nhân' };
+    if (n.includes('rủi ro') || n.includes('khrr') || n.includes('qlrr'))
+      return { suffix: 'KHRR', name: 'Phòng Kế hoạch và Quản lý rủi ro' };
+    if (
+      n.includes('kiểm tra') ||
+      n.includes('giám sát') ||
+      n.includes('ktgsnb')
+    )
+      return { suffix: 'KTGSNB', name: 'Phòng Kiểm tra, Giám sát nội bộ' };
+    if (n.includes('kế toán') || n.includes('ngân quỹ') || n.includes('ktnq'))
+      return { suffix: 'KTNQ', name: 'Phòng Kế toán và Ngân quỹ' };
+    if (n.includes('công nghệ') || n.includes('tin học'))
+      return { suffix: 'IT', name: 'Phòng Công nghệ Thông tin' };
+    if (n.includes('tổng hợp')) return { suffix: 'TH', name: 'Phòng Tổng hợp' };
+    if (n.includes('khách hàng'))
+      return { suffix: 'KH', name: 'Phòng Khách hàng' };
+    return null;
+  }
+
   private normalizeUserAD(userAD?: string | null): string | null {
     const normalized = userAD?.trim();
     return normalized || null;
@@ -592,6 +639,7 @@ export class AdminService {
     topic?: string;
     durationMin: number;
     passScore?: number;
+    instantFeedback?: boolean;
   }) {
     return this.prisma.quiz.create({ data });
   }
@@ -605,6 +653,7 @@ export class AdminService {
       durationMin?: number;
       passScore?: number;
       isActive?: boolean;
+      instantFeedback?: boolean;
     },
   ) {
     return this.prisma.quiz.update({ where: { id }, data });
@@ -1258,11 +1307,7 @@ export class AdminService {
     });
     if (existing)
       throw new ConflictException(`Mã CB "${data.cbCode}" đã tồn tại`);
-    const {
-      ngaySinh,
-      userAD: rawUserAD,
-      ...rest
-    } = this.pickCanBoFields(data);
+    const { ngaySinh, userAD: rawUserAD, ...rest } = this.pickCanBoFields(data);
     const userAD = this.normalizeUserAD(rawUserAD);
     await this.ensureUserADIsAvailable(userAD);
     return this.prisma.$transaction(async (tx) => {
@@ -1290,11 +1335,7 @@ export class AdminService {
     const existing = await this.prisma.canBo.findUniqueOrThrow({
       where: { id },
     });
-    const {
-      ngaySinh,
-      userAD: rawUserAD,
-      ...rest
-    } = this.pickCanBoFields(data);
+    const { ngaySinh, userAD: rawUserAD, ...rest } = this.pickCanBoFields(data);
     const userAD =
       rawUserAD === undefined
         ? existing.userAD
@@ -1366,6 +1407,21 @@ export class AdminService {
     return { reset, noAccount: noAccount.length, details };
   }
 
+  // Đọc workbook từ buffer upload.
+  // .xlsx (chữ ký ZIP "PK") và .xls (chữ ký OLE) tự mang thông tin encoding nên
+  // đọc thẳng từ buffer. Riêng CSV/TXT là văn bản thuần — nếu để thư viện tự
+  // đoán, nó rơi về cp1252 và làm hỏng toàn bộ dấu tiếng Việt trong tên cán bộ,
+  // nên phải tự giải mã UTF-8 (bỏ BOM nếu có) rồi mới đưa vào XLSX.
+  private readWorkbook(buffer: Buffer): XLSX.WorkBook {
+    const laXlsx = buffer[0] === 0x50 && buffer[1] === 0x4b;
+    const laXls = buffer[0] === 0xd0 && buffer[1] === 0xcf;
+    if (laXlsx || laXls) {
+      return XLSX.read(buffer, { type: 'buffer', raw: false });
+    }
+    const noiDung = buffer.toString('utf8').replace(/^\uFEFF/, '');
+    return XLSX.read(noiDung, { type: 'string', raw: false });
+  }
+
   // ── Import cán bộ từ file gahr26 (CSV / XLS / XLSX) ──────────────────
   async importCanBoFromGahr26(buffer: Buffer): Promise<{
     created: number;
@@ -1385,7 +1441,7 @@ export class AdminService {
     }[];
   }> {
     // Đọc workbook (xlsx lib hỗ trợ cả csv, xls, xlsx)
-    const wb = XLSX.read(buffer, { type: 'buffer', raw: false });
+    const wb = this.readWorkbook(buffer);
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rawRowsOrig: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, {
       defval: null,
@@ -1424,13 +1480,23 @@ export class AdminService {
       deptnm?: string | null,
     ): Promise<string> => {
       const branchKey = `branch::${brcd}`;
-      // 1. Tạo / lấy chi nhánh cấp 1 (BRCD → BRNM)
+      // 1. Lấy chi nhánh cấp 1 — luôn quy về 1 trong 9 chi nhánh chuẩn.
+      //    BRCD trong file HR (7800…7808) được ánh xạ sang mã chuẩn (01-HS…09-NH)
+      //    để không đẻ thêm chi nhánh cấp 1 trùng lặp sau mỗi lần import.
+      const unitCode = AdminService.BRCD_TO_UNIT_CODE[brcd];
       let branchId = deptCache.get(branchKey);
       if (!branchId) {
-        // Ưu tiên tra cứu theo code, fallback theo tên để tránh tạo duplicate
-        let branch = await this.prisma.department.findUnique({
-          where: { code: brcd },
-        });
+        // Ưu tiên mã chuẩn → mã trong file → tên chi nhánh, cuối cùng mới tạo mới
+        let branch = unitCode
+          ? await this.prisma.department.findUnique({
+              where: { code: unitCode },
+            })
+          : null;
+        if (!branch) {
+          branch = await this.prisma.department.findUnique({
+            where: { code: brcd },
+          });
+        }
         if (!branch) {
           branch = await this.prisma.department.findFirst({
             where: {
@@ -1441,10 +1507,10 @@ export class AdminService {
         }
         if (!branch) {
           branch = await this.prisma.department.create({
-            data: { code: brcd, name: brnm },
+            data: { code: unitCode ?? brcd, name: brnm },
           });
         } else if (branch.code !== brcd) {
-          // Đã tìm thấy theo tên — cache thêm theo code mới để tái sử dụng
+          // Đã tìm thấy theo mã chuẩn / theo tên — cache thêm để tái sử dụng
           deptCache.set(`branch::${branch.code}`, branch.id);
         }
         branchId = branch.id;
@@ -1453,8 +1519,21 @@ export class AdminService {
 
       if (!deptnm) return branchId;
 
-      // 2. Tạo / lấy phòng ban cấp 2: ưu tiên code, fallback theo tên trong cùng chi nhánh
-      const deptCode = `${brcd}::${deptnm}`;
+      // 2. Lấy phòng ban cấp 2. Tên trong file được phân loại về mã chuẩn
+      //    (VD "Phòng giao dịch số 5" → 03-PT-PGD5) nên các biến thể chính tả
+      //    khác nhau vẫn trỏ về cùng một phòng ban.
+      const branchCodeForDept =
+        unitCode ??
+        (await this.prisma.department.findUnique({
+          where: { id: branchId },
+          select: { code: true },
+        }))!.code;
+      const classified = this.classifyDepartment(deptnm);
+      const deptCode = classified
+        ? `${branchCodeForDept}-${classified.suffix}`
+        : `${branchCodeForDept}::${deptnm}`;
+      const deptName = classified?.name ?? deptnm;
+
       let deptId = deptCache.get(deptCode);
       if (!deptId) {
         let dept = await this.prisma.department.findUnique({
@@ -1470,7 +1549,7 @@ export class AdminService {
         }
         if (!dept) {
           dept = await this.prisma.department.create({
-            data: { code: deptCode, name: deptnm, parentId: branchId },
+            data: { code: deptCode, name: deptName, parentId: branchId },
           });
         }
         deptId = dept.id;

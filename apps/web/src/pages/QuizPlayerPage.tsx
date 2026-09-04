@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../lib/api'
+import InstantQuizPlayer, { type LockedResult } from '../components/InstantQuizPlayer'
 import {
   deleteAttemptDraft,
   getAttemptDraft,
@@ -87,9 +88,17 @@ interface AttemptData {
     description: string | null
     durationMin: number
     passScore: number | null
+    instantFeedback: boolean
     questions: QuizQuestion[]
   }
-  answers: Array<{ questionId: string; selectedOptionIds: unknown }>
+  answers: Array<{
+    questionId: string
+    selectedOptionIds: unknown
+    lockedAt?: string | null
+    isCorrect?: boolean | null
+    correctOptionIds?: string[] | null
+    explanation?: string | null
+  }>
 }
 
 const syncStatusText: Record<SyncStatus, string> = {
@@ -337,6 +346,44 @@ export default function QuizPlayerPage() {
   }
 
   const { quiz } = attemptQuery.data
+
+  // Bộ đề bật phản hồi tức thì dùng giao diện kiểu Quizizz: chốt từng câu, hiện
+  // ngay đúng/sai rồi tự sang câu kế. Đề thi chính thức giữ nguyên giao diện cũ
+  // (còn quay lại sửa được, chỉ chấm khi nộp).
+  if (quiz.instantFeedback) {
+    if (!quiz.questions.length) return <Empty description="Bộ đề chưa có câu hỏi" />
+    const lockedResults: Record<string, LockedResult> = Object.fromEntries(
+      attemptQuery.data.answers
+        .filter((answer) => answer.lockedAt)
+        .map((answer) => [
+          answer.questionId,
+          {
+            selectedOptionIds: Array.isArray(answer.selectedOptionIds)
+              ? answer.selectedOptionIds.filter((id): id is string => typeof id === 'string')
+              : [],
+            isCorrect: Boolean(answer.isCorrect),
+            correctOptionIds: answer.correctOptionIds ?? [],
+            explanation: answer.explanation ?? null,
+          },
+        ]),
+    )
+    return (
+      <InstantQuizPlayer
+        attemptId={attemptId!}
+        quizTitle={quiz.title}
+        questions={quiz.questions}
+        initialResults={lockedResults}
+        remainingSeconds={remainingSeconds}
+        isSubmitting={submitMutation.isPending}
+        onFinish={() => {
+          if (submissionStarted.current) return
+          submissionStarted.current = true
+          submitMutation.mutate()
+        }}
+      />
+    )
+  }
+
   const currentQuestion = quiz.questions[currentQuestionIndex]
   if (!currentQuestion) {
     return <Empty description="Bộ đề chưa có câu hỏi" />

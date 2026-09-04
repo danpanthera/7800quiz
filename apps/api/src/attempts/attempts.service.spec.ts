@@ -88,6 +88,119 @@ describe('AttemptsService', () => {
     expect(result.quiz.questions[0]).not.toHaveProperty('explanation');
   });
 
+  it('chốt đáp án trả kết quả + đáp án đúng, và chốt lại không đổi được lựa chọn', async () => {
+    const daChot = {
+      questionId: 'question-1',
+      selectedOptionIds: ['option-2'],
+      lockedAt: new Date('2026-09-03T08:02:00.000Z'),
+      isCorrect: false,
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: attemptId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+          answerRevision: 3,
+          quizVersion: { snapshot, quiz: { instantFeedback: true } },
+          answers: [daChot],
+        }),
+      },
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    // Gửi lại chính đáp án ĐÚNG cho câu đã chốt sai — kết quả phải giữ nguyên
+    const result = await service.lockAnswer('user-1', attemptId, 'question-1', {
+      selectedOptionIds: ['option-1'],
+    });
+
+    expect(result.alreadyLocked).toBe(true);
+    expect(result.isCorrect).toBe(false);
+    expect(result.selectedOptionIds).toEqual(['option-2']);
+    expect(result.correctOptionIds).toEqual(['option-1']);
+  });
+
+  it('không cho chốt đáp án khi bộ đề tắt phản hồi tức thì', async () => {
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: attemptId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+          answerRevision: 0,
+          quizVersion: { snapshot, quiz: { instantFeedback: false } },
+          answers: [],
+        }),
+      },
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.lockAnswer('user-1', attemptId, 'question-1', {
+        selectedOptionIds: ['option-1'],
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('autosave bỏ qua câu đã chốt, không cho sửa lại thành đáp án đúng', async () => {
+    const upsert = jest.fn().mockResolvedValue({});
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: attemptId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+          answerRevision: 1,
+          quizVersion: { snapshot, quiz: { instantFeedback: true } },
+          answers: [
+            {
+              questionId: 'question-1',
+              selectedOptionIds: ['option-2'],
+              lockedAt: new Date('2026-09-03T08:02:00.000Z'),
+              isCorrect: false,
+            },
+          ],
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      quizAttemptAnswer: { upsert },
+      $transaction: jest
+        .fn()
+        .mockImplementation((fn: (tx: unknown) => unknown) =>
+          fn({
+            quizAttempt: {
+              updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+              findUniqueOrThrow: jest.fn().mockResolvedValue({
+                answerRevision: 2,
+                lastSavedAt: new Date('2026-09-03T08:03:00.000Z'),
+              }),
+            },
+            quizAttemptAnswer: { upsert },
+          }),
+        ),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.saveAnswers('user-1', attemptId, {
+      revision: 1,
+      answers: [{ questionId: 'question-1', selectedOptionIds: ['option-1'] }],
+    });
+
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
   it('từ chối autosave từ tab có revision cũ', async () => {
     const prisma = {
       quizAttempt: {

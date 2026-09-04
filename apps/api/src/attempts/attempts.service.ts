@@ -18,6 +18,7 @@ import {
 import { AssignmentsService } from '../assignments/assignments.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { LockAttemptAnswerDto } from './dto/lock-attempt-answer.dto';
 import { SaveAttemptAnswersDto } from './dto/save-attempt-answers.dto';
 import { StartAttemptDto } from './dto/start-attempt.dto';
 
@@ -156,7 +157,14 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    return this.toAttemptPayload(attempt, snapshot, []);
+    // Cờ instantFeedback phải kèm ngay từ payload lúc bắt đầu, không chỉ ở get() —
+    // thiếu nó thì client luôn nhận false và rơi nhầm vào giao diện thi thường.
+    return this.toAttemptPayload(
+      attempt,
+      snapshot,
+      [],
+      Boolean(assignment.quiz?.instantFeedback),
+    );
   }
 
   async get(userId: string, id: string) {
@@ -170,7 +178,107 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const snapshot = this.readSnapshot(attempt.quizVersion.snapshot);
-    return this.toAttemptPayload(attempt, snapshot, attempt.answers);
+    return this.toAttemptPayload(
+      attempt,
+      snapshot,
+      attempt.answers,
+      attempt.quizVersion.quiz.instantFeedback,
+    );
+  }
+
+  // Chốt đáp án 1 câu ở chế độ phản hồi tức thì (kiểu Quizizz).
+  // Chấm ngay câu đó, khoá lại không cho sửa, rồi trả kết quả + đáp án đúng về
+  // cho client hiển thị hiệu ứng. Chỉ hoạt động khi bộ đề bật instantFeedback —
+  // nếu không, đây sẽ là kẽ hở lộ đáp án của kỳ thi chính thức.
+  async lockAnswer(
+    userId: string,
+    id: string,
+    questionId: string,
+    dto: LockAttemptAnswerDto,
+  ) {
+    const attempt = await this.findAttempt(userId, id);
+    if (!attempt.quizVersion.quiz.instantFeedback) {
+      throw new ForbiddenException(
+        'Bộ đề này không bật chế độ phản hồi tức thì',
+      );
+    }
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new ConflictException('Bài kiểm tra đã được chấm');
+    }
+    if (attempt.deadlineAt <= new Date()) {
+      await this.finalize(userId, id, true);
+      throw new GoneException(
+        'Đã hết thời gian làm bài; hệ thống đã chấm bản lưu gần nhất',
+      );
+    }
+
+    const snapshot = this.readSnapshot(attempt.quizVersion.snapshot);
+    const question = snapshot.questions.find((item) => item.id === questionId);
+    if (!question) {
+      throw new BadRequestException('Câu hỏi không thuộc bộ đề này');
+    }
+    const optionIds = new Set(question.options.map((option) => option.id));
+    if (dto.selectedOptionIds.some((optionId) => !optionIds.has(optionId))) {
+      throw new BadRequestException('Đáp án không thuộc câu hỏi này');
+    }
+
+    const existing = attempt.answers.find(
+      (answer) => answer.questionId === questionId,
+    );
+    // Đã chốt rồi thì trả lại đúng kết quả cũ thay vì báo lỗi — để client bị mất
+    // mạng giữa chừng gửi lại vẫn nhận được phản hồi (idempotent).
+    if (existing?.lockedAt) {
+      return {
+        questionId,
+        alreadyLocked: true,
+        selectedOptionIds: this.toSelectedOptionIds(existing.selectedOptionIds),
+        isCorrect: existing.isCorrect ?? false,
+        correctOptionIds: this.gradeQuestion(question, []).correctOptionIds,
+        explanation: question.explanation ?? null,
+        points: question.points,
+        answerRevision: attempt.answerRevision,
+      };
+    }
+
+    const { isCorrect, correctOptionIds } = this.gradeQuestion(
+      question,
+      dto.selectedOptionIds,
+    );
+    const lockedAt = new Date();
+
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      await transaction.quizAttemptAnswer.upsert({
+        where: { attemptId_questionId: { attemptId: attempt.id, questionId } },
+        create: {
+          attemptId: attempt.id,
+          questionId,
+          selectedOptionIds: dto.selectedOptionIds,
+          lockedAt,
+          isCorrect,
+        },
+        update: {
+          selectedOptionIds: dto.selectedOptionIds,
+          lockedAt,
+          isCorrect,
+        },
+      });
+      return transaction.quizAttempt.update({
+        where: { id: attempt.id },
+        data: { answerRevision: { increment: 1 }, lastSavedAt: lockedAt },
+        select: { answerRevision: true },
+      });
+    });
+
+    return {
+      questionId,
+      alreadyLocked: false,
+      selectedOptionIds: dto.selectedOptionIds,
+      isCorrect,
+      correctOptionIds,
+      explanation: question.explanation ?? null,
+      points: question.points,
+      answerRevision: updated.answerRevision,
+    };
   }
 
   async saveAnswers(userId: string, id: string, dto: SaveAttemptAnswersDto) {
@@ -193,6 +301,18 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
 
     const snapshot = this.readSnapshot(attempt.quizVersion.snapshot);
     this.validateAnswers(snapshot, dto);
+
+    // Câu đã chốt ở chế độ phản hồi tức thì là bất biến — bỏ qua mọi yêu cầu ghi
+    // đè, tránh việc client đã biết đáp án đúng rồi quay lại sửa cho thành đúng.
+    const lockedQuestionIds = new Set(
+      attempt.answers
+        .filter((answer) => answer.lockedAt)
+        .map((answer) => answer.questionId),
+    );
+    const answersToWrite = dto.answers.filter(
+      (answer) => !lockedQuestionIds.has(answer.questionId),
+    );
+
     const lastSavedAt = new Date();
     const saveResult = await this.prisma.$transaction(async (transaction) => {
       const updated = await transaction.quizAttempt.updateMany({
@@ -218,7 +338,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       }
 
       await Promise.all(
-        dto.answers.map((answer) =>
+        answersToWrite.map((answer) =>
           transaction.quizAttemptAnswer.upsert({
             where: {
               attemptId_questionId: {
@@ -398,7 +518,12 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       where: { id, userId },
       include: {
         answers: { orderBy: { updatedAt: 'asc' } },
-        quizVersion: { select: { snapshot: true } },
+        quizVersion: {
+          select: {
+            snapshot: true,
+            quiz: { select: { instantFeedback: true } },
+          },
+        },
       },
     });
     if (!attempt)
@@ -482,8 +607,17 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   private toAttemptPayload(
     attempt: StoredAttempt,
     snapshot: QuizSnapshot,
-    answers: Array<{ questionId: string; selectedOptionIds: Prisma.JsonValue }>,
+    answers: Array<{
+      questionId: string;
+      selectedOptionIds: Prisma.JsonValue;
+      lockedAt?: Date | null;
+      isCorrect?: boolean | null;
+    }>,
+    instantFeedback = false,
   ) {
+    const questionsById = new Map(
+      snapshot.questions.map((question) => [question.id, question]),
+    );
     return {
       attempt: {
         id: attempt.id,
@@ -500,6 +634,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       },
       quiz: {
         ...snapshot.quiz,
+        instantFeedback,
         questions: snapshot.questions.map((question) => ({
           id: question.id,
           content: question.content,
@@ -519,10 +654,23 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
           })),
         })),
       },
-      answers: answers.map((answer) => ({
-        questionId: answer.questionId,
-        selectedOptionIds: answer.selectedOptionIds,
-      })),
+      // Chỉ câu đã chốt mới kèm đáp án đúng + lời giải; câu chưa trả lời vẫn giữ
+      // kín hoàn toàn để không lộ đề qua tab Network.
+      answers: answers.map((answer) => {
+        const locked = Boolean(answer.lockedAt);
+        const question = questionsById.get(answer.questionId);
+        return {
+          questionId: answer.questionId,
+          selectedOptionIds: answer.selectedOptionIds,
+          lockedAt: answer.lockedAt ?? null,
+          isCorrect: locked ? (answer.isCorrect ?? null) : null,
+          correctOptionIds:
+            locked && question
+              ? this.gradeQuestion(question, []).correctOptionIds
+              : null,
+          explanation: locked ? (question?.explanation ?? null) : null,
+        };
+      }),
     };
   }
 
@@ -580,6 +728,37 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     return hash;
   }
 
+  // Chấm riêng 1 câu. Trả kèm đáp án đúng để chế độ phản hồi tức thì hiển thị
+  // được câu trả lời đúng khi người làm chọn sai.
+  private gradeQuestion(
+    question: SnapshotQuestion,
+    selectedOptionIds: string[],
+  ): { isCorrect: boolean; correctOptionIds: string[] } {
+    if (question.questionType === 'ORDERING') {
+      // Đúng thứ tự = orderIndex tăng dần chính là thứ tự đúng do người soạn đề định nghĩa.
+      const correctOrder = question.options
+        .slice()
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((option) => option.id);
+      return {
+        isCorrect:
+          JSON.stringify(correctOrder) === JSON.stringify(selectedOptionIds),
+        correctOptionIds: correctOrder,
+      };
+    }
+
+    const correctOptionIds = question.options
+      .filter((option) => option.isCorrect)
+      .map((option) => option.id)
+      .sort();
+    return {
+      isCorrect:
+        JSON.stringify(correctOptionIds) ===
+        JSON.stringify([...selectedOptionIds].sort()),
+      correctOptionIds,
+    };
+  }
+
   private scoreAttempt(
     snapshot: QuizSnapshot,
     answers: Array<{ questionId: string; selectedOptionIds: Prisma.JsonValue }>,
@@ -597,27 +776,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     for (const question of snapshot.questions) {
       totalPoints += question.points;
       const selectedOptionIds = answersByQuestion.get(question.id) ?? [];
-      let isCorrect: boolean;
-
-      if (question.questionType === 'ORDERING') {
-        // Đúng thứ tự = orderIndex tăng dần chính là thứ tự đúng do người soạn đề định nghĩa.
-        const correctOrder = question.options
-          .slice()
-          .sort((a, b) => a.orderIndex - b.orderIndex)
-          .map((option) => option.id);
-        isCorrect =
-          JSON.stringify(correctOrder) === JSON.stringify(selectedOptionIds);
-      } else {
-        const correctOptionIds = question.options
-          .filter((option) => option.isCorrect)
-          .map((option) => option.id)
-          .sort();
-        isCorrect =
-          JSON.stringify(correctOptionIds) ===
-          JSON.stringify([...selectedOptionIds].sort());
+      if (this.gradeQuestion(question, selectedOptionIds).isCorrect) {
+        earnedPoints += question.points;
       }
-
-      if (isCorrect) earnedPoints += question.points;
     }
 
     const score = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;

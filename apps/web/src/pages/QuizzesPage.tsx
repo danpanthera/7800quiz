@@ -12,7 +12,7 @@ import api, { getErrorMessage } from '../lib/api'
 
 interface Quiz {
   id: string; title: string; description?: string; topic?: string
-  durationMin: number; passScore?: number; isActive: boolean
+  durationMin: number; passScore?: number; isActive: boolean; instantFeedback?: boolean
   _count: { questions: number; assignments: number }
 }
 interface Subject { id: string; name: string; _count?: { questions: number } }
@@ -142,7 +142,7 @@ export default function QuizzesPage() {
     setEditQuiz(null)
     quizForm.resetFields()
     quizForm.setFieldsValue({
-      durationMin: 30, passScore: 70, isActive: true,
+      durationMin: 30, passScore: 70, isActive: true, instantFeedback: false,
       autoPickEnabled: false, subjectRatios: [{ percent: 100 }],
     })
     setQuizModalOpen(true)
@@ -297,6 +297,15 @@ export default function QuizzesPage() {
               <Switch />
             </Form.Item>
           </Space>
+          <Form.Item
+            name="instantFeedback"
+            label="Phản hồi tức thì (kiểu Quizizz)"
+            valuePropName="checked"
+            tooltip="Bật: chọn xong hiện ngay đúng/sai, tự sang câu kế, đáp án bị khoá không sửa được — hợp với đề luyện tập. TẮT cho kỳ thi chính thức vì chế độ này để lộ đáp án ngay trong lúc thi."
+            extra="Chỉ bật cho đề luyện tập. Kỳ thi chính thức nên tắt để không lộ đáp án."
+          >
+            <Switch />
+          </Form.Item>
 
           {!editQuiz && (
             <>

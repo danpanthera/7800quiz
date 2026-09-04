@@ -159,6 +159,7 @@ export class AdminController {
       topic?: string;
       durationMin: number;
       passScore?: number;
+      instantFeedback?: boolean;
     },
   ) {
     return this.adminService.createQuiz(body);

@@ -23,58 +23,60 @@ async function main() {
     unitMap[u.code] = r.id;
   }
 
-  // Sub-departments
+  // Sub-departments — tên/mã chuẩn sau đợt hợp nhất về 9 chi nhánh
+  // (xem migration 20260904040000_hop_nhat_9_chi_nhanh)
   const subDepts = [
-    // Hội Sở
-    { code: '01-HS-BGD',    name: 'Ban Giám đốc',   parent: '01-HS' },
-    { code: '01-HS-KHDN',   name: 'Phòng KHDN',     parent: '01-HS' },
-    { code: '01-HS-KHCN',   name: 'Phòng KHCN',     parent: '01-HS' },
-    { code: '01-HS-KTGSNB', name: 'Phòng KTGSNB',   parent: '01-HS' },
-    { code: '01-HS-TH',     name: 'Phòng Tổng hợp', parent: '01-HS' },
-    { code: '01-HS-KTNQ',   name: 'Phòng KTNQ',     parent: '01-HS' },
-    { code: '01-HS-KHRR',   name: 'Phòng KHRR',     parent: '01-HS' },
+    // Hội Sở — đã hoà chung toàn bộ phòng ban của CN Lai Châu cũ
+    { code: '01-HS-BGD',    name: 'Ban Giám đốc',                     parent: '01-HS' },
+    { code: '01-HS-KHDN',   name: 'Phòng Khách hàng Doanh nghiệp',    parent: '01-HS' },
+    { code: '01-HS-KHCN',   name: 'Phòng Khách hàng Cá nhân',         parent: '01-HS' },
+    { code: '01-HS-KHRR',   name: 'Phòng Kế hoạch và Quản lý rủi ro', parent: '01-HS' },
+    { code: '01-HS-KTGSNB', name: 'Phòng Kiểm tra, Giám sát nội bộ',  parent: '01-HS' },
+    { code: '01-HS-TH',     name: 'Phòng Tổng hợp',                   parent: '01-HS' },
+    { code: '01-HS-KTNQ',   name: 'Phòng Kế toán và Ngân quỹ',        parent: '01-HS' },
+    { code: '01-HS-IT',     name: 'Phòng Công nghệ Thông tin',        parent: '01-HS' },
     // Bình Lư
-    { code: '02-BL-BGD',  name: 'Ban Giám đốc',   parent: '02-BL' },
-    { code: '02-BL-KH',   name: 'Phòng Khách hàng', parent: '02-BL' },
-    { code: '02-BL-KTNQ', name: 'Phòng KTNQ',     parent: '02-BL' },
-    // Phong Thổ
-    { code: '03-PT-BGD',  name: 'Ban Giám đốc',   parent: '03-PT' },
-    { code: '03-PT-KH',   name: 'Phòng Khách hàng', parent: '03-PT' },
-    { code: '03-PT-KTNQ', name: 'Phòng KTNQ',     parent: '03-PT' },
-    { code: '03-PT-PGD5', name: 'PGD Số 5',       parent: '03-PT' },
+    { code: '02-BL-BGD',  name: 'Ban Giám đốc',              parent: '02-BL' },
+    { code: '02-BL-KH',   name: 'Phòng Khách hàng',          parent: '02-BL' },
+    { code: '02-BL-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '02-BL' },
+    // Phong Thổ — PGD Số 5 là phòng ban trực thuộc
+    { code: '03-PT-BGD',  name: 'Ban Giám đốc',              parent: '03-PT' },
+    { code: '03-PT-KH',   name: 'Phòng Khách hàng',          parent: '03-PT' },
+    { code: '03-PT-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '03-PT' },
+    { code: '03-PT-PGD5', name: 'Phòng Giao dịch số 5',      parent: '03-PT' },
     // Sìn Hồ
-    { code: '04-SH-BGD',  name: 'Ban Giám đốc',   parent: '04-SH' },
-    { code: '04-SH-KH',   name: 'Phòng Khách hàng', parent: '04-SH' },
-    { code: '04-SH-KTNQ', name: 'Phòng KTNQ',     parent: '04-SH' },
+    { code: '04-SH-BGD',  name: 'Ban Giám đốc',              parent: '04-SH' },
+    { code: '04-SH-KH',   name: 'Phòng Khách hàng',          parent: '04-SH' },
+    { code: '04-SH-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '04-SH' },
     // Bum Tở
-    { code: '05-BT-BGD',  name: 'Ban Giám đốc',   parent: '05-BT' },
-    { code: '05-BT-KH',   name: 'Phòng Khách hàng', parent: '05-BT' },
-    { code: '05-BT-KTNQ', name: 'Phòng KTNQ',     parent: '05-BT' },
-    // Than Uyên
-    { code: '06-TU-BGD',  name: 'Ban Giám đốc',   parent: '06-TU' },
-    { code: '06-TU-KH',   name: 'Phòng Khách hàng', parent: '06-TU' },
-    { code: '06-TU-KTNQ', name: 'Phòng KTNQ',     parent: '06-TU' },
-    { code: '06-TU-PGD6', name: 'PGD Số 6',       parent: '06-TU' },
-    // Đoàn Kết
-    { code: '07-DK-BGD',  name: 'Ban Giám đốc',   parent: '07-DK' },
-    { code: '07-DK-KH',   name: 'Phòng Khách hàng', parent: '07-DK' },
-    { code: '07-DK-KTNQ', name: 'Phòng KTNQ',     parent: '07-DK' },
-    { code: '07-DK-PGD1', name: 'PGD Số 1',       parent: '07-DK' },
-    { code: '07-DK-PGD2', name: 'PGD Số 2',       parent: '07-DK' },
-    // Tân Uyên
-    { code: '08-TAU-BGD',  name: 'Ban Giám đốc',   parent: '08-TAU' },
-    { code: '08-TAU-KH',   name: 'Phòng Khách hàng', parent: '08-TAU' },
-    { code: '08-TAU-KTNQ', name: 'Phòng KTNQ',     parent: '08-TAU' },
-    { code: '08-TAU-PGD3', name: 'PGD Số 3',       parent: '08-TAU' },
+    { code: '05-BT-BGD',  name: 'Ban Giám đốc',              parent: '05-BT' },
+    { code: '05-BT-KH',   name: 'Phòng Khách hàng',          parent: '05-BT' },
+    { code: '05-BT-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '05-BT' },
+    // Than Uyên — PGD Số 6 là phòng ban trực thuộc
+    { code: '06-TU-BGD',  name: 'Ban Giám đốc',              parent: '06-TU' },
+    { code: '06-TU-KH',   name: 'Phòng Khách hàng',          parent: '06-TU' },
+    { code: '06-TU-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '06-TU' },
+    { code: '06-TU-PGD6', name: 'Phòng Giao dịch số 6',      parent: '06-TU' },
+    // Đoàn Kết — PGD Số 1 và Số 2 là phòng ban trực thuộc
+    { code: '07-DK-BGD',  name: 'Ban Giám đốc',              parent: '07-DK' },
+    { code: '07-DK-KH',   name: 'Phòng Khách hàng',          parent: '07-DK' },
+    { code: '07-DK-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '07-DK' },
+    { code: '07-DK-PGD1', name: 'Phòng Giao dịch số 1',      parent: '07-DK' },
+    { code: '07-DK-PGD2', name: 'Phòng Giao dịch số 2',      parent: '07-DK' },
+    // Tân Uyên — PGD Số 3 là phòng ban trực thuộc
+    { code: '08-TAU-BGD',  name: 'Ban Giám đốc',              parent: '08-TAU' },
+    { code: '08-TAU-KH',   name: 'Phòng Khách hàng',          parent: '08-TAU' },
+    { code: '08-TAU-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '08-TAU' },
+    { code: '08-TAU-PGD3', name: 'Phòng Giao dịch số 3',      parent: '08-TAU' },
     // Nậm Hàng
-    { code: '09-NH-BGD',  name: 'Ban Giám đốc',   parent: '09-NH' },
-    { code: '09-NH-KH',   name: 'Phòng Khách hàng', parent: '09-NH' },
-    { code: '09-NH-KTNQ', name: 'Phòng KTNQ',     parent: '09-NH' },
+    { code: '09-NH-BGD',  name: 'Ban Giám đốc',              parent: '09-NH' },
+    { code: '09-NH-KH',   name: 'Phòng Khách hàng',          parent: '09-NH' },
+    { code: '09-NH-KTNQ', name: 'Phòng Kế toán và Ngân quỹ', parent: '09-NH' },
   ];
   for (const s of subDepts) {
     await prisma.department.upsert({
       where: { code: s.code },
-      update: { name: s.name },
+      update: { name: s.name, parentId: unitMap[s.parent] },
       create: { code: s.code, name: s.name, parentId: unitMap[s.parent] },
     });
   }
@@ -135,11 +137,11 @@ async function main() {
     });
   }
 
-  // Giữ dept cũ (IT) để không break foreign key cũ nếu có
+  // Phòng CNTT nay là phòng ban trực thuộc Hội Sở (trước đây là mã 'IT' cấp 1)
   const dept = await prisma.department.upsert({
-    where: { code: 'IT' },
-    update: {},
-    create: { name: 'Phòng Công nghệ Thông tin', code: 'IT' },
+    where: { code: '01-HS-IT' },
+    update: { name: 'Phòng Công nghệ Thông tin', parentId: unitMap['01-HS'] },
+    create: { name: 'Phòng Công nghệ Thông tin', code: '01-HS-IT', parentId: unitMap['01-HS'] },
   });
 
   // Users

@@ -50,6 +50,7 @@ export class AssignmentsService {
             description: true,
             topic: true,
             durationMin: true,
+            instantFeedback: true,
           },
         },
       },

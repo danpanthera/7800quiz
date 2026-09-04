@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { LockAttemptAnswerDto } from './dto/lock-attempt-answer.dto';
 import { SaveAttemptAnswersDto } from './dto/save-attempt-answers.dto';
 import { StartAttemptDto } from './dto/start-attempt.dto';
 import { ReportViolationDto } from './dto/report-violation.dto';
@@ -39,6 +40,17 @@ export class AttemptsController {
     @Body() dto: SaveAttemptAnswersDto,
   ) {
     return this.attemptsService.saveAnswers(req.user.id, id, dto);
+  }
+
+  // Chế độ phản hồi tức thì: chốt 1 câu và nhận ngay kết quả đúng/sai của câu đó
+  @Post(':id/answers/:questionId/lock')
+  lockAnswer(
+    @Request() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Param('questionId') questionId: string,
+    @Body() dto: LockAttemptAnswerDto,
+  ) {
+    return this.attemptsService.lockAnswer(req.user.id, id, questionId, dto);
   }
 
   @Post(':id/submit')

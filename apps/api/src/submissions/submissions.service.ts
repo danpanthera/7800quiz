@@ -228,7 +228,9 @@ export class SubmissionsService {
               // đã lưu từng lệch khỏi snapshot hiện tại — coi như chưa trả lời hợp lệ trong trường hợp đó.
               const validSelectedIds = selectedIds.filter((id) => byId.has(id));
               const displayed =
-                validSelectedIds.length === q.options.length ? validSelectedIds : correctOrderIds;
+                validSelectedIds.length === q.options.length
+                  ? validSelectedIds
+                  : correctOrderIds;
               return {
                 id: q.id,
                 content: q.content,
