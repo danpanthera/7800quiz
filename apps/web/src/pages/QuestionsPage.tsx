@@ -49,6 +49,18 @@ interface PreviewRow {
   duplicateLevel: 'exact' | 'high' | 'medium' | null
   duplicateMatch: { id: string; content: string; score: number } | null
   spellingWarnings: SpellWarning[]
+  edited?: boolean // admin đã sửa dòng này trên modal xem trước, khác nội dung gốc trong file Excel
+}
+
+// Giá trị form sửa nhanh 1 dòng trong bảng xem trước
+interface RowEditFormValues {
+  content: string
+  opt0?: string
+  opt1?: string
+  opt2?: string
+  opt3?: string
+  correctIndex: number
+  explanation?: string
 }
 
 export default function QuestionsPage() {
@@ -114,6 +126,11 @@ export default function QuestionsPage() {
   const [sheetNames, setSheetNames] = useState<string[]>([])
   const [selectedSheet, setSelectedSheet] = useState<string | undefined>()
   const [loadingSheets, setLoadingSheets] = useState(false)
+
+  // ── Sửa nhanh 1 dòng trong bảng xem trước (vd để khắc phục cảnh báo chính tả) ──
+  const [editingRow, setEditingRow] = useState<PreviewRow | null>(null)
+  const [savingRowEdit, setSavingRowEdit] = useState(false)
+  const [rowEditForm] = Form.useForm<RowEditFormValues>()
 
   const checkContent = useCallback(async (text: string) => {
     if (!text || text.trim().length < 5) { setDupWarnings([]); setSpellWarnings([]); return }
@@ -267,18 +284,23 @@ export default function QuestionsPage() {
     }
   }
 
+  // Import thẳng từ dữ liệu previewData (đã qua bước xem trước, có thể admin đã
+  // sửa một số dòng) — KHÔNG upload lại file Excel gốc, vì file gốc không còn
+  // khớp với nội dung đã sửa trên modal.
   const handleImport = async () => {
-    if (!importFile || !selectedSubjectId) {
-      message.error('Vui lòng chọn lĩnh vực và file Excel'); return
-    }
+    if (!selectedSubjectId) { message.error('Vui lòng chọn lĩnh vực'); return }
+    if (previewData.length === 0) { message.error('Không có câu hỏi để import'); return }
     setImporting(true)
     try {
-      const formData = new FormData()
-      formData.append('file', importFile.originFileObj as File)
-      formData.append('subjectId', selectedSubjectId)
-      if (selectedSheet) formData.append('sheetName', selectedSheet)
-      const res = await api.post('/admin/bank-questions/import', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const res = await api.post('/admin/bank-questions/import/confirm', {
+        subjectId: selectedSubjectId,
+        rows: previewData.map((r) => ({
+          rowNumber: r.rowNumber,
+          content: r.content,
+          optionTexts: r.optionTexts,
+          correctIndex: r.correctIndex,
+          explanation: r.explanation,
+        })),
       })
       const imported = res.data.imported ?? 0
       const skipped = res.data.skipped ?? 0
@@ -335,10 +357,92 @@ export default function QuestionsPage() {
     } finally { setLoadingSheets(false) }
   }
 
+  // ── Sửa nhanh 1 dòng trong bảng xem trước ───────────────────────────────
+  const openRowEdit = (row: PreviewRow) => {
+    setEditingRow(row)
+    rowEditForm.setFieldsValue({
+      content: row.content,
+      opt0: row.optionTexts[0] ?? '',
+      opt1: row.optionTexts[1] ?? '',
+      opt2: row.optionTexts[2] ?? '',
+      opt3: row.optionTexts[3] ?? '',
+      correctIndex: row.correctIndex,
+      explanation: row.explanation ?? '',
+    })
+  }
+
+  const closeRowEdit = () => { setEditingRow(null); rowEditForm.resetFields() }
+
+  // Giữ nguyên kiểu viết hoa của từ gốc khi thay bằng gợi ý — tránh áp dụng gợi ý
+  // cho từ đầu câu (vd "Ngânn") lại biến thành chữ thường ("ngân"), sai chính tả kiểu khác.
+  const matchCase = (original: string, replacement: string) => {
+    if (original === original.toUpperCase() && original !== original.toLowerCase()) {
+      return replacement.toUpperCase()
+    }
+    if (original[0] && original[0] === original[0].toUpperCase() && original[0] !== original[0].toLowerCase()) {
+      return replacement.charAt(0).toUpperCase() + replacement.slice(1)
+    }
+    return replacement
+  }
+
+  // Bấm 1 gợi ý chính tả: thay thế toàn bộ từ đó trong ô nội dung đang sửa (không
+  // phân biệt hoa/thường khi tìm, chỉ khớp trọn từ — tránh thay nhầm vào giữa từ khác).
+  const applySuggestion = (word: string, suggestion: string) => {
+    const current = (rowEditForm.getFieldValue('content') as string | undefined) ?? ''
+    if (!current) return
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}])(${escaped})(?=$|[^\\p{L}\\p{N}])`, 'giu')
+    rowEditForm.setFieldsValue({
+      content: current.replace(re, (_m, before: string, matched: string) => `${before}${matchCase(matched, suggestion)}`),
+    })
+  }
+
+  const handleSaveRowEdit = async () => {
+    if (!editingRow) return
+    const values = await rowEditForm.validateFields()
+    const optionTexts = [values.opt0, values.opt1, values.opt2, values.opt3].map(
+      (v) => (v?.trim() ? v.trim() : null),
+    )
+    if (optionTexts.filter(Boolean).length < 2) { message.error('Cần ít nhất 2 đáp án'); return }
+    if (!optionTexts[values.correctIndex]) { message.error('Đáp án đúng đang trỏ tới một ô trống'); return }
+
+    const content = values.content.trim()
+    const explanation = values.explanation?.trim() || null
+
+    setSavingRowEdit(true)
+    let duplicateLevel = editingRow.duplicateLevel
+    let duplicateMatch = editingRow.duplicateMatch
+    let spellingWarnings = editingRow.spellingWarnings
+    try {
+      const [dupRes, spellRes] = await Promise.all([
+        api.post('/admin/bank-questions/check-duplicates', { texts: [content] }),
+        api.post('/admin/bank-questions/check-spelling', { texts: [content] }),
+      ])
+      const topMatch = (dupRes.data as DupResult[])[0]?.matches[0] ?? null
+      duplicateLevel = topMatch?.level ?? null
+      duplicateMatch = topMatch ? { id: topMatch.id, content: topMatch.content, score: topMatch.score } : null
+      spellingWarnings = (spellRes.data as SpellResult[])[0]?.warnings ?? []
+    } catch {
+      // Không kiểm tra lại được thì vẫn lưu nội dung đã sửa, chỉ giữ nguyên cảnh báo cũ
+    } finally {
+      setSavingRowEdit(false)
+    }
+
+    const rowNumber = editingRow.rowNumber
+    setPreviewData((prev) => prev.map((r) => (
+      r.rowNumber === rowNumber
+        ? { ...r, content, optionTexts, correctIndex: values.correctIndex, explanation, duplicateLevel, duplicateMatch, spellingWarnings, edited: true }
+        : r
+    )))
+    message.success('Đã cập nhật câu hỏi')
+    closeRowEdit()
+  }
+
   const closeImportModal = () => {
     setImportModalOpen(false); setImportFile(null)
     setPreviewStep('upload'); setPreviewData([]); setPreviewErrors([])
     setSheetNames([]); setSelectedSheet(undefined)
+    closeRowEdit()
   }
 
   // ── Columns ───────────────────────────────────────────────────────────
@@ -389,7 +493,9 @@ export default function QuestionsPage() {
             key: s.id,
             label: (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                <Tooltip title={s.name} mouseEnterDelay={0.5}>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                </Tooltip>
                 <Space size={4} onClick={(e) => e.stopPropagation()}>
                   <Tag style={{ marginRight: 0 }}>{s._count?.questions ?? 0}</Tag>
                   <Button type="text" icon={<EditOutlined />} size="small" onClick={() => openEditSubjectModal(s)} />
@@ -826,7 +932,7 @@ export default function QuestionsPage() {
               rowKey="rowNumber"
               size="small"
               pagination={{ pageSize: 10, showSizeChanger: false }}
-              scroll={{ x: 800 }}
+              scroll={{ x: 860 }}
               rowClassName={(r) =>
                 r.duplicateLevel === 'exact' || r.duplicateLevel === 'high'
                   ? 'ant-table-row-danger'
@@ -838,7 +944,14 @@ export default function QuestionsPage() {
                   title: 'Câu hỏi',
                   dataIndex: 'content',
                   ellipsis: true,
-                  render: (v: string) => <Tooltip title={v}><span>{v}</span></Tooltip>,
+                  render: (v: string, r: PreviewRow) => (
+                    <Tooltip title={v}>
+                      <span>
+                        {r.edited && <Tag color="blue" style={{ marginRight: 4 }}>Đã sửa</Tag>}
+                        {v}
+                      </span>
+                    </Tooltip>
+                  ),
                 },
                 {
                   title: 'Trạng thái',
@@ -873,11 +986,107 @@ export default function QuestionsPage() {
                       </Space>
                     ),
                 },
+                {
+                  title: '',
+                  width: 50,
+                  render: (_: unknown, r: PreviewRow) => (
+                    <Tooltip title="Sửa câu hỏi này">
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        aria-label={`Sửa dòng ${r.rowNumber}`}
+                        onClick={() => openRowEdit(r)}
+                      />
+                    </Tooltip>
+                  ),
+                },
               ] as ColumnType<PreviewRow>[]}
             />
             <style>{`.ant-table-row-danger td { background: ${token.colorErrorBg} !important; }`}</style>
           </>
         )}
+      </Modal>
+
+      {/* Modal: Sửa nhanh 1 câu trong bảng xem trước — mở lồng trên modal Import Excel,
+          để admin khắc phục cảnh báo chính tả/trùng lặp ngay mà không cần sửa lại file rồi upload lại */}
+      <Modal
+        title={editingRow ? `Sửa câu hỏi — Dòng ${editingRow.rowNumber}` : 'Sửa câu hỏi'}
+        open={editingRow !== null}
+        onCancel={closeRowEdit}
+        onOk={() => void handleSaveRowEdit()}
+        confirmLoading={savingRowEdit}
+        okText="Lưu thay đổi"
+        cancelText="Hủy"
+        width={640}
+        destroyOnHidden
+      >
+        <Form form={rowEditForm} layout="vertical">
+          <Form.Item name="content" label="Nội dung câu hỏi" rules={[{ required: true, message: 'Nhập nội dung câu hỏi' }]}>
+            <Input.TextArea rows={3} spellCheck lang="vi" />
+          </Form.Item>
+
+          {editingRow && editingRow.spellingWarnings.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+                Nghi ngờ sai chính tả — bấm vào gợi ý để thay ngay trong nội dung:
+              </Text>
+              <Space direction="vertical" size={4}>
+                {editingRow.spellingWarnings.map((w, i) => (
+                  <Space key={i} size={4} wrap>
+                    <Tag color="gold">{w.word}</Tag>
+                    {w.suggestions.length === 0
+                      ? <Text type="secondary" style={{ fontSize: 12 }}>không có gợi ý</Text>
+                      : w.suggestions.map((s) => (
+                        <Tag key={s} color="blue" style={{ cursor: 'pointer' }} onClick={() => applySuggestion(w.word, s)}>
+                          → {s}
+                        </Tag>
+                      ))}
+                  </Space>
+                ))}
+              </Space>
+            </div>
+          )}
+
+          <Divider style={{ margin: '0 0 16px' }}>Đáp án (chọn đáp án đúng)</Divider>
+          <Form.Item name="correctIndex" rules={[{ required: true, message: 'Chọn đáp án đúng' }]}>
+            <Radio.Group style={{ width: '100%' }}>
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Radio value={0} />
+                  <span className="quiz-option-letter">A</span>
+                  <Form.Item name="opt0" style={{ flex: 1, margin: 0 }} noStyle>
+                    <Input placeholder="Đáp án A (để trống nếu không dùng)" spellCheck lang="vi" />
+                  </Form.Item>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Radio value={1} />
+                  <span className="quiz-option-letter">B</span>
+                  <Form.Item name="opt1" style={{ flex: 1, margin: 0 }} noStyle>
+                    <Input placeholder="Đáp án B (để trống nếu không dùng)" spellCheck lang="vi" />
+                  </Form.Item>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Radio value={2} />
+                  <span className="quiz-option-letter">C</span>
+                  <Form.Item name="opt2" style={{ flex: 1, margin: 0 }} noStyle>
+                    <Input placeholder="Đáp án C (để trống nếu không dùng)" spellCheck lang="vi" />
+                  </Form.Item>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Radio value={3} />
+                  <span className="quiz-option-letter">D</span>
+                  <Form.Item name="opt3" style={{ flex: 1, margin: 0 }} noStyle>
+                    <Input placeholder="Đáp án D (để trống nếu không dùng)" spellCheck lang="vi" />
+                  </Form.Item>
+                </div>
+              </Space>
+            </Radio.Group>
+          </Form.Item>
+
+          <Form.Item name="explanation" label="Giải thích đáp án đúng (không bắt buộc)">
+            <Input.TextArea rows={2} spellCheck lang="vi" />
+          </Form.Item>
+        </Form>
       </Modal>
     </Layout>
   )

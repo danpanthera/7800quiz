@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { AssignmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
 
@@ -532,14 +533,14 @@ export class AdminService {
       });
     }
 
-    // Duplicate + spell check for all parsed rows
-    const contents = parsed.map((r) => r.content);
-    const [dupResults, spellResults] = await Promise.all([
-      this.checkDuplicates(contents),
-      this.checkSpelling(contents),
-    ]);
-
     if (dryRun) {
+      // Duplicate + spell check chỉ cần tính cho bước xem trước — admin có thể sửa
+      // nội dung ngay trên modal, lúc đó mới cần tính lại (xem createBankQuestions).
+      const contents = parsed.map((r) => r.content);
+      const [dupResults, spellResults] = await Promise.all([
+        this.checkDuplicates(contents),
+        this.checkSpelling(contents),
+      ]);
       const preview = parsed.map((row, idx) => {
         const dup = dupResults[idx];
         const topMatch = dup.matches[0] ?? null;
@@ -563,11 +564,39 @@ export class AdminService {
       return { preview, imported: 0, skipped: 0, errors };
     }
 
-    // Actual import — skip exact/high duplicates
-    let imported = 0,
-      skipped = 0;
-    for (let idx = 0; idx < parsed.length; idx++) {
-      const row = parsed[idx];
+    const created = await this.createBankQuestions(subjectId, parsed);
+    return {
+      imported: created.imported,
+      skipped: created.skipped,
+      errors: [...errors, ...created.errors],
+    };
+  }
+
+  // Tạo câu hỏi ngân hàng từ danh sách dòng đã hợp lệ (content/optionTexts/
+  // correctIndex/explanation) — dùng chung cho import từ file Excel và import từ
+  // dữ liệu admin đã sửa trên modal xem trước (xem importBankQuestionRows bên dưới).
+  // Luôn tự chấm lại trùng lặp ngay tại đây thay vì tin dữ liệu duplicateLevel do
+  // client gửi lên, để câu vừa sửa nội dung cũng được đánh giá đúng bằng dữ liệu
+  // DB mới nhất, không dùng kết quả trùng lặp đã cũ từ bước xem trước.
+  private async createBankQuestions(
+    subjectId: string,
+    rows: {
+      rowNumber: number;
+      content: string;
+      optionTexts: (string | null)[];
+      correctIndex: number;
+      explanation: string | null;
+    }[],
+  ): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    if (rows.length === 0) return { imported: 0, skipped: 0, errors: [] };
+
+    const dupResults = await this.checkDuplicates(rows.map((r) => r.content));
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (let idx = 0; idx < rows.length; idx++) {
+      const row = rows[idx];
       const topDup = dupResults[idx].matches[0];
       if (topDup && (topDup.level === 'exact' || topDup.level === 'high')) {
         skipped++;
@@ -603,6 +632,67 @@ export class AdminService {
       }
     }
     return { imported, skipped, errors };
+  }
+
+  // Import trực tiếp từ các dòng admin đã xem/sửa trên modal xem trước — dùng khi
+  // admin đã chỉnh nội dung/đáp án để khắc phục cảnh báo chính tả hoặc trùng lặp,
+  // không cần upload lại file Excel gốc (vốn không còn khớp với nội dung đã sửa).
+  async importBankQuestionRows(
+    subjectId: string,
+    rows: ImportBankQuestionRowDto[],
+  ): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    if (!subjectId)
+      throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
+    if (!rows?.length)
+      throw new BadRequestException('Không có câu hỏi để import');
+
+    const errors: string[] = [];
+    const valid: {
+      rowNumber: number;
+      content: string;
+      optionTexts: (string | null)[];
+      correctIndex: number;
+      explanation: string | null;
+    }[] = [];
+
+    for (const row of rows) {
+      const content = row.content?.trim();
+      if (!content) {
+        errors.push(`Dòng ${row.rowNumber}: Thiếu nội dung câu hỏi`);
+        continue;
+      }
+      const optionTexts: (string | null)[] = [0, 1, 2, 3].map((i) => {
+        const v = row.optionTexts?.[i];
+        return typeof v === 'string' && v.trim() ? v.trim() : null;
+      });
+      if (optionTexts.filter(Boolean).length < 2) {
+        errors.push(`Dòng ${row.rowNumber}: Không đủ đáp án`);
+        continue;
+      }
+      if (
+        !Number.isInteger(row.correctIndex) ||
+        row.correctIndex < 0 ||
+        row.correctIndex > 3 ||
+        !optionTexts[row.correctIndex]
+      ) {
+        errors.push(`Dòng ${row.rowNumber}: Đáp án đúng không hợp lệ`);
+        continue;
+      }
+      valid.push({
+        rowNumber: row.rowNumber,
+        content,
+        optionTexts,
+        correctIndex: row.correctIndex,
+        explanation: row.explanation?.trim() || null,
+      });
+    }
+
+    const created = await this.createBankQuestions(subjectId, valid);
+    return {
+      imported: created.imported,
+      skipped: created.skipped,
+      errors: [...errors, ...created.errors],
+    };
   }
 
   // ── Questions (for quiz) ──────────────────────────────────────────────

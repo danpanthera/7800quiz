@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminService } from './admin.service';
+import { ImportBankQuestionsDto } from './dto/import-bank-questions.dto';
 
 const TRAINING_ROLES = [UserRole.ADMIN, UserRole.TRAINER] as const;
 
@@ -113,6 +114,14 @@ export class AdminController {
       dryRun === 'true',
       sheetName,
     );
+  }
+
+  // Xác nhận import từ các dòng admin đã xem/sửa trên modal xem trước — thay vì
+  // upload lại file Excel gốc (không còn khớp nếu admin đã chỉnh nội dung).
+  @Post('bank-questions/import/confirm')
+  @Roles(...TRAINING_ROLES)
+  confirmImportBankQuestions(@Body() body: ImportBankQuestionsDto) {
+    return this.adminService.importBankQuestionRows(body.subjectId, body.rows);
   }
 
   // ── Duplicate check ───────────────────────────────────────────────────
