@@ -38,12 +38,15 @@ export default function App() {
         theme={{
           algorithm: antTheme.defaultAlgorithm,
           token: {
-            colorPrimary: '#1565C0',
+            // Màu thương hiệu Agribank — phải khớp --agribank-red trong index.css
+            // (AntD tự tính các sắc độ hover/active từ giá trị hex này nên không
+            // dùng được var(--...) ở đây).
+            colorPrimary: '#7A1428',
             colorSuccess: '#27AE60',
             colorWarning: '#F39C12',
             colorError: '#E53935',
-            colorInfo: '#1976D2',
-            colorBgLayout: '#EEF2FF',
+            colorInfo: '#9C2A3F',
+            colorBgLayout: '#F8F4EC',
             colorBgContainer: '#ffffff',
             colorBgElevated: '#ffffff',
             borderRadius: 8,
@@ -52,7 +55,7 @@ export default function App() {
             fontFamily: "'Be Vietnam Pro', sans-serif",
             fontSize: 14,
             controlHeight: 38,
-            boxShadow: '0 4px 16px rgba(21,101,192,0.12)',
+            boxShadow: '0 4px 16px rgba(122,20,40,0.12)',
             boxShadowSecondary: '0 2px 8px rgba(0,0,0,0.08)',
           },
           components: {
@@ -60,15 +63,15 @@ export default function App() {
               borderRadius: 8,
               controlHeight: 38,
               fontWeight: 600,
-              primaryShadow: '0 4px 12px rgba(21,101,192,0.30)',
+              primaryShadow: '0 4px 12px rgba(122,20,40,0.30)',
               defaultShadow: '0 2px 6px rgba(0,0,0,0.08)',
               dangerShadow: '0 4px 12px rgba(229,57,53,0.28)',
             },
             Table: {
-              headerBg: '#F5F7FF',
-              headerColor: '#344054',
-              headerSortActiveBg: '#EEF2FF',
-              rowHoverBg: '#F0F4FF',
+              headerBg: '#FBF7F1',
+              headerColor: '#4E0D1A',
+              headerSortActiveBg: '#F5EDE6',
+              rowHoverBg: '#FBF5F2',
               borderRadius: 12,
               borderRadiusOuter: 12,
               cellPaddingBlock: 12,
@@ -80,8 +83,8 @@ export default function App() {
             Menu: {
               darkItemBg: 'transparent',
               darkSubMenuItemBg: 'rgba(0,0,0,0.2)',
-              darkItemHoverBg: 'rgba(255,255,255,0.08)',
-              darkItemSelectedBg: 'rgba(91,163,255,0.18)',
+              darkItemHoverBg: 'rgba(255,255,255,0.10)',
+              darkItemSelectedBg: 'rgba(255,179,0,0.20)',
               darkItemSelectedColor: '#ffffff',
               itemBorderRadius: 8,
               itemMarginInline: 8,
@@ -89,21 +92,21 @@ export default function App() {
               collapsedIconSize: 18,
             },
             Layout: {
-              siderBg: '#0D2045',
+              siderBg: '#4E0D1A',
               headerBg: '#ffffff',
               footerBg: '#ffffff',
             },
             Input: {
               borderRadius: 8,
               controlHeight: 38,
-              hoverBorderColor: '#1565C0',
-              activeShadow: '0 0 0 3px rgba(21,101,192,0.12)',
+              hoverBorderColor: '#7A1428',
+              activeShadow: '0 0 0 3px rgba(122,20,40,0.12)',
             },
             Select: {
               borderRadius: 8,
               controlHeight: 38,
-              optionSelectedBg: '#EEF2FF',
-              optionActiveBg: '#F5F7FF',
+              optionSelectedBg: '#F5EDE6',
+              optionActiveBg: '#FBF7F1',
             },
             Modal: {
               borderRadius: 16,
@@ -128,7 +131,7 @@ export default function App() {
               verticalLabelPadding: '0 0 4px',
             },
             Divider: {
-              colorSplit: '#EEF2FF',
+              colorSplit: '#EFE6DD',
             },
           },
         }}

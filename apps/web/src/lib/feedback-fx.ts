@@ -58,7 +58,8 @@ export async function fireConfetti() {
 export async function fireConfettiBurst() {
   const confetti = (await import('canvas-confetti')).default
   const end = Date.now() + 700
-  const colors = ['#1565C0', '#faad14', '#27AE60']
+  // Tông thương hiệu Agribank: đỏ bordeaux + vàng + trắng ngọc trai
+  const colors = ['#7A1428', '#FFB300', '#F8F4EC']
   ;(function frame() {
     confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0 }, colors })
     confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 }, colors })

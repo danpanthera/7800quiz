@@ -168,7 +168,7 @@ export default function AppLayout() {
         title={<PortalBrand role={user.role} />}
         styles={{
           wrapper: { width: 'min(280px, 86vw)' },
-          body: { padding: '8px 0', background: '#10233f' },
+          body: { padding: '8px 0', background: 'var(--agribank-red-dark)' },
         }}
       >
         {navigationMenu}

@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ArenaService } from './arena.service';
@@ -63,6 +64,14 @@ export class ArenaController {
   @Patch('admin/arena-sessions/:id/stop')
   stop(@Param('id') id: string) {
     return this.arenaService.stopSession(id);
+  }
+
+  // ─── Tự phục vụ — học viên xem lịch sử Đấu trường của chính mình ─────────
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/arena-history')
+  myHistory(@Request() req: { user: { id: string } }) {
+    return this.arenaService.getMyHistory(req.user.id);
   }
 
   // ─── Public endpoint — trang join của người chơi xem trước thông tin phiên

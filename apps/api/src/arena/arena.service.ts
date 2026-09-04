@@ -330,8 +330,7 @@ export class ArenaService {
 
     // Có đội đặt trước sẵn — bắt buộc chọn 1 đội, không tự gõ tên đội mới
     if (presetTeams.length > 0) {
-      if (!opts.teamId)
-        throw new BadRequestException('Chọn 1 đội để tham gia');
+      if (!opts.teamId) throw new BadRequestException('Chọn 1 đội để tham gia');
       const target = presetTeams.find((t) => t.id === opts.teamId);
       if (!target)
         throw new BadRequestException('Đội không tồn tại trong phiên này');
@@ -511,7 +510,9 @@ export class ArenaService {
       where: { id: sessionId },
     });
     if (session.status !== ArenaStatus.LOBBY)
-      throw new BadRequestException('Chỉ có thể gộp đội khi phiên đang ở sảnh chờ');
+      throw new BadRequestException(
+        'Chỉ có thể gộp đội khi phiên đang ở sảnh chờ',
+      );
 
     const teams = await this.prisma.arenaTeam.findMany({
       where: { id: { in: uniqueIds }, arenaSessionId: sessionId },
@@ -527,7 +528,9 @@ export class ArenaService {
 
     const totalMembers = teams.reduce((sum, t) => sum + t.members.length, 0);
     if (totalMembers < 2 || totalMembers > 5)
-      throw new BadRequestException('Một đội gộp phải có từ 2 đến 5 người chơi');
+      throw new BadRequestException(
+        'Một đội gộp phải có từ 2 đến 5 người chơi',
+      );
 
     // Đội sống sót = đội vào phòng sớm nhất trong nhóm chọn, các đội còn lại
     // chuyển hết member sang rồi xoá (an toàn vì đang LOBBY, chưa có buzz nào)
@@ -576,7 +579,9 @@ export class ArenaService {
     // Đội đặt trước có thể còn 0 người — chỉ tính đội đã có người tham gia
     const teamsWithMembers = session.teams.filter((t) => t.members.length > 0);
     if (teamsWithMembers.length < 2)
-      throw new BadRequestException('Cần ít nhất 2 đội có người chơi để bắt đầu');
+      throw new BadRequestException(
+        'Cần ít nhất 2 đội có người chơi để bắt đầu',
+      );
     if (session.rounds.length === 0)
       throw new BadRequestException('Quiz không có câu hỏi');
 
@@ -866,5 +871,50 @@ export class ArenaService {
       ranking: teams.map((t, i) => ({ ...t, rank: i + 1 })),
       xpResults,
     };
+  }
+
+  // ─── Tự phục vụ: lịch sử Đấu trường của chính người dùng ──────────────────
+
+  // Trả về các phiên mà user đã từng vào (kể cả đang diễn ra) — dùng cho trang
+  // chủ học viên. Không lộ phiên của người khác, chỉ lấy theo membership của
+  // chính userId nên không cần kiểm tra allowlist riêng.
+  async getMyHistory(userId: string) {
+    const memberships = await this.prisma.arenaTeamMember.findMany({
+      where: { userId },
+      orderBy: { joinedAt: 'desc' },
+      take: 30,
+      include: {
+        arenaTeam: {
+          include: {
+            arenaSession: {
+              select: {
+                id: true,
+                name: true,
+                // joinCode an toàn để trả về ở đây: chỉ lấy phiên mà chính user
+                // đã là thành viên, tức là họ vốn đã biết mã để vào được
+                joinCode: true,
+                status: true,
+                updatedAt: true,
+                quiz: { select: { title: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return memberships.map((m) => ({
+      sessionId: m.arenaTeam.arenaSession.id,
+      sessionName: m.arenaTeam.arenaSession.name,
+      joinCode: m.arenaTeam.arenaSession.joinCode,
+      status: m.arenaTeam.arenaSession.status,
+      quizTitle: m.arenaTeam.arenaSession.quiz.title,
+      teamName: m.arenaTeam.name,
+      teamColor: m.arenaTeam.color,
+      score: m.arenaTeam.score,
+      rank: m.arenaTeam.rank,
+      joinedAt: m.joinedAt,
+      finishedAt: m.arenaTeam.arenaSession.updatedAt,
+    }));
   }
 }

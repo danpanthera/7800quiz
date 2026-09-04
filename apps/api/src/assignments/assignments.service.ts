@@ -53,10 +53,27 @@ export class AssignmentsService {
             instantFeedback: true,
           },
         },
+        // Lần làm bài gần nhất của chính user — để trang chủ hiện đúng trạng thái
+        // (chưa làm / đang làm dở / đã hết giờ / đã nộp) thay vì lúc nào cũng "Bắt đầu"
+        attempts: {
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            deadlineAt: true,
+            submissionId: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return assignments;
+    // Giữ nguyên toàn bộ field cũ, chỉ thêm myAttempt để không phá client đang dùng
+    return assignments.map(({ attempts, ...rest }) => ({
+      ...rest,
+      myAttempt: attempts[0] ?? null,
+    }));
   }
 }

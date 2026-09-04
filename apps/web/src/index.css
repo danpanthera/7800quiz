@@ -11,23 +11,27 @@
  *   max-width: 991px  ↔ dưới lg (phone + tablet, khớp AppLayout Drawer/Sider)
  */
 :root {
-  --primary: #1565C0;
-  --primary-light: #1976D2;
-  --primary-dark: #0D47A1;
-  --gold: #FFB300;
-  --bg-layout: #EEF2FF;
-  --sidebar-bg: #0D2045;
-  --sidebar-width: 248px;
-  --header-height: 64px;
-  /* Nhận diện thương hiệu Agribank: đỏ bordeaux + chữ trắng ngọc trai */
+  /* Nhận diện thương hiệu Agribank: đỏ bordeaux + chữ trắng ngọc trai.
+     Giá trị --agribank-red PHẢI khớp colorPrimary trong App.tsx (AntD cần hex thật
+     để tự tính sắc độ hover/active, không nhận var(--...)). */
   --agribank-red: #7A1428;
   --agribank-red-dark: #4E0D1A;
   --agribank-red-light: #9C2A3F;
   --pearl-white: #F8F4EC;
+  --gold: #FFB300;
+
+  /* Alias giữ tên cũ để không phải sửa mọi nơi đang dùng — đều trỏ về tông Agribank */
+  --primary: var(--agribank-red);
+  --primary-light: var(--agribank-red-light);
+  --primary-dark: var(--agribank-red-dark);
+  --bg-layout: #F8F4EC;
+  --sidebar-bg: var(--agribank-red-dark);
+  --sidebar-width: 248px;
+  --header-height: 64px;
   --radius: 8px;
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 16px rgba(21, 101, 192, 0.12);
-  --shadow-lg: 0 8px 32px rgba(21, 101, 192, 0.18);
+  --shadow-md: 0 4px 16px rgba(122, 20, 40, 0.12);
+  --shadow-lg: 0 8px 32px rgba(122, 20, 40, 0.18);
   --transition: all 0.2s ease;
 
   /* Vùng an toàn trên thiết bị có tai thỏ/thanh cử chỉ (iPhone) — cần viewport-fit=cover trong index.html mới có giá trị khác 0 */
@@ -72,7 +76,7 @@ select {
 }
 
 .portal-sider {
-  background: #10233f !important;
+  background: var(--agribank-red-dark) !important;
   box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08);
   position: sticky !important;
   top: 0;
@@ -96,8 +100,8 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #10233f;
-  background: #f0b429;
+  color: var(--agribank-red-dark);
+  background: var(--gold);
   flex: 0 0 auto;
 }
 
@@ -131,7 +135,7 @@ select {
 }
 
 .portal-navigation .ant-menu-item-selected {
-  background: #246b5a !important;
+  background: var(--agribank-red) !important;
 }
 
 .portal-main {
@@ -182,7 +186,7 @@ select {
 
 .portal-user-menu:hover,
 .portal-user-menu:focus-visible {
-  border-color: #246b5a;
+  border-color: var(--agribank-red);
   outline: none;
 }
 
@@ -215,7 +219,7 @@ select {
 
 .portal-drawer .ant-drawer-header {
   padding: 0;
-  background: #10233f;
+  background: var(--agribank-red-dark);
   border-bottom-color: rgba(255, 255, 255, 0.1) !important;
 }
 
@@ -275,7 +279,7 @@ select {
 
 .manage-record-heading h5.ant-typography {
   margin: 0 0 8px;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 16px;
   line-height: 1.5;
 }
@@ -336,14 +340,14 @@ select {
 
 .page-title-row h1.ant-typography {
   margin: 3px 0 0;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 30px;
   line-height: 1.25;
   letter-spacing: 0;
 }
 
 .page-eyebrow {
-  color: #246b5a;
+  color: var(--agribank-red);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -375,13 +379,13 @@ select {
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: #246b5a;
+  background: var(--agribank-red);
   font-size: 18px;
 }
 
 .quiz-card h3.ant-typography {
   margin: 10px 0 8px;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 18px;
   line-height: 1.45;
 }
@@ -425,6 +429,174 @@ select {
   text-align: right;
 }
 
+/* ── Trang chủ học viên (dashboard) ───────────────────────────────────────── */
+
+.dash-hero {
+  border: 0 !important;
+  border-radius: 14px !important;
+  color: var(--pearl-white);
+  background-color: var(--agribank-red);
+  background-image: linear-gradient(135deg, var(--agribank-red-dark) 0%, var(--agribank-red) 58%, var(--agribank-red-light) 100%);
+}
+
+.dash-hero .ant-card-body {
+  padding: 22px 24px;
+}
+
+.dash-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.dash-hero-greeting {
+  color: rgba(248, 244, 236, 0.72);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.dash-hero-name.ant-typography {
+  margin: 4px 0 0;
+  color: var(--pearl-white);
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+.dash-hero-level {
+  padding: 8px 16px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--agribank-red-dark);
+  background: var(--gold);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dash-hero-progress {
+  margin-top: 18px;
+}
+
+.dash-hero-progress .ant-progress-text {
+  color: var(--pearl-white) !important;
+}
+
+.dash-hero-xp {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(248, 244, 236, 0.82);
+  font-size: 12px;
+}
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.dash-stat {
+  padding: 14px 16px;
+  border: 1px solid #eadfd6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.dash-stat dt {
+  margin: 0;
+  color: #7d6a63;
+  font-size: 12px;
+}
+
+.dash-stat dd {
+  margin: 6px 0 0;
+  color: var(--agribank-red-dark);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.dash-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.dash-badge {
+  padding: 16px 12px;
+  border: 1px solid #eadfd6;
+  border-radius: 12px;
+  background: #fffdfa;
+  text-align: center;
+}
+
+.dash-badge-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.dash-badge-name {
+  margin-top: 8px;
+  color: var(--agribank-red-dark);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.dash-badge-date {
+  margin-top: 2px;
+  color: #8b7a72;
+  font-size: 11px;
+}
+
+.dash-arena-join {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.dash-arena-join .ant-input {
+  letter-spacing: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dash-activity-amount {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dash-activity-amount.is-plus { color: #27AE60; }
+.dash-activity-amount.is-minus { color: #E53935; }
+
+@media (max-width: 575px) {
+  .dash-hero .ant-card-body { padding: 18px 16px; }
+  .dash-hero-name.ant-typography { font-size: 22px; }
+  .dash-stat dd { font-size: 19px; }
+
+  /* Dòng Đấu trường trên phone: xếp dọc thay vì ép tên phiên vào cột hẹp gây vỡ chữ */
+  .dash-arena-list .ant-list-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .dash-arena-list .ant-list-item-meta {
+    width: 100%;
+  }
+
+  .dash-arena-list .ant-list-item-action {
+    margin-inline-start: 0;
+  }
+}
+
 .auth-page {
   min-height: 100svh;
   padding: 32px 20px;
@@ -447,13 +619,13 @@ select {
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  color: #246b5a;
+  color: var(--agribank-red);
   font-size: 24px;
 }
 
 .auth-panel-heading h2.ant-typography {
   margin: 0 0 4px;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 24px;
   letter-spacing: 0;
 }
@@ -713,7 +885,7 @@ select {
 
 .quiz-player-header h1.ant-typography {
   margin: 4px 0 8px;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 30px;
   line-height: 1.3;
   letter-spacing: 0;
@@ -785,7 +957,7 @@ select {
 }
 
 .quiz-navigation-summary strong {
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: 14px;
 }
 
@@ -839,7 +1011,7 @@ select {
 .quiz-question-card h3.ant-typography {
   max-width: 880px;
   margin: 28px 0 24px;
-  color: #10233f;
+  color: var(--agribank-red-dark);
   font-size: clamp(20px, 2vw, 26px);
   line-height: 1.55;
   letter-spacing: 0;
@@ -932,7 +1104,7 @@ select {
 }
 
 .quiz-result .ant-result-icon {
-  color: #246b5a;
+  color: var(--agribank-red);
 }
 
 .quiz-review-list {
@@ -1065,133 +1237,8 @@ select {
 /* ── Custom scrollbar ─────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(21, 101, 192, 0.25); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(21, 101, 192, 0.45); }
-
-/* ── Sidebar ──────────────────────────────────────────────────────────────── */
-.admin-sider {
-  background: linear-gradient(180deg, #0D2045 0%, #1A3A6E 100%) !important;
-  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.2);
-  position: relative;
-  z-index: 10;
-}
-
-.admin-sider-logo {
-  padding: 20px 16px 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 8px;
-}
-
-.admin-sider-logo .logo-icon {
-  width: 36px;
-  height: 36px;
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.admin-sider-logo .logo-text {
-  color: #fff;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
-  line-height: 1.2;
-}
-
-.admin-sider-logo .logo-sub {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 11px;
-  font-weight: 400;
-}
-
-/* Ant menu dark override */
-.admin-sider .ant-menu-dark {
-  background: transparent !important;
-}
-
-.admin-sider .ant-menu-item {
-  transition: var(--transition);
-  font-weight: 500;
-}
-
-.admin-sider .ant-menu-item:hover {
-  background: rgba(255, 255, 255, 0.09) !important;
-}
-
-.admin-sider .ant-menu-item-selected {
-  background: rgba(91, 163, 255, 0.18) !important;
-  border-left: 3px solid #5BA3FF;
-}
-
-.admin-sider .ant-menu-item a {
-  color: rgba(255, 255, 255, 0.82) !important;
-  font-weight: 500;
-}
-
-.admin-sider .ant-menu-item-selected a {
-  color: #ffffff !important;
-  font-weight: 600;
-}
-
-/* ── Header ───────────────────────────────────────────────────────────────── */
-.admin-header {
-  background: #fff !important;
-  box-shadow: 0 1px 0 #E8EDF5, var(--shadow-sm) !important;
-  height: var(--header-height) !important;
-  line-height: var(--header-height) !important;
-  padding: 0 24px !important;
-  display: flex !important;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  position: sticky;
-  top: 0;
-  z-index: 9;
-}
-
-.admin-user-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  border-radius: 24px;
-  background: #F5F7FF;
-  border: 1px solid #E3EAFF;
-  cursor: default;
-  transition: var(--transition);
-}
-
-.admin-user-info:hover {
-  background: #EEF2FF;
-  border-color: #C8D8FF;
-}
-
-/* ── Content area ─────────────────────────────────────────────────────────── */
-.admin-content {
-  margin: 20px !important;
-  min-height: calc(100vh - var(--header-height) - 40px);
-}
-
-/* ── Page header card ─────────────────────────────────────────────────────── */
-.page-header-card {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 12px;
-  padding: 20px 24px;
-  margin-bottom: 16px;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
+::-webkit-scrollbar-thumb { background: rgba(122, 20, 40,0.25); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(122, 20, 40,0.45); }
 
 /* ── Ant Design overrides ─────────────────────────────────────────────────── */
 
@@ -1205,17 +1252,17 @@ select {
 }
 
 .ant-btn-primary {
-  box-shadow: 0 4px 12px rgba(21, 101, 192, 0.30) !important;
+  box-shadow: 0 4px 12px rgba(122, 20, 40,0.30) !important;
 }
 
 .ant-btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(21, 101, 192, 0.38) !important;
+  box-shadow: 0 6px 16px rgba(122, 20, 40,0.38) !important;
 }
 
 .ant-btn-primary:active {
   transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(21, 101, 192, 0.25) !important;
+  box-shadow: 0 2px 6px rgba(122, 20, 40,0.25) !important;
 }
 
 .ant-btn-default:hover {
@@ -1239,7 +1286,7 @@ select {
 }
 
 .ant-card:hover {
-  box-shadow: 0 4px 20px rgba(21, 101, 192, 0.10) !important;
+  box-shadow: 0 4px 20px rgba(122, 20, 40,0.10) !important;
 }
 
 /* Tables */
@@ -1269,25 +1316,25 @@ select {
 }
 
 .ant-modal-header {
-  border-bottom: 1px solid #EEF2FF !important;
+  border-bottom: 1px solid #EFE6DD !important;
   padding: 18px 24px !important;
 }
 
 .ant-modal-title {
   font-size: 17px !important;
   font-weight: 700 !important;
-  color: #0D2045 !important;
+  color: var(--agribank-red-dark) !important;
 }
 
 /* Drawer */
 .ant-drawer-header {
-  border-bottom: 1px solid #EEF2FF !important;
+  border-bottom: 1px solid #EFE6DD !important;
 }
 
 .ant-drawer-title {
   font-size: 16px !important;
   font-weight: 700 !important;
-  color: #0D2045 !important;
+  color: var(--agribank-red-dark) !important;
 }
 
 /* Form */
@@ -1301,12 +1348,12 @@ select {
 .ant-input-focused,
 .ant-input-affix-wrapper:focus,
 .ant-input-affix-wrapper-focused {
-  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.12) !important;
+  box-shadow: 0 0 0 3px rgba(122, 20, 40,0.12) !important;
 }
 
 /* Select */
 .ant-select-selector:focus-within {
-  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.12) !important;
+  box-shadow: 0 0 0 3px rgba(122, 20, 40,0.12) !important;
 }
 
 /* Tag */
@@ -1318,7 +1365,7 @@ select {
 
 /* Pagination */
 .ant-pagination-item-active {
-  box-shadow: 0 2px 8px rgba(21, 101, 192, 0.25) !important;
+  box-shadow: 0 2px 8px rgba(122, 20, 40,0.25) !important;
 }
 
 /* Popconfirm / Tooltip */
@@ -1375,7 +1422,7 @@ select {
   align-items: center;
   gap: 8px;
   font-weight: 700;
-  color: #10233f;
+  color: var(--agribank-red-dark);
 }
 
 

@@ -64,7 +64,7 @@ export default function ArenaPlayerPage() {
   const [joining, setJoining] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [myTeamId, setMyTeamId] = useState<string | null>(null)
-  const [myTeamColor, setMyTeamColor] = useState<string>('#1565C0')
+  const [myTeamColor, setMyTeamColor] = useState<string>('#7A1428')
   const [lobbyTeams, setLobbyTeams] = useState<ArenaTeam[]>([])
   const [currentQuestion, setCurrentQuestion] = useState<ArenaQuestion | null>(null)
   const [selected, setSelected] = useState<string[]>([])
@@ -388,7 +388,7 @@ export default function ArenaPlayerPage() {
                   disabled={hasAnswered || isRevealed}
                   onClick={() => toggleOption(opt.id, currentQuestion.question.questionType)}
                   style={{
-                    width: '100%', textAlign: 'left', border: isSelected ? '3px solid #0D2045' : '3px solid transparent',
+                    width: '100%', textAlign: 'left', border: isSelected ? '3px solid #4E0D1A' : '3px solid transparent',
                     background: bg, color: '#fff', borderRadius: 10, padding: '16px 18px',
                     fontSize: 15, fontWeight: 600, cursor: hasAnswered || isRevealed ? 'default' : 'pointer',
                     opacity: hasAnswered && !isSelected && !isRevealed ? 0.5 : 1,
