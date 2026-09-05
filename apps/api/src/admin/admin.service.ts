@@ -277,7 +277,9 @@ export class AdminService {
     // đã được "Lấy câu ngẫu nhiên" copy vào từng bộ đề (isBank=false), nếu
     // không con số sẽ phình to sai lệch mỗi lần ai đó dùng tính năng đó.
     return this.prisma.subject.findMany({
-      include: { _count: { select: { questions: { where: { isBank: true } } } } },
+      include: {
+        _count: { select: { questions: { where: { isBank: true } } } },
+      },
       orderBy: { name: 'asc' },
     });
   }
