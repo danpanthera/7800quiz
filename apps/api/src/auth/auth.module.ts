@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { getJwtSecret } from './jwt-secret';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './roles.guard';
 
@@ -10,7 +11,7 @@ import { RolesGuard } from './roles.guard';
   imports: [
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'change-this-secret',
+      secret: getJwtSecret(),
       signOptions: { expiresIn: (process.env.JWT_EXPIRES_IN ?? '8h') as any },
     }),
   ],

@@ -11,11 +11,12 @@ import { Server, Socket } from 'socket.io';
 import { ArenaService } from './arena.service';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
+import { getCorsOrigin } from '../cors-origin';
 
 const ARENA_HOST_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.TRAINER];
 
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: { origin: getCorsOrigin() },
   namespace: '/',
 })
 export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -251,7 +252,9 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
       const userRoom = this.getUserRoomName(data.userId);
       // Di chuyển đúng socket của người này sang room đội mới, rời room đội cũ
-      await this.server.in(userRoom).socketsJoin(this.getTeamRoomName(data.targetTeamId));
+      await this.server
+        .in(userRoom)
+        .socketsJoin(this.getTeamRoomName(data.targetTeamId));
       if (result.sourceTeamId) {
         await this.server
           .in(userRoom)
