@@ -121,6 +121,24 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     });
     if (activeAttempt) return this.get(userId, activeAttempt.id);
 
+    // 0 = không giới hạn (quy ước giống ExamSession.maxAttempts). Chỉ đếm attempt
+    // đã GRADED — đang làm dở đã được xử lý ở nhánh activeAttempt phía trên.
+    const maxAttempts = assignment.quiz?.maxAttempts ?? 1;
+    if (maxAttempts !== 0) {
+      const gradedCount = await this.prisma.quizAttempt.count({
+        where: {
+          userId,
+          assignmentId: assignment.id,
+          status: AttemptStatus.GRADED,
+        },
+      });
+      if (gradedCount >= maxAttempts) {
+        throw new ForbiddenException(
+          `Bạn đã dùng hết số lần làm bài cho phép (tối đa ${maxAttempts} lần)`,
+        );
+      }
+    }
+
     const { version, snapshot: rawSnapshot } = await this.ensureSnapshot(
       assignment.quizId,
     );
@@ -488,12 +506,21 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const xpResult = await this.awardSubmissionXp(
-      userId,
-      isPassed,
-      score,
-      submission.id,
-    );
+    // Chỉ cộng XP ở lần nộp bài ĐẦU TIÊN của lượt giao bài — làm lại (khi bộ đề
+    // cho phép thi lại nhiều lần) vẫn được chấm điểm/lưu kết quả bình thường,
+    // nhưng không cộng thêm XP để tránh cày điểm ảo bằng cách bấm làm lại.
+    const priorGradedCount = await this.prisma.quizAttempt.count({
+      where: {
+        userId,
+        assignmentId: attempt.assignmentId,
+        status: AttemptStatus.GRADED,
+        id: { not: attempt.id },
+      },
+    });
+    const xpResult =
+      priorGradedCount === 0
+        ? await this.awardSubmissionXp(userId, isPassed, score, submission.id)
+        : { levelUp: false, newLevel: 0, newBadges: [] };
     return {
       id: submission.id,
       status: submission.status,

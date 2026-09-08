@@ -51,29 +51,55 @@ export class AssignmentsService {
             topic: true,
             durationMin: true,
             instantFeedback: true,
+            maxAttempts: true,
           },
         },
-        // Lần làm bài gần nhất của chính user — để trang chủ hiện đúng trạng thái
-        // (chưa làm / đang làm dở / đã hết giờ / đã nộp) thay vì lúc nào cũng "Bắt đầu"
+        // Toàn bộ lần làm bài của chính user (chặn take:1 cũ) — để trang chủ vừa
+        // biết trạng thái gần nhất (chưa làm / đang làm dở / đã hết giờ / đã nộp)
+        // vừa đếm được đã dùng bao nhiêu lượt và lần nào điểm cao nhất khi bộ đề
+        // cho phép thi lại nhiều lần. Chặn take:50 để phòng dữ liệu bất thường,
+        // thực tế maxAttempts hợp lý sẽ không bao giờ chạm mức này.
         attempts: {
           where: { userId },
           orderBy: { createdAt: 'desc' },
-          take: 1,
+          take: 50,
           select: {
             id: true,
             status: true,
             deadlineAt: true,
             submissionId: true,
+            submission: { select: { score: true, isPassed: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Giữ nguyên toàn bộ field cũ, chỉ thêm myAttempt để không phá client đang dùng
-    return assignments.map(({ attempts, ...rest }) => ({
-      ...rest,
-      myAttempt: attempts[0] ?? null,
-    }));
+    // Giữ nguyên toàn bộ field cũ, chỉ thêm myAttempt/attemptsUsed/bestAttempt
+    // để không phá client đang dùng.
+    return assignments.map(({ attempts, ...rest }) => {
+      const gradedAttempts = attempts.filter((a) => a.status === 'GRADED');
+      const bestAttempt = gradedAttempts.reduce<
+        (typeof gradedAttempts)[number] | null
+      >(
+        (best, a) =>
+          !best || (a.submission?.score ?? -1) > (best.submission?.score ?? -1)
+            ? a
+            : best,
+        null,
+      );
+      return {
+        ...rest,
+        myAttempt: attempts[0] ?? null,
+        attemptsUsed: gradedAttempts.length,
+        bestAttempt: bestAttempt
+          ? {
+              submissionId: bestAttempt.submissionId,
+              score: bestAttempt.submission?.score ?? null,
+              isPassed: bestAttempt.submission?.isPassed ?? null,
+            }
+          : null,
+      };
+    });
   }
 }

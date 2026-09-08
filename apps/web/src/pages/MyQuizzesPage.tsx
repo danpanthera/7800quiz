@@ -9,7 +9,7 @@ import {
 } from 'antd'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
-import api from '../lib/api'
+import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
 
 const { Title, Text } = Typography
@@ -21,17 +21,26 @@ interface MyAttempt {
   submissionId: string | null
 }
 
+interface BestAttempt {
+  submissionId: string
+  score: number | null
+  isPassed: boolean | null
+}
+
 interface Assignment {
   id: string
   startAt: string | null
   endAt: string | null
   myAttempt: MyAttempt | null
+  attemptsUsed: number
+  bestAttempt: BestAttempt | null
   quiz: {
     id: string
     title: string
     description: string | null
     topic: string | null
     durationMin: number
+    maxAttempts: number
   }
 }
 
@@ -105,13 +114,18 @@ const XP_SOURCE_LABEL: Record<string, string> = {
 const formatDate = (value: string | null) =>
   value ? dayjs(value).format('DD/MM/YYYY') : null
 
-// Trạng thái hiển thị của 1 đề thi, suy từ lần làm bài gần nhất (myAttempt)
-type AssignmentState = 'not_started' | 'in_progress' | 'expired_attempt' | 'done'
+// Trạng thái hiển thị của 1 đề thi, suy từ lần làm bài gần nhất (myAttempt) +
+// số lần đã dùng so với giới hạn thi lại (quiz.maxAttempts, 0 = không giới hạn)
+type AssignmentState = 'not_started' | 'in_progress' | 'expired_attempt' | 'done' | 'done_can_retry'
 
 function getAssignmentState(assignment: Assignment): AssignmentState {
   const attempt = assignment.myAttempt
   if (!attempt) return 'not_started'
-  if (attempt.status === 'GRADED') return 'done'
+  if (attempt.status === 'GRADED') {
+    const { maxAttempts } = assignment.quiz
+    const canRetry = maxAttempts === 0 || assignment.attemptsUsed < maxAttempts
+    return canRetry ? 'done_can_retry' : 'done'
+  }
   return dayjs(attempt.deadlineAt).isBefore(dayjs()) ? 'expired_attempt' : 'in_progress'
 }
 
@@ -120,6 +134,7 @@ const STATE_TAG: Record<AssignmentState, { color: string; label: string }> = {
   in_progress: { color: 'processing', label: 'Đang làm dở' },
   expired_attempt: { color: 'error', label: 'Đã hết giờ' },
   done: { color: 'success', label: 'Đã nộp' },
+  done_can_retry: { color: 'gold', label: 'Có thể làm lại' },
 }
 
 export default function MyQuizzesPage() {
@@ -154,7 +169,7 @@ export default function MyQuizzesPage() {
       assignmentId,
     }).then((response) => response.data),
     onSuccess: (data) => navigate(`/my/attempts/${data.attempt.id}`),
-    onError: () => message.error('Không thể bắt đầu bài kiểm tra. Vui lòng thử lại.'),
+    onError: (e) => message.error(getErrorMessage(e, 'Không thể bắt đầu bài kiểm tra. Vui lòng thử lại.')),
   })
 
   const progress = progressQuery.data
@@ -284,14 +299,41 @@ export default function MyQuizzesPage() {
                           <dd>{formatDate(assignment.startAt) ?? 'Bây giờ'} - {formatDate(assignment.endAt) ?? 'Không giới hạn'}</dd>
                         </div>
                       )}
+                      {assignment.attemptsUsed > 0 && (
+                        <div>
+                          <dt><HistoryOutlined /> Số lần đã làm</dt>
+                          <dd>
+                            {assignment.quiz.maxAttempts === 0
+                              ? `${assignment.attemptsUsed} lần (không giới hạn)`
+                              : `${assignment.attemptsUsed}/${assignment.quiz.maxAttempts} lần`}
+                          </dd>
+                        </div>
+                      )}
                     </dl>
-                    {state === 'done' && assignment.myAttempt?.submissionId ? (
+                    {state === 'done' && assignment.bestAttempt ? (
                       <Button
                         block
-                        onClick={() => navigate(`/my/results/${assignment.myAttempt!.submissionId}`)}
+                        onClick={() => navigate(`/my/results/${assignment.bestAttempt!.submissionId}`)}
                       >
                         Xem kết quả
                       </Button>
+                    ) : state === 'done_can_retry' && assignment.bestAttempt ? (
+                      <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                        <Button
+                          type="primary"
+                          block
+                          onClick={() => startAttemptMutation.mutate(assignment.id)}
+                          loading={startAttemptMutation.isPending && startAttemptMutation.variables === assignment.id}
+                        >
+                          Làm lại
+                        </Button>
+                        <Button
+                          block
+                          onClick={() => navigate(`/my/results/${assignment.bestAttempt!.submissionId}`)}
+                        >
+                          Xem kết quả
+                        </Button>
+                      </Space>
                     ) : state === 'in_progress' && assignment.myAttempt ? (
                       <Button
                         type="primary"

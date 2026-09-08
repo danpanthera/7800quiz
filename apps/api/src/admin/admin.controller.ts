@@ -175,6 +175,7 @@ export class AdminController {
       durationMin: number;
       passScore?: number;
       instantFeedback?: boolean;
+      maxAttempts?: number;
     },
   ) {
     return this.adminService.createQuiz(body);

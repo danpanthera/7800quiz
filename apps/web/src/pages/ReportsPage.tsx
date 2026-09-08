@@ -24,6 +24,7 @@ interface ReportRow {
   score: number | null
   status: string
   submittedAt: string | null
+  isBestForUser: boolean
 }
 
 interface Dept {
@@ -174,10 +175,14 @@ export default function ReportsPage() {
   }, [rows, filterBranch, filterDept, filterQuiz, filterScore, searchName])
 
   const gradedRows = filtered.filter((r) => r.status === 'GRADED' && r.score !== null)
-  const avgScore = gradedRows.length > 0
-    ? Math.round(gradedRows.reduce((s, r) => s + (r.score ?? 0), 0) / gradedRows.length)
+  // Bộ đề cho phép thi lại nên 1 người có thể có nhiều bài nộp — thống kê chỉ
+  // tính bài điểm cao nhất mỗi người/mỗi bộ đề (isBestForUser) để không cộng
+  // dồn nhầm các lần thi lại của cùng 1 người vào điểm trung bình/tỷ lệ đạt.
+  const officialRows = gradedRows.filter((r) => r.isBestForUser)
+  const avgScore = officialRows.length > 0
+    ? Math.round(officialRows.reduce((s, r) => s + (r.score ?? 0), 0) / officialRows.length)
     : 0
-  const passCount = gradedRows.filter((r) => (r.score ?? 0) >= 60).length
+  const passCount = officialRows.filter((r) => (r.score ?? 0) >= 60).length
 
   const renderReportActions = (r: ReportRow) => (
     <Popconfirm
@@ -215,11 +220,12 @@ export default function ReportsPage() {
       title: 'Điểm',
       dataIndex: 'score',
       sorter: (a, b) => (a.score ?? -1) - (b.score ?? -1),
-      render: (v: number | null) =>
+      render: (v: number | null, r) =>
         v !== null ? (
           <Space>
             <Progress percent={Math.round(v)} size="small" style={{ width: 90 }} />
             <Tag color={(v >= 60) ? 'success' : 'error'}>{v >= 60 ? 'Đạt' : 'Chưa đạt'}</Tag>
+            {r.isBestForUser === false && <Tag>Lần thi lại</Tag>}
           </Space>
         ) : (
           <Tag>Chưa nộp</Tag>
@@ -278,7 +284,7 @@ export default function ReportsPage() {
             <Statistic
               title="Đạt (≥ 60%)"
               value={passCount}
-              suffix={gradedRows.length ? `/ ${gradedRows.length}` : ''}
+              suffix={officialRows.length ? `/ ${officialRows.length}` : ''}
             />
           </Card>
         </Col>

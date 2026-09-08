@@ -20,6 +20,7 @@ import {
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/useAuth'
 import { useDeviceType } from '../hooks/useDeviceType'
+import { useScreenTimeReminder } from '../hooks/useScreenTimeReminder'
 import type { UserRole } from '../lib/permissions'
 
 const { Sider, Header, Content } = Layout
@@ -85,6 +86,7 @@ export default function AppLayout() {
   const { category } = useDeviceType()
   const isDesktop = category === 'desktop'
   const [navigationOpen, setNavigationOpen] = useState(false)
+  useScreenTimeReminder()
 
   // Đóng Drawer khi đổi route — cập nhật state ngay trong lúc render (theo khuyến nghị của React
   // cho việc "điều chỉnh state theo thay đổi của prop") thay vì dùng useEffect, tránh 1 nhịp render

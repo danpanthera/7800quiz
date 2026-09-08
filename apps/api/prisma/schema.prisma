@@ -71,6 +71,9 @@ model Quiz {
   // chọn bị khoá. Mặc định TẮT — chế độ này lộ đáp án ngay trong lúc làm bài nên
   // chỉ bật thủ công cho đề luyện tập, không dùng cho kỳ thi chính thức.
   instantFeedback Boolean  @default(false) @map("instant_feedback")
+  // Số lần được phép làm bài (tính theo Submission đã chấm) cho mỗi lượt giao
+  // bài (Assignment). Mặc định 1 để giữ đúng hành vi cũ; 0 = không giới hạn.
+  maxAttempts     Int      @default(1) @map("max_attempts")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

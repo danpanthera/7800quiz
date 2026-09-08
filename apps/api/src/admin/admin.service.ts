@@ -760,6 +760,7 @@ export class AdminService {
     durationMin: number;
     passScore?: number;
     instantFeedback?: boolean;
+    maxAttempts?: number;
   }) {
     return this.prisma.quiz.create({ data });
   }
@@ -774,6 +775,7 @@ export class AdminService {
       passScore?: number;
       isActive?: boolean;
       instantFeedback?: boolean;
+      maxAttempts?: number;
     },
   ) {
     return this.prisma.quiz.update({ where: { id }, data });
@@ -1078,10 +1080,27 @@ export class AdminService {
             },
           },
         },
-        quizVersion: { include: { quiz: { select: { title: true } } } },
+        quizVersion: {
+          include: { quiz: { select: { id: true, title: true } } },
+        },
       },
       orderBy: { submittedAt: 'desc' },
     });
+
+    // Bộ đề cho phép thi lại nhiều lần nên 1 người có thể có nhiều Submission
+    // cho cùng 1 quiz — đánh dấu bản điểm cao nhất mỗi (user, quiz) là kết quả
+    // "chính thức" để trang Báo cáo tính đúng điểm trung bình/tỷ lệ đạt, đồng
+    // thời vẫn giữ đủ mọi lần thi trong danh sách trả về (không ẩn dữ liệu).
+    const bestScoreByKey = new Map<string, number>();
+    for (const s of rows) {
+      if (s.score === null) continue;
+      const key = `${s.userId}::${s.quizVersion?.quiz?.id ?? ''}`;
+      const current = bestScoreByKey.get(key);
+      if (current === undefined || s.score > current) {
+        bestScoreByKey.set(key, s.score);
+      }
+    }
+
     return rows.map((s) => ({
       id: s.id,
       userId: s.userId,
@@ -1094,6 +1113,10 @@ export class AdminService {
       score: s.score,
       status: s.status,
       submittedAt: s.submittedAt,
+      isBestForUser:
+        s.score !== null &&
+        bestScoreByKey.get(`${s.userId}::${s.quizVersion?.quiz?.id ?? ''}`) ===
+          s.score,
     }));
   }
 
@@ -1137,7 +1160,9 @@ export class AdminService {
     await this.prisma.xpTransaction.deleteMany({
       where: {
         referenceId: { in: submissionIds },
-        source: { in: [XpSource.EXAM_PASS, XpSource.EXAM_FAIL, XpSource.EXAM_PERFECT] },
+        source: {
+          in: [XpSource.EXAM_PASS, XpSource.EXAM_FAIL, XpSource.EXAM_PERFECT],
+        },
       },
     });
 

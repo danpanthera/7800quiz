@@ -13,6 +13,7 @@ import api, { getErrorMessage } from '../lib/api'
 interface Quiz {
   id: string; title: string; description?: string; topic?: string
   durationMin: number; passScore?: number; isActive: boolean; instantFeedback?: boolean
+  maxAttempts?: number
   _count: { questions: number; assignments: number }
 }
 interface Subject { id: string; name: string; _count?: { questions: number } }
@@ -142,7 +143,7 @@ export default function QuizzesPage() {
     setEditQuiz(null)
     quizForm.resetFields()
     quizForm.setFieldsValue({
-      durationMin: 30, passScore: 70, isActive: true, instantFeedback: false,
+      durationMin: 30, passScore: 70, isActive: true, instantFeedback: false, maxAttempts: 1,
       autoPickEnabled: false, subjectRatios: [{ percent: 100 }],
     })
     setQuizModalOpen(true)
@@ -261,6 +262,7 @@ export default function QuizzesPage() {
         )}
         cardMeta={[
           { label: 'Thời gian', render: (quiz) => `${quiz.durationMin} phút` },
+          { label: 'Số lần thi', render: (quiz) => (quiz.maxAttempts === 0 ? 'Không giới hạn' : `${quiz.maxAttempts ?? 1} lần`) },
           { label: 'Câu hỏi', render: (quiz) => quiz._count.questions },
           { label: 'Phân công', render: (quiz) => quiz._count.assignments },
         ]}
@@ -297,6 +299,14 @@ export default function QuizzesPage() {
               <Switch />
             </Form.Item>
           </Space>
+          <Form.Item
+            name="maxAttempts"
+            label="Số lần thi tối đa"
+            rules={[{ required: true, message: 'Nhập số lần thi tối đa' }]}
+            extra="0 = không giới hạn số lần thi lại."
+          >
+            <InputNumber min={0} max={99} style={{ width: 140 }} />
+          </Form.Item>
           <Form.Item
             name="instantFeedback"
             label="Phản hồi tức thì (kiểu Quizizz)"

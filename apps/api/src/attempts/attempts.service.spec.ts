@@ -58,6 +58,7 @@ describe('AttemptsService', () => {
       quizAttempt: {
         findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(0),
         create: jest
           .fn()
           .mockImplementation(({ data }) => Promise.resolve({ ...data })),
@@ -104,6 +105,80 @@ describe('AttemptsService', () => {
     expect(result.quiz.questions[0]).not.toHaveProperty('explanation');
     expect(result.quiz.questions[0].subjectName).toBe('Tín dụng');
     expect(result.quiz.questions[0]).not.toHaveProperty('subjectId');
+  });
+
+  it('chặn bắt đầu attempt mới khi đã dùng hết số lần thi cho phép', async () => {
+    const prisma = {
+      quizAttempt: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null), // không có attempt IN_PROGRESS
+        count: jest.fn().mockResolvedValue(2), // đã dùng đủ 2/2 lần GRADED
+      },
+    };
+    const assignments = {
+      getForUser: jest.fn().mockResolvedValue([
+        {
+          id: assignmentId,
+          quizId: 'quiz-1',
+          quiz: { ...snapshot.quiz, maxAttempts: 2 },
+        },
+      ]),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      assignments as never,
+      {} as never,
+    );
+
+    await expect(
+      service.start('user-1', { id: attemptId, assignmentId }),
+    ).rejects.toThrow(/hết số lần làm bài/);
+    expect(prisma.quizAttempt.count).toHaveBeenCalledWith({
+      where: { userId: 'user-1', assignmentId, status: AttemptStatus.GRADED },
+    });
+  });
+
+  it('cho phép làm lại khi bộ đề đặt maxAttempts = 0 (không giới hạn)', async () => {
+    const prisma = {
+      quizAttempt: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(50), // đã làm rất nhiều lần vẫn không sao
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+      },
+      quizVersion: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'version-1',
+          version: 1,
+          snapshot,
+        }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const assignments = {
+      getForUser: jest.fn().mockResolvedValue([
+        {
+          id: assignmentId,
+          quizId: 'quiz-1',
+          quiz: { ...snapshot.quiz, maxAttempts: 0 },
+        },
+      ]),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      assignments as never,
+      {} as never,
+    );
+
+    const result = await service.start('user-1', {
+      id: attemptId,
+      assignmentId,
+    });
+
+    expect(prisma.quizAttempt.count).not.toHaveBeenCalled();
+    expect(result.quiz.questions[0].subjectName).toBe('Tín dụng');
   });
 
   it('bổ sung lĩnh vực cho snapshot cũ thiếu key, không ghi đè QuizVersion', async () => {
@@ -328,6 +403,7 @@ describe('AttemptsService', () => {
   it('chấm answers đã lưu trên server từ snapshot và tạo một Submission chính thức', async () => {
     const storedAttempt = {
       id: attemptId,
+      assignmentId,
       quizId: 'quiz-1',
       quizVersionId: 'version-1',
       status: AttemptStatus.IN_PROGRESS,
@@ -347,6 +423,7 @@ describe('AttemptsService', () => {
       quizAttempt: {
         findFirst: jest.fn().mockResolvedValue(storedAttempt),
         update: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(0), // chưa có lần GRADED nào trước đó
       },
       submission: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -388,6 +465,73 @@ describe('AttemptsService', () => {
       'user-1',
       true,
     );
+    expect(gamification.awardXp).toHaveBeenCalled();
+    expect(result).toMatchObject({ id: attemptId, score: 100, isPassed: true });
+  });
+
+  it('không cộng XP khi đây là lần nộp bài thứ 2 trở đi của cùng lượt giao bài', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      assignmentId,
+      quizId: 'quiz-1',
+      quizVersionId: 'version-1',
+      status: AttemptStatus.IN_PROGRESS,
+      startedAt: new Date('2026-09-03T08:00:00.000Z'),
+      deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+      timedOut: false,
+      quizVersion: { snapshot },
+      answers: [
+        {
+          questionId: 'question-1',
+          selectedOptionIds: ['option-1'],
+          updatedAt: new Date('2026-09-03T08:05:00.000Z'),
+        },
+      ],
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue(storedAttempt),
+        update: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(1), // đã có 1 lần GRADED trước đó (làm lại)
+      },
+      submission: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: attemptId,
+          status: 'GRADED',
+          score: 100,
+        }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const gamification = {
+      updateActivity: jest.fn().mockResolvedValue(undefined),
+      incrementSubmissionStats: jest.fn().mockResolvedValue(undefined),
+      awardXp: jest.fn().mockResolvedValue({
+        levelUp: false,
+        newLevel: 1,
+        newBadges: [],
+      }),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      gamification as never,
+    );
+
+    const result = await service.finalize('user-1', attemptId, false);
+
+    expect(prisma.quizAttempt.count).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        assignmentId,
+        status: AttemptStatus.GRADED,
+        id: { not: attemptId },
+      },
+    });
+    expect(gamification.awardXp).not.toHaveBeenCalled();
+    expect(gamification.incrementSubmissionStats).not.toHaveBeenCalled();
+    expect(gamification.updateActivity).not.toHaveBeenCalled();
     expect(result).toMatchObject({ id: attemptId, score: 100, isPassed: true });
   });
 });
