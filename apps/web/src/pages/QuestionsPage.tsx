@@ -71,7 +71,7 @@ export default function QuestionsPage() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null)
   const [subjectDrawerOpen, setSubjectDrawerOpen] = useState(false)
 
-  // ── Resizable subject sider (chỉ áp dụng ở view Sider, tablet ngang/desktop) ──
+  // ── Thanh bên lĩnh vực có thể đổi độ rộng (chỉ áp dụng ở view Sider, tablet ngang/desktop) ──
   const [siderWidth, setSiderWidth] = useState(240)
   // isResizing: state (đọc an toàn lúc render, tắt transition CSS khi đang kéo).
   // isResizingRef: ref song song, chỉ dùng trong closure mousemove gắn trực tiếp vào window.
@@ -111,13 +111,13 @@ export default function QuestionsPage() {
   const [questionForm] = Form.useForm()
   const questionTypeWatch = Form.useWatch('questionType', questionForm)
 
-  // ── Duplicate + spell check state for manual add ──────────────────────
+  // ── Trạng thái kiểm tra trùng lặp + chính tả khi thêm câu hỏi thủ công ──
   const [dupWarnings, setDupWarnings] = useState<DupMatch[]>([])
   const [spellWarnings, setSpellWarnings] = useState<SpellWarning[]>([])
   const [checking, setChecking] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Import preview state ──────────────────────────────────────────────
+  // ── Trạng thái xem trước dữ liệu import ─────────────────────────────────
   const [previewStep, setPreviewStep] = useState<'upload' | 'preview'>('upload')
   const [previewData, setPreviewData] = useState<PreviewRow[]>([])
   const [previewErrors, setPreviewErrors] = useState<string[]>([])
@@ -158,7 +158,7 @@ export default function QuestionsPage() {
     if (!questionDrawerOpen) { setDupWarnings([]); setSpellWarnings([]) }
   }
 
-  // ── Subjects ──────────────────────────────────────────────────────────
+  // ── Lĩnh vực ─────────────────────────────────────────────────────────
   const { data: subjects = [] } = useQuery<Subject[]>({
     queryKey: ['subjects'],
     queryFn: () => api.get('/admin/subjects').then((r) => r.data),
@@ -181,7 +181,7 @@ export default function QuestionsPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }) },
   })
 
-  // ── Bank Questions ────────────────────────────────────────────────────
+  // ── Ngân hàng câu hỏi ────────────────────────────────────────────────
   const { data: questions = [], isLoading } = useQuery<Question[]>({
     queryKey: ['bank-questions', selectedSubjectId],
     queryFn: () =>
@@ -233,7 +233,7 @@ export default function QuestionsPage() {
     onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi xóa toàn bộ câu hỏi')),
   })
 
-  // ── Handlers ─────────────────────────────────────────────────────────
+  // ── Hàm xử lý ────────────────────────────────────────────────────────
   const openNewSubjectModal = () => { setEditSubject(null); subjectForm.resetFields(); setSubjectModalOpen(true) }
   const openEditSubjectModal = (s: Subject) => {
     setEditSubject(s); subjectForm.setFieldsValue({ name: s.name, description: s.description }); setSubjectModalOpen(true)
@@ -270,16 +270,17 @@ export default function QuestionsPage() {
   }
 
   const handleQuestionSubmit = (values: QuestionFormValues) => {
+    // Thứ tự hiển thị/đúng (câu ORDERING) lấy theo vị trí cuối cùng trong danh sách,
+    // không phụ thuộc orderIndex khởi tạo ban đầu — để nút ↑↓ có tác dụng thật.
+    const options = (values.options ?? []).map((opt, idx) => ({ ...opt, orderIndex: idx + 1 }))
     if (editQuestion) {
       updateQuestionMutation.mutate({
         id: editQuestion.id,
         content: values.content, imageUrl: values.imageUrl, explanation: values.explanation,
         subjectId: values.subjectId, points: values.points,
+        questionType: values.questionType, options,
       })
     } else {
-      // Thứ tự hiển thị/đúng (câu ORDERING) lấy theo vị trí cuối cùng trong danh sách,
-      // không phụ thuộc orderIndex khởi tạo ban đầu — để nút ↑↓ có tác dụng thật.
-      const options = (values.options ?? []).map((opt, idx) => ({ ...opt, orderIndex: idx + 1 }))
       createQuestionMutation.mutate({ ...values, options })
     }
   }
@@ -445,7 +446,7 @@ export default function QuestionsPage() {
     closeRowEdit()
   }
 
-  // ── Columns ───────────────────────────────────────────────────────────
+  // ── Cột bảng ──────────────────────────────────────────────────────────
   const columns = [
     {
       title: 'Câu hỏi', dataIndex: 'content', ellipsis: true,
@@ -527,7 +528,7 @@ export default function QuestionsPage() {
 
   return (
     <Layout style={{ minHeight: '100%', background: 'transparent' }}>
-      {/* Sidebar lĩnh vực — chỉ hiện từ tablet ngang/desktop, phone dùng Select + Drawer bên dưới */}
+      {/* Thanh bên lĩnh vực — chỉ hiện từ tablet ngang/desktop, điện thoại dùng Select + Drawer bên dưới */}
       {!isCardView && (
         <Sider
           width={siderWidth}
@@ -721,7 +722,7 @@ export default function QuestionsPage() {
             }}
           </Form.Item>
 
-          {/* Duplicate warnings */}
+          {/* Cảnh báo trùng lặp */}
           {!editQuestion && dupWarnings.length > 0 && (
             <Alert
               type={dupWarnings[0].level === 'exact' ? 'error' : 'warning'}
@@ -744,7 +745,7 @@ export default function QuestionsPage() {
             />
           )}
 
-          {/* Spell check warnings */}
+          {/* Cảnh báo chính tả */}
           {!editQuestion && spellWarnings.length > 0 && (
             <Alert
               type="warning"
@@ -778,43 +779,39 @@ export default function QuestionsPage() {
           <Form.Item name="points" label="Điểm" rules={[{ required: true }]}>
             <Input type="number" style={{ width: 100 }} />
           </Form.Item>
-          {!editQuestion && (
-            <>
-              <Divider>{questionTypeWatch === 'ORDERING' ? 'Thứ tự đúng (sắp từ trên xuống)' : 'Đáp án'}</Divider>
-              {questionTypeWatch === 'ORDERING' && (
-                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-                  Nhập nội dung theo đúng thứ tự — dùng nút ↑↓ để sắp lại nếu cần. Hệ thống sẽ xáo vị trí hiển thị
-                  cho từng người làm bài, thứ tự bạn nhập ở đây là đáp án đúng.
-                </Text>
-              )}
-              <Form.List name="options">
-                {(fields, { move }) => (
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    {fields.map((field, idx) => (
-                      <div key={field.key} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        {questionTypeWatch === 'ORDERING' ? (
-                          <span className="quiz-option-letter">{idx + 1}</span>
-                        ) : (
-                          <Form.Item name={[field.name, 'isCorrect']} valuePropName="checked" style={{ margin: 0 }}>
-                            <Checkbox />
-                          </Form.Item>
-                        )}
-                        <Form.Item name={[field.name, 'content']} style={{ flex: 1, margin: 0 }} rules={[{ required: true, message: ' ' }]}>
-                          <Input placeholder={`Đáp án ${String.fromCharCode(65 + idx)}`} spellCheck lang="vi" />
-                        </Form.Item>
-                        {questionTypeWatch === 'ORDERING' && (
-                          <Space size={4}>
-                            <Button size="small" disabled={idx === 0} onClick={() => move(idx, idx - 1)}>↑</Button>
-                            <Button size="small" disabled={idx === fields.length - 1} onClick={() => move(idx, idx + 1)}>↓</Button>
-                          </Space>
-                        )}
-                      </div>
-                    ))}
-                  </Space>
-                )}
-              </Form.List>
-            </>
+          <Divider>{questionTypeWatch === 'ORDERING' ? 'Thứ tự đúng (sắp từ trên xuống)' : 'Đáp án'}</Divider>
+          {questionTypeWatch === 'ORDERING' && (
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Nhập nội dung theo đúng thứ tự — dùng nút ↑↓ để sắp lại nếu cần. Hệ thống sẽ xáo vị trí hiển thị
+              cho từng người làm bài, thứ tự bạn nhập ở đây là đáp án đúng.
+            </Text>
           )}
+          <Form.List name="options">
+            {(fields, { move }) => (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {fields.map((field, idx) => (
+                  <div key={field.key} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {questionTypeWatch === 'ORDERING' ? (
+                      <span className="quiz-option-letter">{idx + 1}</span>
+                    ) : (
+                      <Form.Item name={[field.name, 'isCorrect']} valuePropName="checked" style={{ margin: 0 }}>
+                        <Checkbox />
+                      </Form.Item>
+                    )}
+                    <Form.Item name={[field.name, 'content']} style={{ flex: 1, margin: 0 }} rules={[{ required: true, message: ' ' }]}>
+                      <Input placeholder={`Đáp án ${String.fromCharCode(65 + idx)}`} spellCheck lang="vi" />
+                    </Form.Item>
+                    {questionTypeWatch === 'ORDERING' && (
+                      <Space size={4}>
+                        <Button size="small" disabled={idx === 0} onClick={() => move(idx, idx - 1)}>↑</Button>
+                        <Button size="small" disabled={idx === fields.length - 1} onClick={() => move(idx, idx + 1)}>↓</Button>
+                      </Space>
+                    )}
+                  </div>
+                ))}
+              </Space>
+            )}
+          </Form.List>
         </Form>
       </Drawer>
 
@@ -890,7 +887,7 @@ export default function QuestionsPage() {
           </>
         ) : (
           <>
-            {/* Summary badges */}
+            {/* Các thẻ tổng hợp số liệu */}
             <Space style={{ marginBottom: 12 }} wrap>
               <Badge
                 count={previewData.filter((r) => !r.duplicateLevel).length}
