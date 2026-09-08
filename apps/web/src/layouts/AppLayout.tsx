@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
 import {
+  ApartmentOutlined,
   BankOutlined,
   BarChartOutlined,
   BookOutlined,
@@ -47,6 +48,7 @@ const trainingNavigation: NavigationItem[] = [
 
 const adminNavigation: NavigationItem[] = [
   { key: '/manage/staff', icon: <IdcardOutlined />, label: 'Quản lý cán bộ' },
+  { key: '/manage/branches', icon: <ApartmentOutlined />, label: 'Chi nhánh/Phòng ban' },
   { key: '/manage/classes', icon: <TeamOutlined />, label: 'Lớp học' },
   { key: '/manage/academic-years', icon: <CalendarOutlined />, label: 'Năm học' },
 ]

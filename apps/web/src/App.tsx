@@ -20,6 +20,7 @@ import AcademicYearsPage from './pages/AcademicYearsPage'
 import ClassesPage from './pages/ClassesPage'
 import ExamSessionsPage from './pages/ExamSessionsPage'
 import CanBoPage from './pages/CanBoPage'
+import BranchesPage from './pages/BranchesPage'
 import ArenaPage from './pages/ArenaPage'
 import ArenaPlayerPage from './pages/ArenaPlayerPage'
 import AchievementsPage from './pages/AchievementsPage'
@@ -189,6 +190,7 @@ export default function App() {
                   <Route path="manage/academic-years" element={<AcademicYearsPage />} />
                   <Route path="manage/classes" element={<ClassesPage />} />
                   <Route path="manage/staff" element={<CanBoPage />} />
+                  <Route path="manage/branches" element={<BranchesPage />} />
                 </Route>
 
                 <Route path="quizzes" element={<HomeRedirect />} />
