@@ -22,12 +22,12 @@ model User {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  department   Department?   @relation(fields: [departmentId], references: [id])
-  assignments  Assignment[]
-  submissions  Submission[]
-  auditLogs    AuditLog[]
-  classMembers ClassMember[]
-  userProgress UserProgress?
+  department       Department?       @relation(fields: [departmentId], references: [id])
+  assignments      Assignment[]
+  submissions      Submission[]
+  auditLogs        AuditLog[]
+  classMembers     ClassMember[]
+  userProgress     UserProgress?
   attempts         QuizAttempt[]
   arenaTeamMembers ArenaTeamMember[]
   arenaInvites     ArenaInvite[]
@@ -407,20 +407,28 @@ enum ExamSessionStatus {
 // ─── Sprint 8: Chế độ Đấu trường ──────────────────────────────────────────
 
 model ArenaSession {
-  id                String        @id @default(uuid())
-  name              String
-  quizId            String        @map("quiz_id")
-  joinCode          String        @unique @map("join_code") // 6 ký tự [A-Z0-9]
-  passcode          String?       @map("passcode") // mật khẩu phòng tuỳ chọn — bắt buộc nhập thêm khi join, không lộ qua QR/link
-  hostMode          ArenaHostMode @default(MANUAL) @map("host_mode")
-  autoAdvanceSec    Int           @default(10) @map("auto_advance_sec")
-  status            ArenaStatus   @default(LOBBY)
-  currentRoundOrder Int           @default(0) @map("current_round_order")
+  id                  String        @id @default(uuid())
+  name                String
+  quizId              String        @map("quiz_id")
+  joinCode            String        @unique @map("join_code") // 6 ký tự [A-Z0-9]
+  passcode            String?       @map("passcode") // mật khẩu phòng tuỳ chọn — bắt buộc nhập thêm khi join, không lộ qua QR/link
+  hostMode            ArenaHostMode @default(MANUAL) @map("host_mode")
+  // @deprecated — giữ lại để không vỡ dữ liệu/API cũ. Thời gian trả lời mỗi câu
+  // nay đọc từ questionDurationSec; trường này chỉ còn dùng làm giá trị backfill.
+  autoAdvanceSec      Int           @default(10) @map("auto_advance_sec")
+  // Thời gian trả lời mỗi câu (giây) — server chốt deadline, áp dụng cho CẢ
+  // MANUAL lẫn AUTO. MC vẫn công bố sớm được, nhưng không bao giờ trễ hơn mốc này.
+  questionDurationSec Int           @default(20) @map("question_duration_sec")
+  // Khoảng dừng xem kết quả trước khi tự chuyển câu kế — chỉ dùng ở chế độ AUTO
+  // (trước đây là setTimeout(3000) cứng trong trình duyệt MC).
+  revealPauseSec      Int           @default(5) @map("reveal_pause_sec")
+  status              ArenaStatus   @default(LOBBY)
+  currentRoundOrder   Int           @default(0) @map("current_round_order")
   // Điểm theo thứ tự đúng: [rank1, rank2, ..., rank9]
-  pointsForRank     Json          @default("[10,7,5,3,2,2,2,2,2]") @map("points_for_rank")
-  penaltyWrong      Int           @default(0) @map("penalty_wrong")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
+  pointsForRank       Json          @default("[10,7,5,3,2,2,2,2,2]") @map("points_for_rank")
+  penaltyWrong        Int           @default(0) @map("penalty_wrong")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   quiz    Quiz          @relation(fields: [quizId], references: [id])
   teams   ArenaTeam[]
@@ -437,7 +445,7 @@ model ArenaInvite {
   id             String   @id @default(uuid())
   arenaSessionId String   @map("arena_session_id")
   userId         String   @map("user_id")
-  createdAt      DateTime @default(now()) @map("created_at")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -468,12 +476,18 @@ model ArenaTeam {
   color          String // hex color tự động assign
   score          Int      @default(0)
   rank           Int? // điền sau khi kết thúc
-  joinedAt       DateTime @default(now()) @map("joined_at")
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
   // true = MC đặt tên trước lúc tạo phòng (tối đa 8 đội) — giữ lại làm "slot"
   // ngay cả khi hết member, để người chơi khác còn chọn vào. false = đội tự
   // phát sinh khi người chơi tự gõ tên lúc join hoặc do MC gộp thủ công —
   // xoá luôn khi rỗng.
   isPreset       Boolean  @default(false) @map("is_preset")
+  // Số câu trả lời ĐÚNG — tiêu chí phụ 1 khi bằng điểm (nhiều câu đúng hơn thì hơn).
+  correctCount   Int      @default(0) @map("correct_count")
+  // Tổng thời gian phản hồi (ms) của các câu ĐÚNG — tiêu chí phụ 2 khi vẫn bằng
+  // nhau (nhanh hơn thì hơn). Cộng dồn ngay lúc chốt điểm nên bảng xếp hạng
+  // LIVE cũng phá hoà đúng, không phải chờ đến lúc kết thúc mới tính.
+  totalAnswerMs  Int      @default(0) @map("total_answer_ms")
 
   arenaSession ArenaSession      @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
   members      ArenaTeamMember[] // tối đa 5 người chơi cùng đội
@@ -489,7 +503,7 @@ model ArenaTeamMember {
   arenaSessionId String   @map("arena_session_id") // denormalize để ràng buộc 1 user chỉ ở 1 đội / phiên
   arenaTeamId    String   @map("arena_team_id")
   userId         String   @map("user_id")
-  joinedAt       DateTime @default(now()) @map("joined_at")
+  joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
 
   arenaTeam ArenaTeam @relation(fields: [arenaTeamId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -499,13 +513,18 @@ model ArenaTeamMember {
 }
 
 model ArenaRound {
-  id             String           @id @default(uuid())
-  arenaSessionId String           @map("arena_session_id")
-  questionId     String           @map("question_id")
+  id             String             @id @default(uuid())
+  arenaSessionId String             @map("arena_session_id")
+  questionId     String             @map("question_id")
   order          Int // thứ tự câu trong phiên
-  status         ArenaRoundStatus @default(PENDING)
-  startedAt      DateTime?        @map("started_at")
-  revealedAt     DateTime?        @map("revealed_at")
+  status         ArenaRoundStatus   @default(PENDING)
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(3)
+  revealedAt     DateTime?          @map("revealed_at") @db.Timestamptz(3)
+  // Mốc hết giờ do SERVER chốt lúc mở câu hỏi (startedAt + questionDurationSec).
+  // Broadcast cho cả MC và người chơi để mọi màn hình đếm ngược cùng một mốc.
+  deadlineAt     DateTime?          @map("deadline_at") @db.Timestamptz(3)
+  // Vì sao câu này được công bố — phục vụ đối soát khi có khiếu nại về điểm.
+  revealReason   ArenaRevealReason? @map("reveal_reason")
 
   arenaSession ArenaSession @relation(fields: [arenaSessionId], references: [id], onDelete: Cascade)
   question     Question     @relation(fields: [questionId], references: [id])
@@ -523,15 +542,38 @@ enum ArenaRoundStatus {
   @@map("arena_round_status")
 }
 
+enum ArenaRevealReason {
+  HOST // MC bấm công bố sớm
+  DEADLINE // hết giờ, server tự công bố
+  SKIPPED // MC bấm sang câu kế khi chưa công bố — server vẫn chốt điểm đầy đủ
+
+  @@map("arena_reveal_reason")
+}
+
 model ArenaBuzz {
   id                String   @id @default(uuid())
   arenaRoundId      String   @map("arena_round_id")
   teamId            String   @map("team_id")
   selectedOptionIds Json     @map("selected_option_ids")
-  answeredAt        DateTime @map("answered_at") // mốc thời gian tính trên server
+  // Mốc CHÍNH THỨC dùng để xếp hạng — ĐÃ bù trễ mạng.
+  answeredAt        DateTime @map("answered_at") @db.Timestamptz(3)
+  // Mốc thô server nhận được gói tin, CHƯA bù trễ — giữ để kiểm toán/đối soát.
+  receivedAt        DateTime @map("received_at") @db.Timestamptz(3)
   isCorrect         Boolean  @map("is_correct")
   pointsAwarded     Int      @default(0) @map("points_awarded")
   correctRank       Int?     @map("correct_rank") // 1 = nhanh nhất đúng
+  // Hạng theo tốc độ tính trên MỌI đáp án của câu (kể cả sai) — dùng để hiển thị.
+  speedRank         Int?     @map("speed_rank")
+  // Thời gian trả lời chính thức (ms) tính từ lúc câu hỏi bắt đầu, ĐÃ bù trễ mạng.
+  responseMs        Int      @default(0) @map("response_ms")
+  // Thời gian trả lời thô (ms), CHƯA bù trễ — hiển thị khi MC cần soi chi tiết.
+  rawResponseMs     Int      @default(0) @map("raw_response_ms")
+  // Độ trễ khứ hồi (RTT, ms) server tự đo được của đúng socket đã gửi đáp án này.
+  latencyMs         Int      @default(0) @map("latency_ms")
+  // Ảnh chụp điểm đội trước/sau khi chốt câu này — nhờ đó dựng lại được bảng
+  // công bố (kể cả thứ hạng tăng/giảm) mà không cần bảng phụ nào.
+  scoreBefore       Int      @default(0) @map("score_before")
+  scoreAfter        Int      @default(0) @map("score_after")
 
   arenaRound ArenaRound @relation(fields: [arenaRoundId], references: [id], onDelete: Cascade)
   team       ArenaTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)

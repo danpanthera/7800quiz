@@ -25,8 +25,18 @@ interface QuestionOption { id: string; content: string }
 interface ArenaQuestion {
   roundId: string
   order: number
-  question: { id: string; content: string; questionType: 'SINGLE' | 'MULTIPLE'; options: QuestionOption[] }
+  question: { id: string; content: string; questionType: 'SINGLE' | 'MULTIPLE'; subjectName?: string | null; options: QuestionOption[] }
   autoAdvanceSec: number
+  hostMode: string
+}
+// Phát TRƯỚC arena.question — báo lĩnh vực để chuẩn bị tinh thần trong
+// prepareSec giây, trước khi câu hỏi thật sự bật ra.
+interface ArenaPrepare {
+  roundId: string
+  order: number
+  totalRounds: number
+  subjectName: string | null
+  prepareSec: number
   hostMode: string
 }
 interface RevealData {
@@ -72,8 +82,18 @@ export default function ArenaPlayerPage() {
   const [revealData, setRevealData] = useState<RevealData | null>(null)
   const [finalRanking, setFinalRanking] = useState<ArenaTeam[]>([])
   const [myXp, setMyXp] = useState<XpResult | null>(null)
+  const [prepare, setPrepare] = useState<ArenaPrepare | null>(null)
+  const [prepareCountdown, setPrepareCountdown] = useState(0)
   const socketRef = useRef<Socket | null>(null)
   const myTeamIdRef = useRef<string | null>(null)
+  const prepareIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Đếm ngược trang trí cho pha "chuẩn bị" — mốc thật nằm ở server
+  // (ARENA_PREPARE_SEC), đồng hồ này chỉ để hiển thị, không quyết định gì.
+  const clearPrepareInterval = useCallback(() => {
+    if (prepareIntervalRef.current) clearInterval(prepareIntervalRef.current)
+    prepareIntervalRef.current = null
+  }, [])
 
   const { data: preview, isLoading: previewLoading, isError: previewFailed } = useQuery<SessionPreview>({
     queryKey: ['arena-join-preview', joinCode],
@@ -81,7 +101,7 @@ export default function ArenaPlayerPage() {
     retry: false,
   })
 
-  useEffect(() => () => { socketRef.current?.disconnect() }, [])
+  useEffect(() => () => { clearPrepareInterval(); socketRef.current?.disconnect() }, [clearPrepareInterval])
 
   const myScore = lobbyTeams.find((t) => t.id === myTeamId)?.score ?? 0
   const myRevealResult = revealData?.buzzes.find((b) => b.teamId === myTeamId)
@@ -142,7 +162,23 @@ export default function ArenaPlayerPage() {
       setHasAnswered(true)
     })
 
+    socket.on('arena.prepare', (p: ArenaPrepare) => {
+      clearPrepareInterval()
+      setCurrentQuestion(null)
+      setSelected([])
+      setHasAnswered(false)
+      setRevealData(null)
+      setPrepare(p)
+      setPrepareCountdown(p.prepareSec)
+      prepareIntervalRef.current = setInterval(() => {
+        setPrepareCountdown((s) => (s <= 1 ? 0 : s - 1))
+      }, 1000)
+      setView('game')
+    })
+
     socket.on('arena.question', (q: ArenaQuestion) => {
+      clearPrepareInterval()
+      setPrepare(null)
       setCurrentQuestion(q)
       setSelected([])
       setHasAnswered(false)
@@ -162,6 +198,8 @@ export default function ArenaPlayerPage() {
     })
 
     socket.on('arena.ended', ({ ranking, xpResults }: { ranking: ArenaTeam[]; xpResults?: Record<string, XpResult> }) => {
+      clearPrepareInterval()
+      setPrepare(null)
       setFinalRanking(ranking)
       if (user && xpResults?.[user.id]) setMyXp(xpResults[user.id])
       setView('result')
@@ -195,7 +233,7 @@ export default function ArenaPlayerPage() {
         setView('lobby')
       },
     )
-  }, [joinCode, teamName, passcode, selectedTeamId, presetTeams.length, preview?.requiresPasscode, user])
+  }, [joinCode, teamName, passcode, selectedTeamId, presetTeams.length, preview?.requiresPasscode, user, clearPrepareInterval])
 
   function toggleOption(optionId: string, questionType: 'SINGLE' | 'MULTIPLE') {
     if (hasAnswered) return
@@ -349,6 +387,30 @@ export default function ArenaPlayerPage() {
         />
       </CenterCard>
     )
+  } else if (view === 'game' && prepare) {
+    body = (
+      <div key={`prepare-${prepare.roundId}`} className="arena-view-transition" style={{ maxWidth: 560, margin: '0 auto', padding: '16px 12px' }}>
+        <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
+          <Tag color={myTeamColor}>{teamName}</Tag>
+          <Text strong>{myScore} điểm</Text>
+        </Space>
+        <Card style={{ textAlign: 'center', padding: '24px 0' }}>
+          <Text type="secondary">Câu {prepare.order + 1}/{prepare.totalRounds}</Text>
+          <div style={{ margin: '4px 0 16px' }}><Text type="secondary">Lĩnh vực</Text></div>
+          <Text strong style={{ fontSize: 24, display: 'block', marginBottom: 20 }}>
+            {prepare.subjectName ?? 'Chưa phân loại lĩnh vực'}
+          </Text>
+          {prepareCountdown > 0 ? (
+            <Title level={1} style={{ margin: 0 }}>{prepareCountdown}</Title>
+          ) : (
+            <Spin />
+          )}
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary">Chuẩn bị tinh thần nhé — câu hỏi sắp hiện ra!</Text>
+          </div>
+        </Card>
+      </div>
+    )
   } else if (view === 'game' && currentQuestion) {
     const isRevealed = !!revealData
     body = (
@@ -374,7 +436,10 @@ export default function ArenaPlayerPage() {
         )}
 
         <Card>
-          <Text strong style={{ fontSize: 17 }}>{currentQuestion.question.content}</Text>
+          {currentQuestion.question.subjectName && (
+            <Tag color="green" style={{ marginBottom: 8 }}>Lĩnh vực: {currentQuestion.question.subjectName}</Tag>
+          )}
+          <Text strong style={{ fontSize: 17, display: 'block' }}>{currentQuestion.question.content}</Text>
           <Space direction="vertical" size={10} style={{ width: '100%', marginTop: 18 }}>
             {currentQuestion.question.options.map((opt, idx) => {
               const isSelected = selected.includes(opt.id)

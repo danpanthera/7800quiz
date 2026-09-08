@@ -38,6 +38,11 @@ interface SnapshotQuestion {
   orderIndex: number;
   points: number;
   options: SnapshotOption[];
+  // Optional vì snapshot cũ (tạo trước khi có tính năng hiển thị lĩnh vực) không
+  // có 2 field này — dùng 'subjectName' in question để phân biệt "thiếu key" (cần
+  // tra cứu bổ sung) với "có key nhưng null" (câu chưa phân loại lĩnh vực).
+  subjectId?: string | null;
+  subjectName?: string | null;
 }
 
 interface QuizSnapshot {
@@ -116,7 +121,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     });
     if (activeAttempt) return this.get(userId, activeAttempt.id);
 
-    const { version, snapshot } = await this.ensureSnapshot(assignment.quizId);
+    const { version, snapshot: rawSnapshot } = await this.ensureSnapshot(
+      assignment.quizId,
+    );
+    const snapshot = await this.withSubjectNames(rawSnapshot);
     const startedAt = new Date();
     const durationDeadline = new Date(
       startedAt.getTime() + snapshot.quiz.durationMin * 60 * 1000,
@@ -177,7 +185,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       return this.get(userId, id);
     }
 
-    const snapshot = this.readSnapshot(attempt.quizVersion.snapshot);
+    const snapshot = await this.withSubjectNames(
+      this.readSnapshot(attempt.quizVersion.snapshot),
+    );
     return this.toAttemptPayload(
       attempt,
       snapshot,
@@ -545,7 +555,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       this.prisma.question.findMany({
         where: { quizId },
         orderBy: { orderIndex: 'asc' },
-        include: { options: { orderBy: { orderIndex: 'asc' } } },
+        include: {
+          options: { orderBy: { orderIndex: 'asc' } },
+          subject: { select: { id: true, name: true } },
+        },
       }),
     ]);
     const snapshot: QuizSnapshot = {
@@ -565,6 +578,8 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         questionType: question.questionType,
         orderIndex: question.orderIndex,
         points: question.points,
+        subjectId: question.subjectId,
+        subjectName: question.subject?.name ?? null,
         options: question.options.map((option) => ({
           id: option.id,
           content: option.content,
@@ -582,6 +597,42 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     });
 
     return { version, snapshot };
+  }
+
+  // Bổ sung lĩnh vực cho snapshot CŨ (tạo trước khi tính năng này ra đời) bằng
+  // cách tra lại bảng Question theo id — KHÔNG ghi đè QuizVersion, vì version đã
+  // chốt phải bất biến (tránh lệch đề với bài đã nộp). Snapshot mới luôn có sẵn
+  // 2 field này (kể cả giá trị null khi câu chưa phân loại) nên không tốn query.
+  private async withSubjectNames(
+    snapshot: QuizSnapshot,
+  ): Promise<QuizSnapshot> {
+    const missing = snapshot.questions.filter(
+      (question) => !('subjectName' in question),
+    );
+    if (missing.length === 0) return snapshot;
+
+    const rows = await this.prisma.question.findMany({
+      where: { id: { in: missing.map((question) => question.id) } },
+      select: {
+        id: true,
+        subjectId: true,
+        subject: { select: { name: true } },
+      },
+    });
+    const bySubject = new Map(rows.map((row) => [row.id, row]));
+
+    return {
+      ...snapshot,
+      questions: snapshot.questions.map((question) => {
+        if ('subjectName' in question) return question;
+        const found = bySubject.get(question.id);
+        return {
+          ...question,
+          subjectId: found?.subjectId ?? null,
+          subjectName: found?.subject?.name ?? null,
+        };
+      }),
+    };
   }
 
   private readSnapshot(value: unknown): QuizSnapshot {
@@ -642,6 +693,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
           questionType: question.questionType,
           orderIndex: question.orderIndex,
           points: question.points,
+          subjectName: question.subjectName ?? null,
           // ORDERING: xáo vị trí hiển thị (ổn định theo attempt+câu hỏi, không lộ thứ tự đúng
           // vốn được mã hoá qua orderIndex của option). SINGLE/MULTIPLE: giữ nguyên thứ tự đã cấu hình.
           options: (question.questionType === 'ORDERING'

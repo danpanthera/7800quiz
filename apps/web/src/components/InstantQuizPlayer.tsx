@@ -26,6 +26,7 @@ export interface InstantQuizQuestion {
   questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING'
   orderIndex: number
   points: number
+  subjectName: string | null
   options: InstantQuizOption[]
 }
 
@@ -283,6 +284,9 @@ export default function InstantQuizPlayer({
 
       <main className={`iq-card${currentResult ? (currentResult.isCorrect ? ' iq-card-correct' : ' iq-card-wrong') : ''}`} key={`q-${currentQuestion.id}-${shakeToken}`}>
         <div className="iq-card-meta">
+          {currentQuestion.subjectName && (
+            <span className="iq-chip">Lĩnh vực: {currentQuestion.subjectName}</span>
+          )}
           <span className="iq-chip">
             {currentQuestion.questionType === 'SINGLE' && 'Chọn một đáp án'}
             {currentQuestion.questionType === 'MULTIPLE' && 'Chọn nhiều đáp án'}

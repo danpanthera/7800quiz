@@ -26,8 +26,18 @@ interface QuestionOption { id: string; content: string }
 interface ArenaQuestion {
   roundId: string
   order: number
-  question: { id: string; content: string; questionType: string; options: QuestionOption[] }
+  question: { id: string; content: string; questionType: string; subjectName?: string | null; options: QuestionOption[] }
   autoAdvanceSec: number
+  hostMode: string
+}
+// Phát TRƯỚC arena.question — báo lĩnh vực để các đội chuẩn bị tinh thần
+// trong prepareSec giây, trước khi câu hỏi thật sự bật ra.
+interface ArenaPrepare {
+  roundId: string
+  order: number
+  totalRounds: number
+  subjectName: string | null
+  prepareSec: number
   hostMode: string
 }
 interface BuzzEvent { teamId: string; teamName: string; teamColor: string }
@@ -65,8 +75,22 @@ export default function ArenaPage() {
   const [revealData, setRevealData] = useState<RevealData | null>(null)
   const [finalRanking, setFinalRanking] = useState<ArenaTeam[]>([])
   const [autoTimer, setAutoTimer] = useState(0)
+  const [prepare, setPrepare] = useState<ArenaPrepare | null>(null)
+  const [prepareCountdown, setPrepareCountdown] = useState(0)
+  const [prepareStale, setPrepareStale] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prepareIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prepareStaleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Đếm ngược trang trí cho pha "chuẩn bị" — mốc thật nằm ở server
+  // (ARENA_PREPARE_SEC), đồng hồ này chỉ để hiển thị, không quyết định gì.
+  const clearPrepareTimers = useCallback(() => {
+    if (prepareIntervalRef.current) clearInterval(prepareIntervalRef.current)
+    if (prepareStaleTimeoutRef.current) clearTimeout(prepareStaleTimeoutRef.current)
+    prepareIntervalRef.current = null
+    prepareStaleTimeoutRef.current = null
+  }, [])
 
   // ─── Hàm hỗ trợ Socket ──────────────────────────────────────────────────────
 
@@ -90,7 +114,28 @@ export default function ArenaPage() {
 
     socket.on('arena.started', () => setView('game'))
 
+    socket.on('arena.prepare', (p: ArenaPrepare) => {
+      clearPrepareTimers()
+      setPrepareStale(false)
+      setCurrentQuestion(null)
+      setBuzzes([])
+      setRevealData(null)
+      setPrepare(p)
+      setPrepareCountdown(p.prepareSec)
+      prepareIntervalRef.current = setInterval(() => {
+        setPrepareCountdown((s) => (s <= 1 ? 0 : s - 1))
+      }, 1000)
+      // Máy chủ khởi động lại đúng lúc đang chuẩn bị thì hẹn giờ bị mất —
+      // báo cho MC biết để bấm lại thay vì chờ vô thời hạn.
+      prepareStaleTimeoutRef.current = setTimeout(() => {
+        setPrepareStale(true)
+      }, (p.prepareSec + 5) * 1000)
+    })
+
     socket.on('arena.question', (q: ArenaQuestion) => {
+      clearPrepareTimers()
+      setPrepare(null)
+      setPrepareStale(false)
       capturedHostMode = q.hostMode
       setCurrentQuestion(q)
       setBuzzes([])
@@ -130,16 +175,19 @@ export default function ArenaPage() {
     })
 
     socket.on('arena.ended', ({ ranking }: { ranking: ArenaTeam[] }) => {
+      clearPrepareTimers()
+      setPrepare(null)
       setFinalRanking(ranking)
       setView('result')
     })
-  }, [])
+  }, [clearPrepareTimers])
 
   const disconnectSocket = useCallback(() => {
     if (autoTimerRef.current) clearInterval(autoTimerRef.current)
+    clearPrepareTimers()
     socketRef.current?.disconnect()
     socketRef.current = null
-  }, [])
+  }, [clearPrepareTimers])
 
   useEffect(() => () => disconnectSocket(), [disconnectSocket])
 
@@ -183,6 +231,7 @@ export default function ArenaPage() {
     <GameControl
       session={session!} teams={teams} currentQuestion={currentQuestion}
       buzzes={buzzes} revealData={revealData} autoTimer={autoTimer}
+      prepare={prepare} prepareCountdown={prepareCountdown} prepareStale={prepareStale}
       onReveal={emitReveal} onNext={emitNext} onEnd={emitEnd}
     />
   )
@@ -726,14 +775,18 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
 
 // ─── GameControl ──────────────────────────────────────────────────────────────
 
-function GameControl({ session, teams, currentQuestion, buzzes, revealData, autoTimer, onReveal, onNext, onEnd }: {
+function GameControl({
+  session, teams, currentQuestion, buzzes, revealData, autoTimer,
+  prepare, prepareCountdown, prepareStale, onReveal, onNext, onEnd,
+}: {
   session: ArenaSession; teams: ArenaTeam[]; currentQuestion: ArenaQuestion | null
   buzzes: BuzzEvent[]; revealData: RevealData | null; autoTimer: number
+  prepare: ArenaPrepare | null; prepareCountdown: number; prepareStale: boolean
   onReveal: () => void; onNext: () => void; onEnd: () => void
 }) {
   const isManual = session.hostMode === 'MANUAL'
-  const totalRounds = session.rounds?.length ?? 0
-  const currentOrder = currentQuestion?.order ?? 0
+  const totalRounds = prepare?.totalRounds ?? session.rounds?.length ?? 0
+  const currentOrder = prepare?.order ?? currentQuestion?.order ?? 0
   const isRevealed = !!revealData
 
   return (
@@ -744,7 +797,7 @@ function GameControl({ session, teams, currentQuestion, buzzes, revealData, auto
           title={
             <Space>
               <Text strong>Câu {(currentOrder) + 1}/{totalRounds}</Text>
-              {!isManual && currentQuestion && !isRevealed && (
+              {!isManual && currentQuestion && !isRevealed && !prepare && (
                 <Progress
                   type="circle" size={36} strokeColor={autoTimer <= 3 ? 'red' : '#1890ff'}
                   percent={Math.round((autoTimer / currentQuestion.autoAdvanceSec) * 100)}
@@ -755,20 +808,48 @@ function GameControl({ session, teams, currentQuestion, buzzes, revealData, auto
           }
           extra={
             <Space>
-              {isManual && !isRevealed && currentQuestion && (
+              {isManual && !isRevealed && !prepare && currentQuestion && (
                 <Button type="primary" icon={<CheckCircleOutlined />} onClick={onReveal}>Reveal đáp án</Button>
               )}
-              {isRevealed && (
+              {isRevealed && !prepare && (
                 <Button type="primary" icon={<ArrowRightOutlined />} onClick={onNext}>Câu tiếp theo</Button>
               )}
               <Button danger icon={<StopOutlined />} onClick={onEnd}>Kết thúc</Button>
             </Space>
           }
         >
-          {!currentQuestion ? (
+          {prepare ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <Text type="secondary">Chuẩn bị câu {prepare.order + 1}</Text>
+              <Title level={2} style={{ margin: '8px 0' }}>
+                {prepare.subjectName ?? 'Chưa phân loại lĩnh vực'}
+              </Title>
+              <Progress
+                type="circle" size={64}
+                percent={Math.round((prepareCountdown / prepare.prepareSec) * 100)}
+                format={() => `${prepareCountdown}s`}
+              />
+              <div style={{ marginTop: 12 }}>
+                <Text type="secondary">Các đội chuẩn bị tinh thần — câu hỏi sắp hiện ra…</Text>
+              </div>
+              {prepareStale && (
+                <Alert
+                  style={{ marginTop: 16, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}
+                  type="warning" showIcon
+                  message="Chưa nhận được câu hỏi từ máy chủ"
+                  description="Máy chủ có thể vừa khởi động lại. Bấm nút bên dưới để thử lại."
+                  action={<Button size="small" onClick={onNext}>Thử lại</Button>}
+                />
+              )}
+            </div>
+          ) : !currentQuestion ? (
             <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
           ) : (
             <>
+              {currentQuestion.question.subjectName && (
+                <Tag color="green" style={{ marginBottom: 8 }}>Lĩnh vực: {currentQuestion.question.subjectName}</Tag>
+              )}
+              <br />
               <Text style={{ fontSize: 18 }}>{currentQuestion.question.content}</Text>
               <Row gutter={[12, 12]} style={{ marginTop: 20 }}>
                 {currentQuestion.question.options.map((opt, idx) => {

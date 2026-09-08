@@ -21,11 +21,27 @@ const snapshot = {
       orderIndex: 1,
       points: 10,
       explanation: 'Giải thích',
+      subjectId: 'subject-1',
+      subjectName: 'Tín dụng',
       options: [
         { id: 'option-1', content: 'Đúng', isCorrect: true, orderIndex: 1 },
         { id: 'option-2', content: 'Sai', isCorrect: false, orderIndex: 2 },
       ],
     },
+  ],
+};
+
+// Snapshot "cũ" — tạo trước khi có tính năng hiển thị lĩnh vực, thiếu hẳn 2 key
+// subjectId/subjectName (khác với câu đã phân loại nhưng subjectName: null).
+const snapshotCuThieuLinhVuc = {
+  ...snapshot,
+  questions: [
+    (() => {
+      const { subjectId, subjectName, ...rest } = snapshot.questions[0];
+      void subjectId;
+      void subjectName;
+      return rest;
+    })(),
   ],
 };
 
@@ -86,6 +102,85 @@ describe('AttemptsService', () => {
     });
     expect(result.quiz.questions[0].options[0]).not.toHaveProperty('isCorrect');
     expect(result.quiz.questions[0]).not.toHaveProperty('explanation');
+    expect(result.quiz.questions[0].subjectName).toBe('Tín dụng');
+    expect(result.quiz.questions[0]).not.toHaveProperty('subjectId');
+  });
+
+  it('bổ sung lĩnh vực cho snapshot cũ thiếu key, không ghi đè QuizVersion', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'question-1',
+        subjectId: 'subject-1',
+        subject: { name: 'Kế toán' },
+      },
+    ]);
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: attemptId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+          answerRevision: 0,
+          quizVersion: {
+            snapshot: snapshotCuThieuLinhVuc,
+            quiz: { instantFeedback: false },
+          },
+          answers: [],
+        }),
+      },
+      question: { findMany },
+      quizVersion: { create: jest.fn(), update: jest.fn() },
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.get('user-1', attemptId);
+
+    expect(result.quiz.questions[0].subjectName).toBe('Kế toán');
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['question-1'] } } }),
+    );
+    expect(prisma.quizVersion.create).not.toHaveBeenCalled();
+    expect(prisma.quizVersion.update).not.toHaveBeenCalled();
+  });
+
+  it('không truy vấn lại khi snapshot mới có câu chưa phân loại lĩnh vực', async () => {
+    const findMany = jest.fn();
+    const snapshotChuaPhanLoai = {
+      ...snapshot,
+      questions: [
+        { ...snapshot.questions[0], subjectId: null, subjectName: null },
+      ],
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: attemptId,
+          status: AttemptStatus.IN_PROGRESS,
+          deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+          answerRevision: 0,
+          quizVersion: {
+            snapshot: snapshotChuaPhanLoai,
+            quiz: { instantFeedback: false },
+          },
+          answers: [],
+        }),
+      },
+      question: { findMany },
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.get('user-1', attemptId);
+
+    expect(result.quiz.questions[0].subjectName).toBeNull();
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it('chốt đáp án trả kết quả + đáp án đúng, và chốt lại không đổi được lựa chọn', async () => {

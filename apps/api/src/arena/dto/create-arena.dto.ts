@@ -36,11 +36,27 @@ export class CreateArenaDto {
   @Length(4, 20)
   passcode?: string;
 
+  // @deprecated — dùng questionDurationSec. Giữ lại để không vỡ client cũ.
   @IsOptional()
   @IsInt()
   @Min(5)
   @Max(120)
   autoAdvanceSec?: number;
+
+  // Thời gian trả lời mỗi câu (giây) — áp dụng cho CẢ MANUAL và AUTO, server
+  // tự chốt deadline và tự khoá/công bố khi hết giờ.
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(300)
+  questionDurationSec?: number;
+
+  // Khoảng dừng xem kết quả trước khi tự sang câu kế — chỉ dùng ở chế độ AUTO
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(30)
+  revealPauseSec?: number;
 
   @IsOptional()
   @IsArray()

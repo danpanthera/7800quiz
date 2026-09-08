@@ -18,6 +18,7 @@ import {
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
+  BookOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   EyeInvisibleOutlined,
@@ -53,6 +54,7 @@ interface QuizQuestion {
   questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING'
   orderIndex: number
   points: number
+  subjectName: string | null
   options: QuizOption[]
 }
 
@@ -479,6 +481,11 @@ export default function QuizPlayerPage() {
               {currentQuestion.questionType === 'ORDERING' && 'Sắp xếp đúng thứ tự'}
             </Tag>
           </div>
+          {currentQuestion.subjectName && (
+            <Text strong style={{ display: 'block', marginTop: 12, color: '#246b5a' }}>
+              <BookOutlined /> Lĩnh vực: {currentQuestion.subjectName}
+            </Text>
+          )}
           <Title level={3}>{currentQuestion.content}</Title>
           {currentQuestion.imageUrl && (
             <img src={currentQuestion.imageUrl} alt="" className="quiz-question-image" style={{ marginBottom: 20 }} />

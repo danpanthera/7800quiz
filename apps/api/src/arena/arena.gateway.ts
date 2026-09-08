@@ -6,34 +6,119 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { ArenaService } from './arena.service';
+import { ArenaEventBus } from './arena-event-bus';
+import { ArenaClockService } from './arena-clock.service';
+import { ArenaLatencyService } from './arena-latency.service';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
 import { getCorsOrigin } from '../cors-origin';
+import type { ArenaOutgoing } from './arena.types';
 
 const ARENA_HOST_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.TRAINER];
+// Chu kỳ đo RTT nền cho mọi socket đang trong phòng Đấu trường — bổ sung cho
+// mẫu đo lúc connect/host/join/ngay-sau-khi-phát-câu-hỏi, giữ ước lượng luôn
+// tươi kể cả khi người chơi ngồi im không thao tác gì lâu.
+const LATENCY_PROBE_INTERVAL_MS = 5000;
+const LATENCY_PROBE_TIMEOUT_MS = 2000;
 
 @WebSocketGateway({
   cors: { origin: getCorsOrigin() },
   namespace: '/',
 })
-export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ArenaGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
+{
   @WebSocketServer()
   server: Server;
+
+  private readonly logger = new Logger(ArenaGateway.name);
+  private probeTimer?: NodeJS.Timeout;
 
   constructor(
     private arenaService: ArenaService,
     private jwtService: JwtService,
+    private arenaEventBus: ArenaEventBus,
+    private arenaClock: ArenaClockService,
+    private arenaLatency: ArenaLatencyService,
   ) {}
 
+  afterInit(): void {
+    // Mọi broadcast socket của Đấu trường đi qua ĐÚNG MỘT chỗ này — bất kể sự
+    // kiện đến từ MC bấm tay, ArenaClockService tự hẹn giờ, hay REST controller
+    // (cancel/stop) — tránh trùng lặp logic broadcast rải rác trong từng handler.
+    this.arenaEventBus.stream$.subscribe((event) => {
+      try {
+        this.broadcastOutgoing(event);
+      } catch (err) {
+        this.logger.error(
+          `Lỗi phát sự kiện Arena: ${(err as Error)?.message}`,
+        );
+      }
+    });
+
+    // Khôi phục hẹn giờ cho các phiên còn RUNNING sau khi API restart — gọi ở
+    // đây (không phải onModuleInit) vì đây là thời điểm duy nhất chắc chắn
+    // this.server đã sẵn sàng để phát broadcast khi timer bắn.
+    void this.arenaClock.resumeAfterRestart(() =>
+      this.arenaService.getRunningSessionsForClockResume(),
+    );
+
+    // Đo RTT nền định kỳ cho mọi socket đang có mặt trong 1 phòng Đấu trường
+    // bất kỳ — giữ ước lượng độ trễ luôn mới dù người chơi không thao tác gì.
+    this.probeTimer = setInterval(() => {
+      void this.probeAllArenaSockets();
+    }, LATENCY_PROBE_INTERVAL_MS);
+    this.probeTimer.unref();
+  }
+
+  private broadcastOutgoing(event: ArenaOutgoing): void {
+    const room = this.getRoomName(event.sessionId);
+    switch (event.kind) {
+      case 'preparing':
+        this.server.to(room).emit('arena.prepare', event.payload);
+        break;
+      case 'question':
+        this.server.to(room).emit('arena.question', event.payload);
+        break;
+      case 'revealed':
+        this.server.to(room).emit('arena.revealed', event.payload);
+        this.server
+          .to(room)
+          .emit('arena.leaderboard', { teams: event.payload.leaderboard });
+        break;
+      case 'locked':
+        this.server.to(room).emit('arena.locked', {
+          roundId: event.roundId,
+          serverNowMs: event.serverNowMs,
+        });
+        break;
+      case 'leaderboard':
+        this.server.to(room).emit('arena.leaderboard', { teams: event.teams });
+        break;
+      case 'ended':
+        this.server.to(room).emit('arena.ended', event.payload);
+        break;
+      case 'cancelled':
+        // Phòng sắp/đã bị xoá — không còn ai để phát tới.
+        break;
+      default:
+        break;
+    }
+  }
+
   handleConnection(client: Socket) {
-    // Kết nối được theo dõi ngầm thông qua các room
+    // Đo RTT ngay lúc kết nối — có mẫu sớm nhất có thể, trước cả khi biết
+    // client sẽ host hay join phòng nào.
+    void this.probeLatency(client);
   }
 
   handleDisconnect(client: Socket) {
-    // Dọn dẹp nếu cần
+    this.arenaLatency.forget(client.id);
   }
 
   private getRoomName(sessionId: string) {
@@ -70,6 +155,38 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  // ─── Đo độ trễ (RTT) ────────────────────────────────────────────────────────
+
+  /**
+   * Đo 1 mẫu RTT của socket bằng emitWithAck có timeout — client chỉ cần
+   * `socket.on('arena.ping', (ack) => ack())`. Quá hạn/mất kết nối thì bỏ
+   * qua mẫu này, không phải lỗi nghiêm trọng.
+   */
+  private async probeLatency(client: Socket): Promise<void> {
+    const t0 = Date.now();
+    try {
+      await client.timeout(LATENCY_PROBE_TIMEOUT_MS).emitWithAck('arena.ping');
+      this.arenaLatency.record(client.id, Date.now() - t0);
+    } catch {
+      // bỏ qua — không có mẫu mới thì getCompensationMs() vẫn trả 0 (an toàn)
+    }
+  }
+
+  private async probeAllArenaSockets(): Promise<void> {
+    const sockets = await this.server.fetchSockets();
+    for (const socket of sockets) {
+      const inArenaRoom = [...socket.rooms].some((r) => r.startsWith('arena-'));
+      if (inArenaRoom) void this.probeLatency(socket as unknown as Socket);
+    }
+  }
+
+  // ─── Đồng bộ đồng hồ client-server ──────────────────────────────────────────
+
+  @SubscribeMessage('arena.time')
+  handleTime() {
+    return { serverNowMs: Date.now() };
+  }
+
   // ─── Admin: điều hành phiên đấu ───────────────────────────────────────────
 
   @SubscribeMessage('arena.host')
@@ -84,6 +201,15 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.join(this.getRoomName(data.sessionId));
     client.data.sessionId = data.sessionId;
     client.data.isHost = true;
+    void this.probeLatency(client);
+    try {
+      // Snapshot đầy đủ — MC bấm F5/mất mạng giữa trận vẫn dựng lại được toàn
+      // bộ màn hình điều khiển ngay khi kết nối lại, không cần chờ sự kiện kế tiếp.
+      const state = await this.arenaService.getLiveState(data.sessionId, null);
+      client.emit('arena.state', state);
+    } catch {
+      // Phiên không tồn tại — bỏ qua, để lỗi lộ ra ở các thao tác kế tiếp
+    }
     return { ok: true, sessionId: data.sessionId };
   }
 
@@ -118,6 +244,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.data.sessionId = session.id;
       client.data.teamId = team.id;
       client.data.userId = player.userId;
+      void this.probeLatency(client);
 
       // Thông báo đội mới cho tất cả người trong room
       this.server.to(this.getRoomName(session.id)).emit('arena.team_joined', {
@@ -132,12 +259,15 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
 
-      // Gửi xác nhận riêng về cho client vừa tham gia, kèm teamId của họ
-      client.emit('arena.joined_you', {
-        teamId: team.id,
-        teamColor: team.color,
-        sessionId: session.id,
-      });
+      // Snapshot đầy đủ cho đúng client vừa tham gia — thay cho sự kiện cũ
+      // arena.joined_you (chỉ có teamId/teamColor) để hỗ trợ vào lại giữa
+      // trận: người chơi F5/rớt mạng dựng lại đúng câu hỏi, deadline còn lại,
+      // và biết mình đã trả lời hay chưa ngay khi kết nối lại.
+      const state = await this.arenaService.getLiveState(
+        session.id,
+        player.userId,
+      );
+      client.emit('arena.state', state);
 
       return {
         ok: true,
@@ -162,13 +292,13 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!host || !ARENA_HOST_ROLES.includes(host.role))
       return { error: 'Không có quyền' };
     try {
-      const questionData = await this.arenaService.startSession(data.sessionId);
-      this.server
-        .to(this.getRoomName(data.sessionId))
-        .emit('arena.started', {});
-      this.server
-        .to(this.getRoomName(data.sessionId))
-        .emit('arena.question', questionData);
+      // startSession() kết thúc bằng nextQuestion(), tự publish 'preparing'
+      // qua bus (báo lĩnh vực câu 0) — sau ARENA_PREPARE_SEC giây,
+      // ArenaClockService mới gọi showQuestion() thật sự. broadcastOutgoing()
+      // lo toàn bộ phần phát 'arena.prepare' rồi 'arena.question', không cần
+      // gateway tự emit lại ở đây.
+      await this.arenaService.startSession(data.sessionId);
+      this.server.to(this.getRoomName(data.sessionId)).emit('arena.started', {});
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -313,36 +443,48 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Người chơi: nộp đáp án (buzz-in) ───────────────────────────────────────
+  // ─── Người chơi: nộp đáp án ─────────────────────────────────────────────────
 
   @SubscribeMessage('arena.answer')
   async handleAnswer(
     @MessageBody()
-    data: { arenaRoundId: string; teamId: string; selectedOptionIds: string[] },
+    data: { arenaRoundId: string; selectedOptionIds: string[] },
     @ConnectedSocket() client: Socket,
   ) {
-    const userId = client.data.userId as string | undefined;
-    if (!userId) return { error: 'Cần tham gia đội trước khi trả lời' };
+    // PHẢI là câu lệnh đầu tiên — trước cả verify JWT — để không cộng thêm độ
+    // trễ xử lý của server vào thời gian phản hồi ghi nhận cho người chơi.
+    const receivedAtMs = Date.now();
+    const player = this.extractUser(client);
+    if (!player) return { error: 'Cần đăng nhập để trả lời' };
     try {
-      const result = await this.arenaService.recordAnswer(
-        data.arenaRoundId,
-        data.teamId,
-        data.selectedOptionIds,
-        userId,
-      );
-      // Thông báo cho mọi người là có đội vừa bấm trả lời (chưa tiết lộ đúng/sai)
-      const sessionId = client.data.sessionId as string;
-      this.server.to(this.getRoomName(sessionId)).emit('arena.buzz_in', {
-        teamId: result.buzz.teamId,
+      const result = await this.arenaService.recordAnswer({
+        arenaRoundId: data.arenaRoundId,
+        userId: player.userId,
+        selectedOptionIds: data.selectedOptionIds,
+        receivedAtMs,
+        latencyMs: this.arenaLatency.getRttMs(client.id),
+        getCompensationMs: (rawMs) =>
+          this.arenaLatency.getCompensationMs(client.id, rawMs),
+      });
+      // Phát cho CẢ PHÒNG biết có đội vừa bấm (chưa tiết lộ đúng/sai) — lấy
+      // room từ SESSION THẬT của round (result.sessionId), không dùng
+      // client.data.sessionId vì socket có thể đang lệch room do đồng bộ trễ.
+      this.server.to(this.getRoomName(result.sessionId)).emit('arena.buzz_in', {
+        teamId: result.teamId,
         teamName: result.teamName,
         teamColor: result.teamColor,
+        order: result.order,
+        responseMs: result.responseMs,
+        answeredCount: result.answeredCount,
+        teamsTotal: result.teamsTotal,
+        serverNowMs: Date.now(),
       });
       // Đội nhiều người: báo riêng cho các đồng đội còn lại là đội đã trả lời
       // rồi (tránh họ vẫn thấy màn hình đang chờ chọn đáp án)
       this.server
-        .to(this.getTeamRoomName(data.teamId))
+        .to(this.getTeamRoomName(result.teamId))
         .emit('arena.team_answered', {});
-      return { ok: true };
+      return { ok: true, responseMs: result.responseMs, order: result.order };
     } catch (err) {
       return { error: err.message };
     }
@@ -359,13 +501,9 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!host || !ARENA_HOST_ROLES.includes(host.role))
       return { error: 'Không có quyền' };
     try {
-      const revealData = await this.arenaService.revealRound(data.sessionId);
-      this.server
-        .to(this.getRoomName(data.sessionId))
-        .emit('arena.revealed', revealData);
-      this.server
-        .to(this.getRoomName(data.sessionId))
-        .emit('arena.leaderboard', { teams: revealData.leaderboard });
+      // revealRound() tự publish 'revealed' qua bus — broadcastOutgoing() lo
+      // phần phát arena.revealed + arena.leaderboard cho cả phòng.
+      await this.arenaService.revealRound(data.sessionId);
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -383,16 +521,11 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!host || !ARENA_HOST_ROLES.includes(host.role))
       return { error: 'Không có quyền' };
     try {
-      const result = await this.arenaService.nextQuestion(data.sessionId);
-      if (result.type === 'ended') {
-        this.server
-          .to(this.getRoomName(data.sessionId))
-          .emit('arena.ended', result);
-      } else {
-        this.server
-          .to(this.getRoomName(data.sessionId))
-          .emit('arena.question', result);
-      }
+      // nextQuestion() tự publish 'preparing' (còn câu) hoặc 'ended' (hết
+      // câu) qua bus — broadcastOutgoing() lo phần phát 'arena.prepare'/
+      // 'arena.ended'; 'arena.question' sẽ tới sau đúng ARENA_PREPARE_SEC
+      // giây, do ArenaClockService hẹn giờ.
+      await this.arenaService.nextQuestion(data.sessionId);
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -410,10 +543,8 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!host || !ARENA_HOST_ROLES.includes(host.role))
       return { error: 'Không có quyền' };
     try {
-      const result = await this.arenaService.endSession(data.sessionId);
-      this.server
-        .to(this.getRoomName(data.sessionId))
-        .emit('arena.ended', result);
+      // endSession() tự publish 'ended' qua bus — broadcastOutgoing() lo phần phát.
+      await this.arenaService.endSession(data.sessionId);
       return { ok: true };
     } catch (err) {
       return { error: err.message };
