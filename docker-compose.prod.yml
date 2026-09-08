@@ -153,7 +153,7 @@ services:
           memory: 32M
 
   # ──────────────────────────────────────────────────────────────────────────
-  # CADDY — reverse proxy + TLS Let's Encrypt tự động (cấp và gia hạn).
+  # CADDY — reverse proxy + TLS nội bộ tự cấp (không cần Internet/Let's Encrypt).
   # Container DUY NHẤT publish port ra ngoài.
   # ──────────────────────────────────────────────────────────────────────────
   caddy:
@@ -162,20 +162,25 @@ services:
     restart: unless-stopped
     logging: *default-logging
     ports:
-      - '80:80' # bắt buộc mở: Let's Encrypt HTTP-01 + chuyển hướng sang HTTPS
+      - '80:80' # chuyển hướng HTTP sang HTTPS
       - '443:443'
       # Cổng kiểm thử nội bộ, chỉ nghe trên chính máy chủ — dùng để nghiệm thu
-      # TRƯỚC KHI trỏ DNS về. Không mở ra mạng.
+      # TRƯỚC KHI đổi DNS/hosts trỏ về. Không mở ra mạng.
       - '127.0.0.1:8080:8080'
     environment:
+      # Tên DNS nội bộ, đăng ký qua RODC trỏ về IP tĩnh của máy ảo (DEPLOYMENT.md
+      # Giai đoạn 3) — KHÔNG phải domain công khai. Caddy tự cấp chứng chỉ từ
+      # CA nội bộ của chính nó (`tls internal` trong Caddyfile) nên không cần
+      # ACME_EMAIL/Let's Encrypt.
       SITE_ADDRESS: ${SITE_ADDRESS:-quiz.vbalaichau.com}
-      ACME_EMAIL: ${ACME_EMAIL}
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # caddy_data giữ khoá riêng và chứng chỉ đã cấp. Mất volume này là phải
-      # xin lại từ đầu, mà Let's Encrypt giới hạn 5 chứng chỉ trùng mỗi 7 ngày
-      # — mất đúng lúc cao điểm thì site có thể sập cả tuần.
+      # caddy_data giữ CA nội bộ (root.crt) + khoá riêng + chứng chỉ đã cấp.
+      # ⚠ MẤT VOLUME NÀY LÀ MẤT LUÔN CA GỐC: Caddy sẽ tự sinh CA mới, nhưng
+      #   root.crt cũ đã cài trên MỌI máy client (Giai đoạn 5) sẽ không còn
+      #   khớp — toàn bộ máy phải cài lại chứng chỉ gốc mới. Sao lưu volume
+      #   này cùng lịch sao lưu database.
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
