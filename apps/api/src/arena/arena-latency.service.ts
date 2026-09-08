@@ -63,7 +63,11 @@ export class ArenaLatencyService {
     return Math.round(
       Math.max(
         0,
-        Math.min(rtt, MAX_COMPENSATION_MS, rawResponseMs * MAX_COMPENSATION_RATIO),
+        Math.min(
+          rtt,
+          MAX_COMPENSATION_MS,
+          rawResponseMs * MAX_COMPENSATION_RATIO,
+        ),
       ),
     );
   }

@@ -11,7 +11,11 @@
 // ArenaEventBus (không phụ thuộc ngược).
 
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { ArenaRevealReason, ArenaRoundStatus, ArenaHostMode } from '@prisma/client';
+import {
+  ArenaRevealReason,
+  ArenaRoundStatus,
+  ArenaHostMode,
+} from '@prisma/client';
 import { ArenaEventBus } from './arena-event-bus';
 import { ArenaService } from './arena.service';
 import type { ArenaOutgoing } from './arena.types';
@@ -81,8 +85,7 @@ export class ArenaClockService implements OnModuleDestroy {
           'prepare',
           event.payload.roundId,
           Date.now() + event.payload.prepareSec * 1000,
-          () =>
-            this.service.showQuestion(event.sessionId, event.payload.order),
+          () => this.service.showQuestion(event.sessionId, event.payload.order),
         );
         break;
       case 'question':

@@ -1427,6 +1427,322 @@ select {
   color: var(--agribank-red-dark);
 }
 
+/* ── Đấu trường: đồng hồ, dải buzz, bảng công bố, bảng xếp hạng ─────────────
+   Mọi class ở đây có tiền tố `arena-`. Vay từ vựng hiệu ứng của .iq-* (trang
+   luyện tập InstantQuizPlayer) nhưng tách biến riêng để chỉnh độc lập, không
+   đụng trang luyện tập. Dùng chung cho ArenaPage.tsx (MC) và
+   ArenaPlayerPage.tsx (người chơi) qua các component trong components/Arena*. */
+
+:root {
+  --arena-correct: #2FBF71;
+  --arena-wrong: #E8564F;
+  --arena-idle: #bfbfbf;
+}
+
+/* ── Vòng đếm ngược ─────────────────────────────────────────────────────── */
+/* --arena-progress (0→1) được ghi thẳng bằng JS (useArenaCountdown), không
+   qua React state, nên vòng tròn chạy mượt 60fps mà không gây re-render. */
+.arena-timer-ring {
+  --arena-progress: 1;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--agribank-red-dark);
+  background:
+    radial-gradient(circle, var(--pearl-white) 62%, transparent 63%),
+    conic-gradient(var(--gold) calc(var(--arena-progress) * 360deg), rgba(0, 0, 0, 0.1) 0);
+  transition: background 0.15s linear;
+  flex-shrink: 0;
+}
+
+.arena-timer-ring-value {
+  line-height: 1;
+}
+
+.arena-timer-low {
+  color: var(--arena-wrong);
+  animation: arena-timer-pulse 1s ease-in-out infinite;
+}
+
+@keyframes arena-timer-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(232, 86, 79, 0.16); }
+}
+
+/* ── Dải "đội đã bấm" ───────────────────────────────────────────────────── */
+.arena-buzz-strip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.arena-buzz-strip-empty {
+  font-size: 13px;
+}
+
+.arena-buzz-strip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.arena-buzz-chip {
+  --arena-chip-color: #999;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--arena-chip-color);
+  animation: arena-buzz-pop 0.45s cubic-bezier(0.2, 1.4, 0.5, 1);
+}
+
+@keyframes arena-buzz-pop {
+  0%   { transform: scale(0.5); opacity: 0; }
+  60%  { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.arena-buzz-chip-order {
+  opacity: 0.85;
+  font-size: 11px;
+}
+
+/* Pill số thời gian dạng ss:ms — tabular-nums để chữ số không nhảy bề ngang
+   khi đổi giá trị liên tục. */
+.arena-time-pill {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-family: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+}
+
+/* ── Bảng công bố kết quả từng đội ──────────────────────────────────────── */
+.arena-reveal-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.arena-result-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #eee;
+  background: #fafafa;
+  animation: arena-row-reveal 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+  animation-delay: calc(var(--arena-i, 0) * 70ms);
+}
+
+@keyframes arena-row-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.arena-result-correct {
+  border-color: var(--arena-correct);
+  background: rgba(47, 191, 113, 0.08);
+}
+
+.arena-result-wrong {
+  border-color: var(--arena-wrong);
+  background: rgba(232, 86, 79, 0.07);
+}
+
+.arena-result-no_answer {
+  border-color: var(--arena-idle);
+  background: #f5f5f5;
+  opacity: 0.85;
+}
+
+.arena-result-mine {
+  box-shadow: 0 0 0 2px var(--agribank-red) inset;
+}
+
+.arena-result-outcome-icon {
+  font-size: 18px;
+}
+
+.arena-result-correct .arena-result-outcome-icon { color: var(--arena-correct); }
+.arena-result-wrong .arena-result-outcome-icon { color: var(--arena-wrong); }
+.arena-result-no_answer .arena-result-outcome-icon { color: var(--arena-idle); }
+
+.arena-result-team {
+  --arena-chip-color: #999;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.arena-result-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--arena-chip-color);
+  flex-shrink: 0;
+}
+
+.arena-result-outcome-label {
+  font-size: 12px;
+  color: #8c8c8c;
+  white-space: nowrap;
+}
+
+.arena-result-time-raw {
+  font-size: 11px;
+  color: #999;
+}
+
+.arena-result-total {
+  font-weight: 700;
+  color: var(--agribank-red-dark);
+  white-space: nowrap;
+}
+
+/* Vương miện đội nhanh nhất đúng */
+.arena-crown {
+  color: var(--gold);
+  animation: arena-crown-shine 1.2s ease-in-out infinite;
+}
+
+@keyframes arena-crown-shine {
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); transform: rotate(0deg); }
+  50%      { filter: drop-shadow(0 0 4px var(--gold)); transform: rotate(-6deg); }
+}
+
+/* ── Điểm cộng/trừ, đổi hạng ────────────────────────────────────────────── */
+.arena-points-delta {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  animation: arena-points-fly 0.7s ease-out;
+}
+
+.arena-points-delta-plus { color: var(--arena-correct); }
+.arena-points-delta-minus { color: var(--arena-wrong); }
+
+@keyframes arena-points-fly {
+  0%   { transform: translateY(6px); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translateY(-2px); opacity: 1; }
+}
+
+.arena-rank-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  animation: arena-rank-bump 0.5s cubic-bezier(0.2, 1.4, 0.5, 1);
+}
+
+.arena-rank-badge-up {
+  color: var(--arena-correct);
+  background: rgba(47, 191, 113, 0.14);
+}
+
+.arena-rank-badge-down {
+  color: var(--arena-wrong);
+  background: rgba(232, 86, 79, 0.12);
+}
+
+@keyframes arena-rank-bump {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* ── Bảng xếp hạng sống (FLIP do JS đặt transform inline) ──────────────────── */
+.arena-leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.arena-lb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  will-change: transform;
+}
+
+.arena-lb-row-mine {
+  background: rgba(122, 20, 40, 0.06);
+  border: 1px solid rgba(122, 20, 40, 0.18);
+}
+
+.arena-lb-rank {
+  min-width: 22px;
+  font-weight: 700;
+  color: #8c8c8c;
+}
+
+.arena-lb-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arena-lb-score {
+  font-weight: 700;
+  color: var(--agribank-red-dark);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Màu đáp án câu hỏi (4 lựa chọn A-D) ────────────────────────────────── */
+/* Trước đây hard-code hex tuỳ tiện (#E74C3C/#3498DB/#2ECC71/#F39C12) — nay
+   dùng đúng bảng màu Agribank + phụ trợ hài hoà, vẫn đủ tương phản 4 màu. */
+.arena-option-0 { background: var(--agribank-red); }
+.arena-option-1 { background: #2F6690; }
+.arena-option-2 { background: #2FBF71; }
+.arena-option-3 { background: var(--gold); }
+
+/* ── Điện thoại: bảng công bố xếp dọc thay vì lưới ngang ────────────────── */
+@media (max-width: 575px) {
+  .arena-result-row {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "icon team crown"
+      "label label label"
+      "time points total";
+    row-gap: 4px;
+  }
+  .arena-result-outcome-icon { grid-area: icon; }
+  .arena-result-team { grid-area: team; }
+  .arena-result-outcome-label { grid-area: label; }
+  .arena-result-time { grid-area: time; }
+  .arena-points-delta { grid-area: points; }
+  .arena-result-total { grid-area: total; }
+}
+
+/* Tôn trọng thiết lập giảm chuyển động của hệ điều hành */
+@media (prefers-reduced-motion: reduce) {
+  .arena-timer-low,
+  .arena-buzz-chip,
+  .arena-result-row,
+  .arena-crown,
+  .arena-points-delta,
+  .arena-rank-badge { animation: none; }
+  .arena-lb-row { transition: none !important; } /* chặn cả FLIP do JS đặt transform inline */
+}
 
 p {
   margin: 0;

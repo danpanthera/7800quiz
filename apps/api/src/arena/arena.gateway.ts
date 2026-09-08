@@ -55,9 +55,7 @@ export class ArenaGateway
       try {
         this.broadcastOutgoing(event);
       } catch (err) {
-        this.logger.error(
-          `Lỗi phát sự kiện Arena: ${(err as Error)?.message}`,
-        );
+        this.logger.error(`Lỗi phát sự kiện Arena: ${(err as Error)?.message}`);
       }
     });
 
@@ -298,7 +296,9 @@ export class ArenaGateway
       // lo toàn bộ phần phát 'arena.prepare' rồi 'arena.question', không cần
       // gateway tự emit lại ở đây.
       await this.arenaService.startSession(data.sessionId);
-      this.server.to(this.getRoomName(data.sessionId)).emit('arena.started', {});
+      this.server
+        .to(this.getRoomName(data.sessionId))
+        .emit('arena.started', {});
       return { ok: true };
     } catch (err) {
       return { error: err.message };

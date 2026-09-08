@@ -4,7 +4,7 @@
 // logic tương đương ở nơi khác (tránh lệch công thức chấm điểm giữa 2 nơi).
 
 import type { QuestionType } from '@prisma/client';
-import type { ArenaOutcome, ArenaTeamRoundResult } from './arena.types';
+import type { ArenaTeamRoundResult } from './arena.types';
 
 // ─── Chấm đúng/sai một câu trả lời ───────────────────────────────────────────
 
@@ -167,7 +167,8 @@ export function compareTeamsForRanking(
 ): number {
   if (a.score !== b.score) return b.score - a.score;
   if (a.correctCount !== b.correctCount) return b.correctCount - a.correctCount;
-  if (a.totalAnswerMs !== b.totalAnswerMs) return a.totalAnswerMs - b.totalAnswerMs;
+  if (a.totalAnswerMs !== b.totalAnswerMs)
+    return a.totalAnswerMs - b.totalAnswerMs;
   return a.joinedAt.getTime() - b.joinedAt.getTime();
 }
 
@@ -216,7 +217,7 @@ export function buildTeamRoundResults(
         teamId: team.id,
         teamName: team.name,
         teamColor: team.color,
-        outcome: 'no_answer' as ArenaOutcome,
+        outcome: 'no_answer',
         selectedOptionIds: [],
         responseMs: null,
         rawResponseMs: null,
@@ -236,7 +237,7 @@ export function buildTeamRoundResults(
       teamId: team.id,
       teamName: team.name,
       teamColor: team.color,
-      outcome: (buzz.isCorrect ? 'correct' : 'wrong') as ArenaOutcome,
+      outcome: buzz.isCorrect ? 'correct' : 'wrong',
       selectedOptionIds: buzz.selectedOptionIds,
       responseMs: buzz.responseMs,
       rawResponseMs: buzz.rawResponseMs,

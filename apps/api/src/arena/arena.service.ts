@@ -12,6 +12,7 @@ import {
   ArenaHostMode,
   Prisma,
   XpSource,
+  type ArenaBuzz,
 } from '@prisma/client';
 import { GamificationService } from '../gamification/gamification.service';
 import { ArenaEventBus } from './arena-event-bus';
@@ -32,7 +33,6 @@ import type {
   ArenaBuzzPayload,
   ArenaLeaderboardRow,
   ArenaXpResult,
-  ArenaRevealReasonValue,
 } from './arena.types';
 
 const TEAM_COLORS = [
@@ -857,7 +857,7 @@ export class ArenaService {
       compensationMs,
     });
 
-    let buzz;
+    let buzz: ArenaBuzz;
     try {
       buzz = await this.prisma.arenaBuzz.create({
         data: {
@@ -928,7 +928,8 @@ export class ArenaService {
         },
       },
     });
-    if (!round) throw new BadRequestException('Không tìm thấy câu hỏi hiện tại');
+    if (!round)
+      throw new BadRequestException('Không tìm thấy câu hỏi hiện tại');
 
     // Đã công bố rồi (MC bấm trùng lúc hết giờ / gọi lại sau khi mất kết nối)
     // — trả nguyên kết quả cũ, KHÔNG cộng điểm lần hai.
@@ -1117,14 +1118,15 @@ export class ArenaService {
       .map((o) => o.id);
 
     const fastestCorrect = results.find((r) => r.correctRank === 1);
-    const fastestOverall = results.reduce<
-      (typeof results)[number] | null
-    >((best, r) => {
-      if (r.speedRank == null) return best;
-      if (best == null || (best.speedRank ?? Infinity) > r.speedRank)
-        return r;
-      return best;
-    }, null);
+    const fastestOverall = results.reduce<(typeof results)[number] | null>(
+      (best, r) => {
+        if (r.speedRank == null) return best;
+        if (best == null || (best.speedRank ?? Infinity) > r.speedRank)
+          return r;
+        return best;
+      },
+      null,
+    );
 
     return {
       roundId: round.id,
@@ -1135,8 +1137,7 @@ export class ArenaService {
       explanation: round.question.explanation,
       revealedAtMs: (round.revealedAt ?? new Date()).getTime(),
       serverNowMs: Date.now(),
-      revealReason: (round.revealReason ??
-        ArenaRevealReason.HOST) as ArenaRevealReasonValue,
+      revealReason: round.revealReason ?? ArenaRevealReason.HOST,
       durationMs:
         round.deadlineAt && round.startedAt
           ? round.deadlineAt.getTime() - round.startedAt.getTime()
@@ -1361,7 +1362,11 @@ export class ArenaService {
           buzzes: { orderBy: [{ answeredAt: 'asc' }, { id: 'asc' }] },
         },
       });
-      if (round?.status === ArenaRoundStatus.ACTIVE && round.startedAt && round.deadlineAt) {
+      if (
+        round?.status === ArenaRoundStatus.ACTIVE &&
+        round.startedAt &&
+        round.deadlineAt
+      ) {
         currentQuestion = {
           roundId: round.id,
           order: round.order,
@@ -1436,7 +1441,6 @@ export class ArenaService {
     };
   }
 
-
   // ─── Khôi phục hẹn giờ sau khi API restart ─────────────────────────────────
 
   /**
@@ -1446,7 +1450,12 @@ export class ArenaService {
   async getRunningSessionsForClockResume() {
     const sessions = await this.prisma.arenaSession.findMany({
       where: { status: ArenaStatus.RUNNING },
-      select: { id: true, hostMode: true, revealPauseSec: true, currentRoundOrder: true },
+      select: {
+        id: true,
+        hostMode: true,
+        revealPauseSec: true,
+        currentRoundOrder: true,
+      },
     });
     return Promise.all(
       sessions.map(async (s) => {

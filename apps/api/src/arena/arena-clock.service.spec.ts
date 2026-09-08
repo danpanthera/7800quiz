@@ -1,6 +1,10 @@
 import { ArenaClockService } from './arena-clock.service';
 import { ArenaEventBus } from './arena-event-bus';
-import { ArenaHostMode, ArenaRoundStatus, ArenaRevealReason } from '@prisma/client';
+import {
+  ArenaHostMode,
+  ArenaRoundStatus,
+  ArenaRevealReason,
+} from '@prisma/client';
 import type { ArenaService } from './arena.service';
 
 describe('ArenaClockService', () => {
@@ -145,19 +149,21 @@ describe('ArenaClockService', () => {
   describe('resumeAfterRestart', () => {
     it('round ACTIVE còn hạn thì hẹn phần thời gian còn lại', async () => {
       const now = Date.now();
-      await clock.resumeAfterRestart(async () => [
-        {
-          id: 's1',
-          hostMode: ArenaHostMode.AUTO,
-          revealPauseSec: 5,
-          currentRound: {
-            id: 'r1',
-            status: ArenaRoundStatus.ACTIVE,
-            deadlineAt: new Date(now + 3000),
-            revealedAt: null,
+      await clock.resumeAfterRestart(() =>
+        Promise.resolve([
+          {
+            id: 's1',
+            hostMode: ArenaHostMode.AUTO,
+            revealPauseSec: 5,
+            currentRound: {
+              id: 'r1',
+              status: ArenaRoundStatus.ACTIVE,
+              deadlineAt: new Date(now + 3000),
+              revealedAt: null,
+            },
           },
-        },
-      ]);
+        ]),
+      );
 
       expect(service.revealRound).not.toHaveBeenCalled();
       await jest.advanceTimersByTimeAsync(3400);
@@ -168,19 +174,21 @@ describe('ArenaClockService', () => {
 
     it('round ACTIVE đã quá hạn thì công bố ngay lập tức', async () => {
       const now = Date.now();
-      await clock.resumeAfterRestart(async () => [
-        {
-          id: 's1',
-          hostMode: ArenaHostMode.MANUAL,
-          revealPauseSec: 5,
-          currentRound: {
-            id: 'r1',
-            status: ArenaRoundStatus.ACTIVE,
-            deadlineAt: new Date(now - 10000),
-            revealedAt: null,
+      await clock.resumeAfterRestart(() =>
+        Promise.resolve([
+          {
+            id: 's1',
+            hostMode: ArenaHostMode.MANUAL,
+            revealPauseSec: 5,
+            currentRound: {
+              id: 'r1',
+              status: ArenaRoundStatus.ACTIVE,
+              deadlineAt: new Date(now - 10000),
+              revealedAt: null,
+            },
           },
-        },
-      ]);
+        ]),
+      );
       expect(service.revealRound).toHaveBeenCalledWith('s1', {
         reason: ArenaRevealReason.DEADLINE,
       });
@@ -188,19 +196,21 @@ describe('ArenaClockService', () => {
 
     it('AUTO + REVEALED còn trong khoảng nghỉ thì hẹn nextQuestion phần còn lại', async () => {
       const now = Date.now();
-      await clock.resumeAfterRestart(async () => [
-        {
-          id: 's1',
-          hostMode: ArenaHostMode.AUTO,
-          revealPauseSec: 5,
-          currentRound: {
-            id: 'r1',
-            status: ArenaRoundStatus.REVEALED,
-            deadlineAt: null,
-            revealedAt: new Date(now - 2000), // đã công bố 2s trước, còn 3s nữa
+      await clock.resumeAfterRestart(() =>
+        Promise.resolve([
+          {
+            id: 's1',
+            hostMode: ArenaHostMode.AUTO,
+            revealPauseSec: 5,
+            currentRound: {
+              id: 'r1',
+              status: ArenaRoundStatus.REVEALED,
+              deadlineAt: null,
+              revealedAt: new Date(now - 2000), // đã công bố 2s trước, còn 3s nữa
+            },
           },
-        },
-      ]);
+        ]),
+      );
       expect(service.nextQuestion).not.toHaveBeenCalled();
       jest.advanceTimersByTime(3100);
       expect(service.nextQuestion).toHaveBeenCalledWith('s1');
@@ -208,19 +218,21 @@ describe('ArenaClockService', () => {
 
     it('MANUAL + REVEALED thì không làm gì (chờ MC bấm)', async () => {
       const now = Date.now();
-      await clock.resumeAfterRestart(async () => [
-        {
-          id: 's1',
-          hostMode: ArenaHostMode.MANUAL,
-          revealPauseSec: 5,
-          currentRound: {
-            id: 'r1',
-            status: ArenaRoundStatus.REVEALED,
-            deadlineAt: null,
-            revealedAt: new Date(now - 2000),
+      await clock.resumeAfterRestart(() =>
+        Promise.resolve([
+          {
+            id: 's1',
+            hostMode: ArenaHostMode.MANUAL,
+            revealPauseSec: 5,
+            currentRound: {
+              id: 'r1',
+              status: ArenaRoundStatus.REVEALED,
+              deadlineAt: null,
+              revealedAt: new Date(now - 2000),
+            },
           },
-        },
-      ]);
+        ]),
+      );
       jest.advanceTimersByTime(60000);
       expect(service.nextQuestion).not.toHaveBeenCalled();
       expect(service.revealRound).not.toHaveBeenCalled();
@@ -229,30 +241,32 @@ describe('ArenaClockService', () => {
     it('1 phiên lỗi không chặn việc khôi phục các phiên khác', async () => {
       const now = Date.now();
       service.revealRound.mockRejectedValueOnce(new Error('lỗi giả lập'));
-      await clock.resumeAfterRestart(async () => [
-        {
-          id: 's-loi',
-          hostMode: ArenaHostMode.MANUAL,
-          revealPauseSec: 5,
-          currentRound: {
-            id: 'r1',
-            status: ArenaRoundStatus.ACTIVE,
-            deadlineAt: new Date(now - 1000),
-            revealedAt: null,
+      await clock.resumeAfterRestart(() =>
+        Promise.resolve([
+          {
+            id: 's-loi',
+            hostMode: ArenaHostMode.MANUAL,
+            revealPauseSec: 5,
+            currentRound: {
+              id: 'r1',
+              status: ArenaRoundStatus.ACTIVE,
+              deadlineAt: new Date(now - 1000),
+              revealedAt: null,
+            },
           },
-        },
-        {
-          id: 's-ok',
-          hostMode: ArenaHostMode.MANUAL,
-          revealPauseSec: 5,
-          currentRound: {
-            id: 'r2',
-            status: ArenaRoundStatus.ACTIVE,
-            deadlineAt: new Date(now - 1000),
-            revealedAt: null,
+          {
+            id: 's-ok',
+            hostMode: ArenaHostMode.MANUAL,
+            revealPauseSec: 5,
+            currentRound: {
+              id: 'r2',
+              status: ArenaRoundStatus.ACTIVE,
+              deadlineAt: new Date(now - 1000),
+              revealedAt: null,
+            },
           },
-        },
-      ]);
+        ]),
+      );
       expect(service.revealRound).toHaveBeenCalledWith('s-ok', {
         reason: ArenaRevealReason.DEADLINE,
       });

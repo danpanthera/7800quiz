@@ -209,10 +209,7 @@ describe('rankAndScoreBuzzes', () => {
 
   it('phá hoà tất định bằng id khi trùng answeredAt', () => {
     const ranked = rankAndScoreBuzzes(
-      [
-        buzz('zzz', 'A', true, 1000),
-        buzz('aaa', 'B', true, 1000),
-      ],
+      [buzz('zzz', 'A', true, 1000), buzz('aaa', 'B', true, 1000)],
       pointsForRank,
       0,
     );
@@ -230,7 +227,13 @@ describe('compareTeamsForRanking', () => {
     totalAnswerMs: number,
     joinedAtMs: number,
   ): RankableTeam {
-    return { id, score, correctCount, totalAnswerMs, joinedAt: new Date(joinedAtMs) };
+    return {
+      id,
+      score,
+      correctCount,
+      totalAnswerMs,
+      joinedAt: new Date(joinedAtMs),
+    };
   }
 
   it('điểm cao hơn thắng', () => {
@@ -283,16 +286,22 @@ describe('buildTeamRoundResults', () => {
   }
 
   it('đội không trả lời vẫn có 1 hàng với outcome no_answer và scoreBefore = scoreAfter = điểm hiện tại', () => {
-    const buzzesByTeamId = new Map([
-      ['A', makeBuzz({ teamId: 'A' })],
-    ]);
+    const buzzesByTeamId = new Map([['A', makeBuzz({ teamId: 'A' })]]);
     const currentScoreByTeamId = new Map([
       ['A', 10],
       ['B', 25],
       ['C', 0],
     ]);
-    const rankBefore = new Map([['A', 2], ['B', 1], ['C', 3]]);
-    const rankAfter = new Map([['A', 1], ['B', 1], ['C', 3]]);
+    const rankBefore = new Map([
+      ['A', 2],
+      ['B', 1],
+      ['C', 3],
+    ]);
+    const rankAfter = new Map([
+      ['A', 1],
+      ['B', 1],
+      ['C', 3],
+    ]);
 
     const results = buildTeamRoundResults(
       teams,
@@ -334,10 +343,31 @@ describe('buildTeamRoundResults', () => {
 
   it('sắp thứ tự: đúng theo tốc độ → sai theo tốc độ → không trả lời', () => {
     const buzzesByTeamId = new Map([
-      ['A', makeBuzz({ teamId: 'A', isCorrect: true, correctRank: 2, speedRank: 2 })],
-      ['B', makeBuzz({ teamId: 'B', isCorrect: false, correctRank: null, speedRank: 1, pointsAwarded: 0 })],
+      [
+        'A',
+        makeBuzz({
+          teamId: 'A',
+          isCorrect: true,
+          correctRank: 2,
+          speedRank: 2,
+        }),
+      ],
+      [
+        'B',
+        makeBuzz({
+          teamId: 'B',
+          isCorrect: false,
+          correctRank: null,
+          speedRank: 1,
+          pointsAwarded: 0,
+        }),
+      ],
     ]);
-    const currentScoreByTeamId = new Map([['A', 0], ['B', 0], ['C', 0]]);
+    const currentScoreByTeamId = new Map([
+      ['A', 0],
+      ['B', 0],
+      ['C', 0],
+    ]);
     const rankBefore = new Map<string, number>();
     const rankAfter = new Map<string, number>();
 
@@ -350,7 +380,11 @@ describe('buildTeamRoundResults', () => {
     );
 
     expect(results.map((r) => r.teamId)).toEqual(['A', 'B', 'C']);
-    expect(results.map((r) => r.outcome)).toEqual(['correct', 'wrong', 'no_answer']);
+    expect(results.map((r) => r.outcome)).toEqual([
+      'correct',
+      'wrong',
+      'no_answer',
+    ]);
   });
 
   it('isFastestCorrect chỉ true khi correctRank === 1', () => {
@@ -358,7 +392,11 @@ describe('buildTeamRoundResults', () => {
       ['A', makeBuzz({ teamId: 'A', correctRank: 1 })],
       ['B', makeBuzz({ teamId: 'B', correctRank: 2 })],
     ]);
-    const currentScoreByTeamId = new Map([['A', 0], ['B', 0], ['C', 0]]);
+    const currentScoreByTeamId = new Map([
+      ['A', 0],
+      ['B', 0],
+      ['C', 0],
+    ]);
     const results = buildTeamRoundResults(
       teams,
       buzzesByTeamId,

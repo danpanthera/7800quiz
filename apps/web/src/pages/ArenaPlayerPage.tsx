@@ -7,50 +7,41 @@ import {
   TrophyOutlined, ThunderboltOutlined, CheckCircleOutlined, ArrowLeftOutlined, BankOutlined, LockOutlined,
   TeamOutlined, MailOutlined,
 } from '@ant-design/icons'
-import { io, Socket } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useAuth } from '../lib/useAuth'
-import { playCorrectSound, playWrongSound, playWinSound, fireConfettiBurst } from '../lib/feedback-fx'
+import { createArenaSocket } from '../lib/arena-socket'
+import { useServerClock } from '../hooks/useServerClock'
+import { useArenaCountdown } from '../hooks/useArenaCountdown'
+import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
+import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
+import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
+import { formatResponseTime } from '../lib/arena-format'
+import {
+  playCorrectSound, playWrongSound, playWinSound, playFastestSound,
+  fireConfettiBurst, fireGoldSparkle,
+} from '../lib/feedback-fx'
+import type {
+  ArenaTeam, ArenaQuestionPayload, ArenaPreparePayload, ArenaRevealPayload,
+  ArenaLeaderboardRow, ArenaXpResult, ArenaStatePayload,
+} from '../lib/arena-types'
 
 const { Title, Text } = Typography
-const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
-const OPTION_COLORS = ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12']
 
-// ─── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
-
-interface TeamMember { userId: string; fullName: string }
-interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number; members?: TeamMember[] }
-interface QuestionOption { id: string; content: string }
-interface ArenaQuestion {
-  roundId: string
-  order: number
-  question: { id: string; content: string; questionType: 'SINGLE' | 'MULTIPLE'; subjectName?: string | null; options: QuestionOption[] }
-  autoAdvanceSec: number
-  hostMode: string
-}
-// Phát TRƯỚC arena.question — báo lĩnh vực để chuẩn bị tinh thần trong
-// prepareSec giây, trước khi câu hỏi thật sự bật ra.
-interface ArenaPrepare {
-  roundId: string
-  order: number
-  totalRounds: number
-  subjectName: string | null
-  prepareSec: number
-  hostMode: string
-}
-interface RevealData {
-  roundId: string; correctOptionIds: string[]; explanation?: string
-  buzzes: { teamId: string; isCorrect: boolean; pointsAwarded: number }[]
-  leaderboard: ArenaTeam[]
-}
-interface XpResult { levelUp: boolean; newLevel: number; newBadges: { code: string; name: string; iconSlug: string }[] }
 interface SessionPreview {
   id: string; name: string; joinCode: string; status: string
   requiresPasscode: boolean
   isInviteOnly: boolean
   quiz: { id: string; title: string }
   teams: { id: string; name: string; color: string; score: number; isPreset: boolean; memberCount: number }[]
+}
+
+interface JoinPayload {
+  joinCode: string
+  teamName?: string
+  teamId?: string
+  passcode?: string
 }
 
 type View = 'join' | 'lobby' | 'game' | 'result' | 'kicked'
@@ -76,24 +67,28 @@ export default function ArenaPlayerPage() {
   const [myTeamId, setMyTeamId] = useState<string | null>(null)
   const [myTeamColor, setMyTeamColor] = useState<string>('#7A1428')
   const [lobbyTeams, setLobbyTeams] = useState<ArenaTeam[]>([])
-  const [currentQuestion, setCurrentQuestion] = useState<ArenaQuestion | null>(null)
+  const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([])
+  const [currentQuestion, setCurrentQuestion] = useState<ArenaQuestionPayload | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [hasAnswered, setHasAnswered] = useState(false)
-  const [revealData, setRevealData] = useState<RevealData | null>(null)
-  const [finalRanking, setFinalRanking] = useState<ArenaTeam[]>([])
-  const [myXp, setMyXp] = useState<XpResult | null>(null)
-  const [prepare, setPrepare] = useState<ArenaPrepare | null>(null)
-  const [prepareCountdown, setPrepareCountdown] = useState(0)
+  const [myResponseMs, setMyResponseMs] = useState<number | null>(null)
+  const [locked, setLocked] = useState(false)
+  const [revealData, setRevealData] = useState<ArenaRevealPayload | null>(null)
+  const [finalRanking, setFinalRanking] = useState<ArenaLeaderboardRow[]>([])
+  const [myXp, setMyXp] = useState<ArenaXpResult | null>(null)
+  const [prepare, setPrepare] = useState<ArenaPreparePayload | null>(null)
+  const [socket, setSocket] = useState<Socket | null>(null)
   const socketRef = useRef<Socket | null>(null)
   const myTeamIdRef = useRef<string | null>(null)
-  const prepareIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastJoinPayloadRef = useRef<JoinPayload | null>(null)
+  const hasJoinedRef = useRef(false)
 
-  // Đếm ngược trang trí cho pha "chuẩn bị" — mốc thật nằm ở server
-  // (ARENA_PREPARE_SEC), đồng hồ này chỉ để hiển thị, không quyết định gì.
-  const clearPrepareInterval = useCallback(() => {
-    if (prepareIntervalRef.current) clearInterval(prepareIntervalRef.current)
-    prepareIntervalRef.current = null
-  }, [])
+  const getServerNow = useServerClock(socket)
+  const countdown = useArenaCountdown(
+    currentQuestion?.deadlineAtMs ?? null,
+    currentQuestion?.startedAtMs ?? null,
+    getServerNow,
+  )
 
   const { data: preview, isLoading: previewLoading, isError: previewFailed } = useQuery<SessionPreview>({
     queryKey: ['arena-join-preview', joinCode],
@@ -101,11 +96,51 @@ export default function ArenaPlayerPage() {
     retry: false,
   })
 
-  useEffect(() => () => { clearPrepareInterval(); socketRef.current?.disconnect() }, [clearPrepareInterval])
+  useEffect(() => () => { socketRef.current?.disconnect() }, [])
 
   const myScore = lobbyTeams.find((t) => t.id === myTeamId)?.score ?? 0
-  const myRevealResult = revealData?.buzzes.find((b) => b.teamId === myTeamId)
+  const myRevealResult = revealData?.results.find((r) => r.teamId === myTeamId)
   const presetTeams = preview?.teams.filter((t) => t.isPreset) ?? []
+
+  // ─── Dựng lại toàn bộ view từ snapshot arena.state (F5/rớt mạng giữa trận) ──
+  const applyState = useCallback((state: ArenaStatePayload) => {
+    setLeaderboard(state.teams)
+    setLobbyTeams((prev) => (prev.length > 0 ? prev : state.teams as unknown as ArenaTeam[]))
+    if (state.myTeamId) {
+      setMyTeamId(state.myTeamId)
+      myTeamIdRef.current = state.myTeamId
+      if (state.myTeamName) setTeamName(state.myTeamName)
+      if (state.myTeamColor) setMyTeamColor(state.myTeamColor)
+    }
+    if (state.currentQuestion) {
+      setPrepare(null)
+      setCurrentQuestion(state.currentQuestion)
+      setRevealData(null)
+      setLocked(false)
+      if (state.myAnswer) {
+        setHasAnswered(true)
+        setSelected(state.myAnswer.selectedOptionIds)
+        setMyResponseMs(state.myAnswer.responseMs)
+      } else {
+        setHasAnswered(false)
+        setSelected([])
+        setMyResponseMs(null)
+      }
+      setView('game')
+    } else if (state.lastReveal) {
+      setCurrentQuestion(null)
+      setRevealData(state.lastReveal)
+      setLeaderboard(state.lastReveal.leaderboard)
+      setView('game')
+    } else if (state.final) {
+      setFinalRanking(state.final.ranking)
+      setView('result')
+    } else if (state.status === 'RUNNING') {
+      setView('game')
+    } else if (state.status === 'LOBBY') {
+      setView('lobby')
+    }
+  }, [])
 
   const handleJoin = useCallback(() => {
     const usePreset = presetTeams.length > 0
@@ -122,28 +157,40 @@ export default function ArenaPlayerPage() {
 
     setJoining(true)
     setJoinError('')
-    const token = localStorage.getItem('token')
-    const socket = io(WS_URL, { auth: { token }, transports: ['websocket'] })
-    socketRef.current = socket
+    hasJoinedRef.current = false
+    lastJoinPayloadRef.current = {
+      joinCode,
+      teamName: usePreset ? undefined : teamName.trim(),
+      teamId: usePreset ? selectedTeamId! : undefined,
+      passcode: passcode.trim() || undefined,
+    }
 
-    socket.on('connect_error', () => {
-      setJoining(false)
-      setJoinError('Không kết nối được máy chủ, thử lại')
+    const s = createArenaSocket()
+    socketRef.current = s
+    setSocket(s)
+
+    s.on('connect_error', () => {
+      if (!hasJoinedRef.current) {
+        setJoining(false)
+        setJoinError('Không kết nối được máy chủ, thử lại')
+      }
     })
 
-    socket.on('arena.team_joined', ({ team }: { team: ArenaTeam }) => {
+    s.on('arena.state', (state: ArenaStatePayload) => applyState(state))
+
+    s.on('arena.team_joined', ({ team }: { team: ArenaTeam }) => {
       setLobbyTeams((prev) => [...prev.filter((t) => t.id !== team.id), { ...team, score: 0 }])
     })
 
-    socket.on('arena.teams_updated', ({ teams }: { teams: ArenaTeam[] }) => {
+    s.on('arena.teams_updated', ({ teams }: { teams: ArenaTeam[] }) => {
       setLobbyTeams(teams)
     })
 
-    socket.on('arena.started', () => setView('game'))
+    s.on('arena.started', () => setView('game'))
 
-    socket.on('arena.you_were_kicked', () => {
+    s.on('arena.you_were_kicked', () => {
       setView('kicked')
-      socket.disconnect()
+      s.disconnect()
       socketRef.current = null
     })
 
@@ -154,89 +201,105 @@ export default function ArenaPlayerPage() {
       setTeamName(newName)
       setMyTeamColor(teamColor)
     }
-    socket.on('arena.you_were_merged', syncTeamChange)
-    socket.on('arena.you_were_moved', syncTeamChange)
+    s.on('arena.you_were_merged', syncTeamChange)
+    s.on('arena.you_were_moved', syncTeamChange)
 
     // Đồng đội khác đã trả lời thay cả đội — không để mình treo ở màn hình chọn đáp án
-    socket.on('arena.team_answered', () => {
+    s.on('arena.team_answered', () => {
       setHasAnswered(true)
     })
 
-    socket.on('arena.prepare', (p: ArenaPrepare) => {
-      clearPrepareInterval()
+    s.on('arena.prepare', (p: ArenaPreparePayload) => {
       setCurrentQuestion(null)
       setSelected([])
       setHasAnswered(false)
+      setMyResponseMs(null)
       setRevealData(null)
+      setLocked(false)
       setPrepare(p)
-      setPrepareCountdown(p.prepareSec)
-      prepareIntervalRef.current = setInterval(() => {
-        setPrepareCountdown((s) => (s <= 1 ? 0 : s - 1))
-      }, 1000)
       setView('game')
     })
 
-    socket.on('arena.question', (q: ArenaQuestion) => {
-      clearPrepareInterval()
+    s.on('arena.question', (q: ArenaQuestionPayload) => {
       setPrepare(null)
       setCurrentQuestion(q)
       setSelected([])
       setHasAnswered(false)
+      setMyResponseMs(null)
       setRevealData(null)
+      setLocked(false)
       setView('game')
     })
 
-    socket.on('arena.revealed', (data: RevealData) => {
+    s.on('arena.locked', () => setLocked(true))
+
+    s.on('arena.revealed', (data: ArenaRevealPayload) => {
       setRevealData(data)
-      setLobbyTeams(data.leaderboard)
-      const mine = data.buzzes.find((b) => b.teamId === myTeamIdRef.current)
-      if (mine) void (mine.isCorrect ? playCorrectSound() : playWrongSound())
+      setLeaderboard(data.leaderboard)
+      setLobbyTeams(data.leaderboard as unknown as ArenaTeam[])
+      setLocked(false)
+      const mine = data.results.find((r) => r.teamId === myTeamIdRef.current)
+      if (mine) {
+        if (mine.outcome === 'correct') {
+          void playCorrectSound()
+          if (mine.isFastestCorrect) {
+            void playFastestSound()
+            void fireGoldSparkle()
+          }
+        } else if (mine.outcome === 'wrong') {
+          void playWrongSound()
+        }
+      }
     })
 
-    socket.on('arena.leaderboard', ({ teams }: { teams: ArenaTeam[] }) => {
-      setLobbyTeams(teams)
+    s.on('arena.leaderboard', ({ teams }: { teams: ArenaLeaderboardRow[] }) => {
+      setLeaderboard(teams)
+      setLobbyTeams(teams as unknown as ArenaTeam[])
     })
 
-    socket.on('arena.ended', ({ ranking, xpResults }: { ranking: ArenaTeam[]; xpResults?: Record<string, XpResult> }) => {
-      clearPrepareInterval()
+    s.on('arena.ended', ({ ranking, xpResults }: { ranking: ArenaLeaderboardRow[]; xpResults?: Record<string, ArenaXpResult> }) => {
       setPrepare(null)
       setFinalRanking(ranking)
       if (user && xpResults?.[user.id]) setMyXp(xpResults[user.id])
       setView('result')
-      const mine = ranking.find((t) => t.id === myTeamIdRef.current)
+      const mine = ranking.find((t) => t.teamId === myTeamIdRef.current)
       if (mine?.rank === 1) {
         void playWinSound()
         void fireConfettiBurst()
       }
     })
 
-    socket.emit(
-      'arena.join',
-      {
-        joinCode,
-        teamName: usePreset ? undefined : teamName.trim(),
-        teamId: usePreset ? selectedTeamId! : undefined,
-        passcode: passcode.trim() || undefined,
-      },
-      (res: { ok?: boolean; teamId?: string; teamName?: string; teamColor?: string; error?: string }) => {
-        setJoining(false)
-        if (!res?.ok) {
-          setJoinError(res?.error ?? 'Tham gia thất bại')
-          socket.disconnect()
-          socketRef.current = null
-          return
-        }
-        setMyTeamId(res.teamId!)
-        myTeamIdRef.current = res.teamId!
-        setTeamName(res.teamName!)
-        setMyTeamColor(res.teamColor!)
-        setView('lobby')
-      },
-    )
-  }, [joinCode, teamName, passcode, selectedTeamId, presetTeams.length, preview?.requiresPasscode, user, clearPrepareInterval])
+    // Đăng ký TRƯỚC lần connect đầu tiên — cùng 1 luồng xử lý cho join lần đầu
+    // LẪN tự vào lại sau khi socket.io reconnect (mất mạng/F5). Server luôn
+    // trả arena.state ngay sau khi join thành công nên applyState() tự dựng
+    // lại đúng câu hỏi/deadline/đáp án đã gửi mà không cần logic riêng.
+    s.on('connect', () => {
+      s.emit(
+        'arena.join',
+        lastJoinPayloadRef.current,
+        (res: { ok?: boolean; teamId?: string; teamName?: string; teamColor?: string; error?: string }) => {
+          if (!hasJoinedRef.current) setJoining(false)
+          if (!res?.ok) {
+            if (!hasJoinedRef.current) {
+              setJoinError(res?.error ?? 'Tham gia thất bại')
+              s.disconnect()
+              socketRef.current = null
+            }
+            return
+          }
+          hasJoinedRef.current = true
+          setMyTeamId(res.teamId!)
+          myTeamIdRef.current = res.teamId!
+          setTeamName(res.teamName!)
+          setMyTeamColor(res.teamColor!)
+          setView((prev) => (prev === 'join' ? 'lobby' : prev))
+        },
+      )
+    })
+  }, [joinCode, teamName, passcode, selectedTeamId, presetTeams.length, preview?.requiresPasscode, user, applyState])
 
-  function toggleOption(optionId: string, questionType: 'SINGLE' | 'MULTIPLE') {
-    if (hasAnswered) return
+  function toggleOption(optionId: string, questionType: 'SINGLE' | 'MULTIPLE' | 'ORDERING') {
+    if (hasAnswered || locked) return
     setSelected((prev) => {
       if (questionType === 'SINGLE') return prev[0] === optionId ? [] : [optionId]
       return prev.includes(optionId) ? prev.filter((id) => id !== optionId) : [...prev, optionId]
@@ -244,13 +307,16 @@ export default function ArenaPlayerPage() {
   }
 
   function submitAnswer() {
-    if (!currentQuestion || selected.length === 0 || !myTeamIdRef.current) return
+    if (!currentQuestion || selected.length === 0 || !myTeamIdRef.current || locked) return
     setHasAnswered(true)
-    socketRef.current?.emit('arena.answer', {
-      arenaRoundId: currentQuestion.roundId,
-      teamId: myTeamIdRef.current,
-      selectedOptionIds: selected,
-    })
+    socketRef.current?.emit(
+      'arena.answer',
+      { arenaRoundId: currentQuestion.roundId, selectedOptionIds: selected },
+      (res: { ok?: boolean; responseMs?: number; error?: string }) => {
+        if (res?.ok && res.responseMs != null) setMyResponseMs(res.responseMs)
+        if (!res?.ok) setHasAnswered(false)
+      },
+    )
   }
 
   // ─── Nội dung theo view ──────────────────────────────────────────────────
@@ -268,14 +334,10 @@ export default function ArenaPlayerPage() {
           <Result status="error" title="Mã tham gia không hợp lệ" subTitle="Kiểm tra lại mã hoặc quét lại mã QR từ MC." />
         </CenterCard>
       )
-    } else if (preview.status !== 'LOBBY') {
+    } else if (preview.status === 'FINISHED') {
       body = (
         <CenterCard key={view}>
-          <Result
-            status="warning"
-            title={preview.status === 'RUNNING' ? 'Phiên đấu đã bắt đầu' : 'Phiên đấu đã kết thúc'}
-            subTitle="Không thể tham gia lúc này — liên hệ MC nếu cần vào lại."
-          />
+          <Result status="warning" title="Phiên đấu đã kết thúc" subTitle="Không thể tham gia lúc này." />
         </CenterCard>
       )
     } else {
@@ -290,6 +352,14 @@ export default function ArenaPlayerPage() {
                 {preview.requiresPasscode && <Tag icon={<LockOutlined />} color="gold">Phòng yêu cầu mật khẩu</Tag>}
                 {preview.isInviteOnly && <Tag icon={<MailOutlined />} color="purple">Chỉ dành cho người được mời</Tag>}
               </Space>
+            )}
+            {preview.status === 'RUNNING' && (
+              <Alert
+                style={{ marginTop: 12, textAlign: 'left' }}
+                type="info"
+                showIcon
+                message="Phiên đang chạy — bạn vẫn tham gia được nếu MC cho phép, hoặc vào lại nếu bạn đã từng tham gia."
+              />
             )}
           </div>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -400,11 +470,7 @@ export default function ArenaPlayerPage() {
           <Text strong style={{ fontSize: 24, display: 'block', marginBottom: 20 }}>
             {prepare.subjectName ?? 'Chưa phân loại lĩnh vực'}
           </Text>
-          {prepareCountdown > 0 ? (
-            <Title level={1} style={{ margin: 0 }}>{prepareCountdown}</Title>
-          ) : (
-            <Spin />
-          )}
+          <Spin />
           <div style={{ marginTop: 12 }}>
             <Text type="secondary">Chuẩn bị tinh thần nhé — câu hỏi sắp hiện ra!</Text>
           </div>
@@ -417,45 +483,59 @@ export default function ArenaPlayerPage() {
       <div key={currentQuestion.roundId} className="arena-view-transition" style={{ maxWidth: 560, margin: '0 auto', padding: '16px 12px' }}>
         <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
           <Tag color={myTeamColor}>{teamName}</Tag>
-          <Text strong>{myScore} điểm</Text>
+          <Space size={12}>
+            {!isRevealed && <ArenaCountdownRing {...countdown} size={40} />}
+            <Text strong>{myScore} điểm</Text>
+          </Space>
         </Space>
 
         {isRevealed && myRevealResult && (
           <Alert
             style={{ marginBottom: 12 }}
-            type={myRevealResult.isCorrect ? 'success' : 'error'}
+            type={myRevealResult.outcome === 'correct' ? 'success' : myRevealResult.outcome === 'wrong' ? 'error' : 'warning'}
             showIcon
             message={
-              myRevealResult.isCorrect
-                ? `Chính xác! +${myRevealResult.pointsAwarded} điểm`
-                : myRevealResult.pointsAwarded < 0
-                  ? `Sai rồi — ${myRevealResult.pointsAwarded} điểm`
-                  : 'Sai rồi'
+              myRevealResult.outcome === 'correct'
+                ? `Chính xác! +${myRevealResult.pointsDelta} điểm — bạn trả lời sau ${formatResponseTime(myRevealResult.responseMs)}${myRevealResult.isFastestCorrect ? ' 👑 Nhanh nhất!' : ''}`
+                : myRevealResult.outcome === 'wrong'
+                  ? `Sai rồi${myRevealResult.pointsDelta < 0 ? ` — ${myRevealResult.pointsDelta} điểm` : ''}`
+                  : 'Bạn chưa trả lời câu này'
             }
           />
+        )}
+        {!isRevealed && hasAnswered && myResponseMs != null && (
+          <Alert style={{ marginBottom: 12 }} type="info" showIcon message={`Đã gửi sau ${formatResponseTime(myResponseMs)} — chờ công bố…`} />
         )}
 
         <Card>
           {currentQuestion.question.subjectName && (
             <Tag color="green" style={{ marginBottom: 8 }}>Lĩnh vực: {currentQuestion.question.subjectName}</Tag>
           )}
+          {currentQuestion.question.imageUrl && (
+            <img
+              src={currentQuestion.question.imageUrl}
+              alt=""
+              style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, margin: '4px 0 8px', display: 'block' }}
+            />
+          )}
           <Text strong style={{ fontSize: 17, display: 'block' }}>{currentQuestion.question.content}</Text>
           <Space direction="vertical" size={10} style={{ width: '100%', marginTop: 18 }}>
             {currentQuestion.question.options.map((opt, idx) => {
               const isSelected = selected.includes(opt.id)
               const isCorrectOpt = revealData?.correctOptionIds.includes(opt.id)
-              let bg = OPTION_COLORS[idx % 4]
-              if (isRevealed) bg = isCorrectOpt ? '#52c41a' : (isSelected ? '#ff4d4f' : '#bfbfbf')
+              const disabled = hasAnswered || isRevealed || locked
 
               return (
                 <button
                   key={opt.id}
-                  disabled={hasAnswered || isRevealed}
+                  disabled={disabled}
                   onClick={() => toggleOption(opt.id, currentQuestion.question.questionType)}
+                  className={isRevealed ? undefined : `arena-option-${idx % 4}`}
                   style={{
                     width: '100%', textAlign: 'left', border: isSelected ? '3px solid #4E0D1A' : '3px solid transparent',
-                    background: bg, color: '#fff', borderRadius: 10, padding: '16px 18px',
-                    fontSize: 15, fontWeight: 600, cursor: hasAnswered || isRevealed ? 'default' : 'pointer',
+                    background: isRevealed ? (isCorrectOpt ? '#52c41a' : (isSelected ? '#ff4d4f' : '#bfbfbf')) : undefined,
+                    color: '#fff', borderRadius: 10, padding: '16px 18px',
+                    fontSize: 15, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
                     opacity: hasAnswered && !isSelected && !isRevealed ? 0.5 : 1,
                   }}
                 >
@@ -466,7 +546,7 @@ export default function ArenaPlayerPage() {
             })}
           </Space>
 
-          {!hasAnswered && !isRevealed && (
+          {!hasAnswered && !isRevealed && !locked && (
             <Button
               type="primary" size="large" block style={{ marginTop: 18 }}
               disabled={selected.length === 0}
@@ -475,21 +555,33 @@ export default function ArenaPlayerPage() {
               Gửi đáp án
             </Button>
           )}
+          {!hasAnswered && !isRevealed && locked && (
+            <div style={{ textAlign: 'center', marginTop: 18 }}>
+              <Text type="secondary">Đã hết giờ — chờ MC công bố kết quả…</Text>
+            </div>
+          )}
           {hasAnswered && !isRevealed && (
             <div style={{ textAlign: 'center', marginTop: 18 }}>
-              <Spin /> <Text type="secondary" style={{ marginLeft: 8 }}>Đã gửi — chờ MC công bố kết quả…</Text>
+              <Spin /> <Text type="secondary" style={{ marginLeft: 8 }}>Đã gửi — chờ công bố kết quả…</Text>
             </div>
           )}
           {isRevealed && (
-            <div style={{ textAlign: 'center', marginTop: 18 }}>
-              <Text type="secondary">Chờ câu hỏi tiếp theo…</Text>
+            <div style={{ marginTop: 18 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>Kết quả cả phòng</Text>
+              <ArenaRevealBoard results={revealData.results} myTeamId={myTeamId} />
             </div>
           )}
         </Card>
+
+        {isRevealed && (
+          <Card style={{ marginTop: 12 }} title="Bảng điểm">
+            <ArenaLeaderboard teams={leaderboard} highlightTeamId={myTeamId} compact />
+          </Card>
+        )}
       </div>
     )
   } else if (view === 'result') {
-    const myRank = finalRanking.find((t) => t.id === myTeamId)
+    const myRank = finalRanking.find((t) => t.teamId === myTeamId)
     body = (
       <CenterCard key={view}>
         <div style={{ textAlign: 'center' }}>
@@ -520,8 +612,8 @@ export default function ArenaPlayerPage() {
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                   <Space>
                     <Text style={{ minWidth: 24 }}>#{team.rank}</Text>
-                    <Avatar size="small" style={{ backgroundColor: team.color }}>{team.name[0]?.toUpperCase()}</Avatar>
-                    <Text strong={team.id === myTeamId}>{team.name}</Text>
+                    <Avatar size="small" style={{ backgroundColor: team.teamColor }}>{team.teamName[0]?.toUpperCase()}</Avatar>
+                    <Text strong={team.teamId === myTeamId}>{team.teamName}</Text>
                   </Space>
                   <Text>{team.score} đ</Text>
                 </Space>

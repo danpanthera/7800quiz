@@ -1,55 +1,41 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Button, Card, Col, Form, InputNumber, Row, Select, Space, Spin, Table, Tag,
-  Typography, Divider, Alert, List, Progress, Modal, Input, Radio,
-  Statistic, Avatar, Popconfirm, message, Checkbox,
+  Typography, Divider, Alert, List, Modal, Input, Radio,
+  Avatar, Popconfirm, message, Checkbox,
 } from 'antd'
 import {
   TrophyOutlined, TeamOutlined, PlayCircleOutlined, CheckCircleOutlined,
   ArrowRightOutlined, StopOutlined, CopyOutlined, ReloadOutlined,
-  ThunderboltOutlined, DeleteOutlined, LockOutlined, SafetyOutlined, UserDeleteOutlined,
+  DeleteOutlined, LockOutlined, SafetyOutlined, UserDeleteOutlined,
   UsergroupAddOutlined, MailOutlined, PlusOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
-import { io, Socket } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
 import api, { getErrorMessage } from '../lib/api'
+import { createArenaSocket } from '../lib/arena-socket'
+import { useServerClock } from '../hooks/useServerClock'
+import { useArenaCountdown } from '../hooks/useArenaCountdown'
+import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
+import { ArenaBuzzStrip } from '../components/ArenaBuzzStrip'
+import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
+import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
+import { fireGoldSparkle, playFastestSound } from '../lib/feedback-fx'
+import type {
+  ArenaTeam, ArenaQuestionPayload, ArenaPreparePayload, ArenaBuzzPayload,
+  ArenaRevealPayload, ArenaLeaderboardRow, ArenaStatePayload,
+} from '../lib/arena-types'
 
 const { Title, Text } = Typography
-const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
 
-// ─── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
+// ─── Kiểu dữ liệu riêng của trang MC (không thuộc hợp đồng socket) ─────────
 
-interface TeamMember { userId: string; fullName: string }
-interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number; members?: TeamMember[]; isPreset?: boolean }
-interface QuestionOption { id: string; content: string }
-interface ArenaQuestion {
-  roundId: string
-  order: number
-  question: { id: string; content: string; questionType: string; subjectName?: string | null; options: QuestionOption[] }
-  autoAdvanceSec: number
-  hostMode: string
-}
-// Phát TRƯỚC arena.question — báo lĩnh vực để các đội chuẩn bị tinh thần
-// trong prepareSec giây, trước khi câu hỏi thật sự bật ra.
-interface ArenaPrepare {
-  roundId: string
-  order: number
-  totalRounds: number
-  subjectName: string | null
-  prepareSec: number
-  hostMode: string
-}
-interface BuzzEvent { teamId: string; teamName: string; teamColor: string }
-interface RevealData {
-  roundId: string; correctOptionIds: string[]; explanation?: string
-  buzzes: { teamId: string; isCorrect: boolean; pointsAwarded: number }[]
-  leaderboard: ArenaTeam[]
-}
 interface InvitedUser { id: string; user: { id: string; fullName: string } }
 interface ArenaSession {
   id: string; name: string; joinCode: string; status: string
   hostMode: string; autoAdvanceSec: number
+  questionDurationSec?: number; revealPauseSec?: number
   passcode?: string | null
   invites?: InvitedUser[]
   quiz: { id: string; title: string }
@@ -70,124 +56,119 @@ export default function ArenaPage() {
   const [view, setView] = useState<PageView>('list')
   const [session, setSession] = useState<ArenaSession | null>(null)
   const [teams, setTeams] = useState<ArenaTeam[]>([])
-  const [currentQuestion, setCurrentQuestion] = useState<ArenaQuestion | null>(null)
-  const [buzzes, setBuzzes] = useState<BuzzEvent[]>([])
-  const [revealData, setRevealData] = useState<RevealData | null>(null)
-  const [finalRanking, setFinalRanking] = useState<ArenaTeam[]>([])
-  const [autoTimer, setAutoTimer] = useState(0)
-  const [prepare, setPrepare] = useState<ArenaPrepare | null>(null)
-  const [prepareCountdown, setPrepareCountdown] = useState(0)
-  const [prepareStale, setPrepareStale] = useState(false)
+  const [leaderboard, setLeaderboard] = useState<ArenaLeaderboardRow[]>([])
+  const [currentQuestion, setCurrentQuestion] = useState<ArenaQuestionPayload | null>(null)
+  const [buzzes, setBuzzes] = useState<ArenaBuzzPayload[]>([])
+  const [locked, setLocked] = useState(false)
+  const [revealData, setRevealData] = useState<ArenaRevealPayload | null>(null)
+  const [finalRanking, setFinalRanking] = useState<ArenaLeaderboardRow[]>([])
+  const [prepare, setPrepare] = useState<ArenaPreparePayload | null>(null)
+  const [socket, setSocket] = useState<Socket | null>(null)
   const socketRef = useRef<Socket | null>(null)
-  const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const prepareIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const prepareStaleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
 
-  // Đếm ngược trang trí cho pha "chuẩn bị" — mốc thật nằm ở server
-  // (ARENA_PREPARE_SEC), đồng hồ này chỉ để hiển thị, không quyết định gì.
-  const clearPrepareTimers = useCallback(() => {
-    if (prepareIntervalRef.current) clearInterval(prepareIntervalRef.current)
-    if (prepareStaleTimeoutRef.current) clearTimeout(prepareStaleTimeoutRef.current)
-    prepareIntervalRef.current = null
-    prepareStaleTimeoutRef.current = null
+  const getServerNow = useServerClock(socket)
+  const countdown = useArenaCountdown(
+    currentQuestion?.deadlineAtMs ?? null,
+    currentQuestion?.startedAtMs ?? null,
+    getServerNow,
+  )
+
+  // ─── Dựng lại toàn bộ view từ snapshot arena.state (F5/rớt mạng giữa trận) ──
+  const applyState = useCallback((state: ArenaStatePayload) => {
+    setLeaderboard(state.teams)
+    setTeams((prev) => (prev.length > 0 ? prev : state.teams as unknown as ArenaTeam[]))
+    if (state.currentQuestion) {
+      setCurrentQuestion(state.currentQuestion)
+      setBuzzes(state.buzzes)
+      setRevealData(null)
+      setPrepare(null)
+      setLocked(false)
+      setView('game')
+    } else if (state.lastReveal) {
+      setRevealData(state.lastReveal)
+      setLeaderboard(state.lastReveal.leaderboard)
+      setView('game')
+    } else if (state.final) {
+      setFinalRanking(state.final.ranking)
+      setView('result')
+    } else if (state.status === 'RUNNING') {
+      setView('game')
+    }
   }, [])
 
   // ─── Hàm hỗ trợ Socket ──────────────────────────────────────────────────────
 
   const connectSocket = useCallback((sessionId: string) => {
-    const token = localStorage.getItem('token')
-    const socket = io(WS_URL, { auth: { token }, transports: ['websocket'] })
-    socketRef.current = socket
+    sessionIdRef.current = sessionId
+    const s = createArenaSocket()
+    socketRef.current = s
+    setSocket(s)
 
-    socket.emit('arena.host', { sessionId })
+    const rehost = () => s.emit('arena.host', { sessionId })
+    rehost()
+    s.on('connect', rehost)
 
-    // Lưu hostMode trong closure (dùng chung giữa handler câu hỏi và handler reveal)
-    let capturedHostMode = 'MANUAL'
+    s.on('arena.state', (state: ArenaStatePayload) => applyState(state))
 
-    socket.on('arena.team_joined', ({ team }: { team: ArenaTeam }) => {
+    s.on('arena.team_joined', ({ team }: { team: ArenaTeam }) => {
       setTeams((prev) => [...prev.filter((t) => t.id !== team.id), { ...team, score: 0 }])
     })
 
-    socket.on('arena.teams_updated', ({ teams: t }: { teams: ArenaTeam[] }) => {
+    s.on('arena.teams_updated', ({ teams: t }: { teams: ArenaTeam[] }) => {
       setTeams(t)
     })
 
-    socket.on('arena.started', () => setView('game'))
+    s.on('arena.started', () => setView('game'))
 
-    socket.on('arena.prepare', (p: ArenaPrepare) => {
-      clearPrepareTimers()
-      setPrepareStale(false)
+    s.on('arena.prepare', (p: ArenaPreparePayload) => {
       setCurrentQuestion(null)
       setBuzzes([])
       setRevealData(null)
+      setLocked(false)
       setPrepare(p)
-      setPrepareCountdown(p.prepareSec)
-      prepareIntervalRef.current = setInterval(() => {
-        setPrepareCountdown((s) => (s <= 1 ? 0 : s - 1))
-      }, 1000)
-      // Máy chủ khởi động lại đúng lúc đang chuẩn bị thì hẹn giờ bị mất —
-      // báo cho MC biết để bấm lại thay vì chờ vô thời hạn.
-      prepareStaleTimeoutRef.current = setTimeout(() => {
-        setPrepareStale(true)
-      }, (p.prepareSec + 5) * 1000)
     })
 
-    socket.on('arena.question', (q: ArenaQuestion) => {
-      clearPrepareTimers()
+    s.on('arena.question', (q: ArenaQuestionPayload) => {
       setPrepare(null)
-      setPrepareStale(false)
-      capturedHostMode = q.hostMode
       setCurrentQuestion(q)
       setBuzzes([])
       setRevealData(null)
-      if (q.hostMode === 'AUTO') {
-        setAutoTimer(q.autoAdvanceSec)
-        autoTimerRef.current = setInterval(() => {
-          setAutoTimer((s) => {
-            if (s <= 1) {
-              clearInterval(autoTimerRef.current!)
-              // Tự động reveal đáp án khi đếm ngược về 0
-              socket.emit('arena.reveal', { sessionId })
-              return 0
-            }
-            return s - 1
-          })
-        }, 1000)
-      }
+      setLocked(false)
     })
 
-    socket.on('arena.buzz_in', (buzz: BuzzEvent) => {
+    s.on('arena.buzz_in', (buzz: ArenaBuzzPayload) => {
       setBuzzes((prev) => [...prev, buzz])
     })
 
-    socket.on('arena.revealed', (data: RevealData) => {
+    s.on('arena.locked', () => setLocked(true))
+
+    s.on('arena.revealed', (data: ArenaRevealPayload) => {
       setRevealData(data)
-      setTeams(data.leaderboard)
-      if (autoTimerRef.current) clearInterval(autoTimerRef.current)
-      // Chế độ AUTO: chuyển sang câu tiếp theo sau 3s tạm dừng (để người chơi kịp xem kết quả)
-      if (capturedHostMode === 'AUTO') {
-        setTimeout(() => socket.emit('arena.next', { sessionId }), 3000)
+      setLeaderboard(data.leaderboard)
+      setLocked(false)
+      if (data.fastestTeamId) {
+        void playFastestSound()
+        void fireGoldSparkle()
       }
     })
 
-    socket.on('arena.leaderboard', ({ teams: t }: { teams: ArenaTeam[] }) => {
-      setTeams(t)
+    s.on('arena.leaderboard', ({ teams: t }: { teams: ArenaLeaderboardRow[] }) => {
+      setLeaderboard(t)
     })
 
-    socket.on('arena.ended', ({ ranking }: { ranking: ArenaTeam[] }) => {
-      clearPrepareTimers()
+    s.on('arena.ended', ({ ranking }: { ranking: ArenaLeaderboardRow[] }) => {
       setPrepare(null)
       setFinalRanking(ranking)
       setView('result')
     })
-  }, [clearPrepareTimers])
+  }, [applyState])
 
   const disconnectSocket = useCallback(() => {
-    if (autoTimerRef.current) clearInterval(autoTimerRef.current)
-    clearPrepareTimers()
     socketRef.current?.disconnect()
     socketRef.current = null
-  }, [clearPrepareTimers])
+    setSocket(null)
+  }, [])
 
   useEffect(() => () => disconnectSocket(), [disconnectSocket])
 
@@ -229,9 +210,9 @@ export default function ArenaPage() {
   )
   if (view === 'game') return (
     <GameControl
-      session={session!} teams={teams} currentQuestion={currentQuestion}
-      buzzes={buzzes} revealData={revealData} autoTimer={autoTimer}
-      prepare={prepare} prepareCountdown={prepareCountdown} prepareStale={prepareStale}
+      session={session!} leaderboard={leaderboard} currentQuestion={currentQuestion}
+      buzzes={buzzes} locked={locked} revealData={revealData} countdown={countdown}
+      prepare={prepare}
       onReveal={emitReveal} onNext={emitNext} onEnd={emitEnd}
     />
   )
@@ -336,7 +317,7 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
             {
               title: 'Mã vào', dataIndex: 'joinCode', render: (v, r: ArenaSession) => (
                 <Space>
-                  <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 2 }}>{v}</Tag>
+                  <Tag style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 2, color: 'var(--agribank-red)', borderColor: 'var(--agribank-red)' }}>{v}</Tag>
                   {r.passcode && <Tag icon={<LockOutlined />} color="gold">Có mật khẩu</Tag>}
                 </Space>
               )
@@ -437,7 +418,10 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
     <Card title={<Space><TrophyOutlined /><span>Tạo phiên Đấu trường</span></Space>}
       extra={<Button onClick={onBack}>Quay lại</Button>} style={{ maxWidth: 600, margin: '0 auto' }}>
       <Form form={form} layout="vertical" onFinish={onFinish}
-        initialValues={{ hostMode: 'MANUAL', autoAdvanceSec: 15, pointsForRank: '10,7,5,3,2,2,2,2,2', penaltyWrong: 0 }}>
+        initialValues={{
+          hostMode: 'MANUAL', questionDurationSec: 20, revealPauseSec: 5,
+          pointsForRank: '10,7,5,3,2,2,2,2,2', penaltyWrong: 0,
+        }}>
         <Form.Item name="name" label="Tên phiên" rules={[{ required: true }]}>
           <Input placeholder="VD: Đấu trường Tháng 5 — Tín dụng" />
         </Form.Item>
@@ -450,8 +434,19 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
             <Radio value="AUTO">Auto — Tự động đếm ngược</Radio>
           </Radio.Group>
         </Form.Item>
-        <Form.Item name="autoAdvanceSec" label="Thời gian trả lời (giây, dùng cho AUTO)">
-          <InputNumber min={5} max={120} style={{ width: 120 }} addonAfter="giây" />
+        <Form.Item
+          name="questionDurationSec"
+          label="Thời gian trả lời mỗi câu"
+          extra="Áp dụng cho CẢ hai chế độ — máy chủ tự khoá nhận đáp án và tự công bố khi hết giờ, MC vẫn công bố sớm được."
+        >
+          <InputNumber min={5} max={300} style={{ width: 140 }} addonAfter="giây" />
+        </Form.Item>
+        <Form.Item
+          name="revealPauseSec"
+          label="Khoảng dừng xem kết quả (chỉ dùng cho Auto)"
+          extra="Sau khi công bố đáp án, chờ bao lâu trước khi tự chuyển câu kế."
+        >
+          <InputNumber min={2} max={30} style={{ width: 140 }} addonAfter="giây" />
         </Form.Item>
         <Form.Item name="pointsForRank" label="Điểm theo thứ tự đúng (9 giá trị, cách nhau dấu phẩy)"
           extra="Rank 1 đến Rank 9, VD: 10,7,5,3,2,2,2,2,2">
@@ -572,10 +567,10 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
 
   return (
     <Row gutter={24}>
-      <Col span={10}>
+      <Col xs={24} lg={10}>
         <Card title="Mã tham gia">
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, fontFamily: 'monospace', fontWeight: 700, letterSpacing: 8, color: '#722ed1', marginBottom: 16 }}>
+            <div style={{ fontSize: 48, fontFamily: 'monospace', fontWeight: 700, letterSpacing: 8, color: 'var(--agribank-red)', marginBottom: 16 }}>
               {session.joinCode}
             </div>
             <QRCodeSVG value={joinUrl} size={180} />
@@ -641,7 +636,7 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
           </Card>
         )}
       </Col>
-      <Col span={14}>
+      <Col xs={24} lg={14}>
         <Card
           title={<Space><TeamOutlined /><span>Đội tham gia ({teams.length}/9)</span></Space>}
           extra={
@@ -728,15 +723,13 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
                                   suffixIcon={<SwapOutlined />}
                                   options={otherTeamOptions}
                                   onChange={(targetTeamId: string) => onMoveMember(m.userId, targetTeamId)}
+                                  value={undefined}
                                 />
                               )}
-                              <Popconfirm
-                                title="Gỡ người chơi này khỏi đội?"
-                                okText="Gỡ ra" okType="danger" cancelText="Bỏ qua"
-                                onConfirm={() => onKickMember(team.id, m.userId)}
-                              >
-                                <Button size="small" danger type="text" icon={<UserDeleteOutlined />} />
-                              </Popconfirm>
+                              <Button
+                                size="small" danger type="text" icon={<UserDeleteOutlined />}
+                                onClick={() => onKickMember(team.id, m.userId)}
+                              />
                             </Space>
                           </div>
                         ))}
@@ -749,21 +742,17 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
           )}
         </Card>
       </Col>
-
       <Modal
         title="Gộp thành 1 đội"
         open={mergeModalOpen}
         onOk={confirmMerge}
         onCancel={() => setMergeModalOpen(false)}
-        okText="Gộp đội"
-        cancelText="Hủy"
+        okText="Gộp"
       >
-        <Text type="secondary">
-          Gộp {selectedMemberCount} người ({selectedTeams.map((t) => t.name).join(', ')}) thành 1 đội chung điểm số.
-        </Text>
+        <Text type="secondary">Gộp {selectedIds.length} mục ({selectedMemberCount} người) thành 1 đội chung điểm số.</Text>
         <Input
           style={{ marginTop: 12 }}
-          placeholder="Tên đội mới (để trống thì giữ tên đội vào phòng sớm nhất)"
+          placeholder="Tên đội sau khi gộp (để trống dùng tên đội đầu tiên)"
           value={mergeName}
           onChange={(e) => setMergeName(e.target.value)}
           maxLength={30}
@@ -776,42 +765,43 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
 // ─── GameControl ──────────────────────────────────────────────────────────────
 
 function GameControl({
-  session, teams, currentQuestion, buzzes, revealData, autoTimer,
-  prepare, prepareCountdown, prepareStale, onReveal, onNext, onEnd,
+  session, leaderboard, currentQuestion, buzzes, locked, revealData, countdown,
+  prepare, onReveal, onNext, onEnd,
 }: {
-  session: ArenaSession; teams: ArenaTeam[]; currentQuestion: ArenaQuestion | null
-  buzzes: BuzzEvent[]; revealData: RevealData | null; autoTimer: number
-  prepare: ArenaPrepare | null; prepareCountdown: number; prepareStale: boolean
+  session: ArenaSession; leaderboard: ArenaLeaderboardRow[]; currentQuestion: ArenaQuestionPayload | null
+  buzzes: ArenaBuzzPayload[]; locked: boolean; revealData: ArenaRevealPayload | null
+  countdown: ReturnType<typeof useArenaCountdown>
+  prepare: ArenaPreparePayload | null
   onReveal: () => void; onNext: () => void; onEnd: () => void
 }) {
   const isManual = session.hostMode === 'MANUAL'
-  const totalRounds = prepare?.totalRounds ?? session.rounds?.length ?? 0
+  const totalRounds = prepare?.totalRounds ?? currentQuestion?.totalRounds ?? session.rounds?.length ?? 0
   const currentOrder = prepare?.order ?? currentQuestion?.order ?? 0
   const isRevealed = !!revealData
 
   return (
     <Row gutter={16}>
       {/* Cột trái: khung câu hỏi */}
-      <Col span={16}>
+      <Col xs={24} lg={16}>
         <Card
           title={
             <Space>
               <Text strong>Câu {(currentOrder) + 1}/{totalRounds}</Text>
-              {!isManual && currentQuestion && !isRevealed && !prepare && (
-                <Progress
-                  type="circle" size={36} strokeColor={autoTimer <= 3 ? 'red' : '#1890ff'}
-                  percent={Math.round((autoTimer / currentQuestion.autoAdvanceSec) * 100)}
-                  format={() => `${autoTimer}s`}
-                />
+              {currentQuestion && !isRevealed && !prepare && (
+                <ArenaCountdownRing {...countdown} size={40} />
               )}
             </Space>
           }
           extra={
             <Space>
-              {isManual && !isRevealed && !prepare && currentQuestion && (
-                <Button type="primary" icon={<CheckCircleOutlined />} onClick={onReveal}>Reveal đáp án</Button>
+              {/* Server làm chủ deadline ở CẢ HAI chế độ — MC luôn công bố sớm được,
+                  không chỉ riêng MANUAL. Ở AUTO, không bấm thì máy chủ tự công bố khi hết giờ. */}
+              {!isRevealed && !prepare && currentQuestion && (
+                <Button type="primary" icon={<CheckCircleOutlined />} onClick={onReveal}>
+                  {isManual ? 'Reveal đáp án' : 'Công bố sớm'}
+                </Button>
               )}
-              {isRevealed && !prepare && (
+              {isRevealed && !prepare && isManual && (
                 <Button type="primary" icon={<ArrowRightOutlined />} onClick={onNext}>Câu tiếp theo</Button>
               )}
               <Button danger icon={<StopOutlined />} onClick={onEnd}>Kết thúc</Button>
@@ -824,23 +814,7 @@ function GameControl({
               <Title level={2} style={{ margin: '8px 0' }}>
                 {prepare.subjectName ?? 'Chưa phân loại lĩnh vực'}
               </Title>
-              <Progress
-                type="circle" size={64}
-                percent={Math.round((prepareCountdown / prepare.prepareSec) * 100)}
-                format={() => `${prepareCountdown}s`}
-              />
-              <div style={{ marginTop: 12 }}>
-                <Text type="secondary">Các đội chuẩn bị tinh thần — câu hỏi sắp hiện ra…</Text>
-              </div>
-              {prepareStale && (
-                <Alert
-                  style={{ marginTop: 16, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}
-                  type="warning" showIcon
-                  message="Chưa nhận được câu hỏi từ máy chủ"
-                  description="Máy chủ có thể vừa khởi động lại. Bấm nút bên dưới để thử lại."
-                  action={<Button size="small" onClick={onNext}>Thử lại</Button>}
-                />
-              )}
+              <Text type="secondary">Các đội chuẩn bị tinh thần — câu hỏi sắp hiện ra…</Text>
             </div>
           ) : !currentQuestion ? (
             <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
@@ -849,19 +823,31 @@ function GameControl({
               {currentQuestion.question.subjectName && (
                 <Tag color="green" style={{ marginBottom: 8 }}>Lĩnh vực: {currentQuestion.question.subjectName}</Tag>
               )}
+              {locked && !isRevealed && (
+                <Tag color="red" style={{ marginBottom: 8, marginLeft: 8 }}>Đã hết giờ — đang chốt điểm…</Tag>
+              )}
               <br />
+              {currentQuestion.question.imageUrl && (
+                <img
+                  src={currentQuestion.question.imageUrl}
+                  alt=""
+                  style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, margin: '8px 0', display: 'block' }}
+                />
+              )}
               <Text style={{ fontSize: 18 }}>{currentQuestion.question.content}</Text>
               <Row gutter={[12, 12]} style={{ marginTop: 20 }}>
                 {currentQuestion.question.options.map((opt, idx) => {
-                  const colors = ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12']
                   const isCorrect = revealData?.correctOptionIds.includes(opt.id)
                   return (
                     <Col span={12} key={opt.id}>
-                      <div style={{
-                        background: isRevealed ? (isCorrect ? '#52c41a' : '#ff4d4f') : colors[idx % 4],
-                        color: '#fff', borderRadius: 8, padding: '12px 16px', fontSize: 15, fontWeight: 500,
-                        border: isCorrect ? '3px solid #fff' : 'none',
-                      }}>
+                      <div
+                        className={isRevealed ? undefined : `arena-option-${idx % 4}`}
+                        style={{
+                          background: isRevealed ? (isCorrect ? '#52c41a' : '#ff4d4f') : undefined,
+                          color: '#fff', borderRadius: 8, padding: '12px 16px', fontSize: 15, fontWeight: 500,
+                          border: isCorrect ? '3px solid #fff' : 'none',
+                        }}
+                      >
                         {String.fromCharCode(65 + idx)}. {opt.content}
                         {isCorrect && <CheckCircleOutlined style={{ marginLeft: 8 }} />}
                       </div>
@@ -876,45 +862,22 @@ function GameControl({
           )}
         </Card>
 
-        {/* Theo dõi buzz-in */}
-        <Card style={{ marginTop: 16 }} title={<Space><ThunderboltOutlined style={{ color: '#faad14' }} /><span>Đội đã trả lời ({buzzes.length})</span></Space>}>
-          {buzzes.length === 0 ? (
-            <Text type="secondary">Chưa có đội nào trả lời…</Text>
-          ) : (
-            <Space wrap>
-              {buzzes.map((b, i) => (
-                <Tag key={i} color={b.teamColor} style={{ padding: '4px 12px', fontSize: 14 }}>
-                  #{i + 1} {b.teamName}
-                  {isRevealed && revealData && (
-                    <span style={{ marginLeft: 6 }}>
-                      {revealData.buzzes.find((rb) => rb.teamId === b.teamId)?.isCorrect ? '✅' : '❌'}
-                    </span>
-                  )}
-                </Tag>
-              ))}
-            </Space>
-          )}
-        </Card>
+        {/* Theo dõi buzz-in / bảng công bố */}
+        {isRevealed ? (
+          <Card style={{ marginTop: 16 }} title={<Space><TrophyOutlined style={{ color: '#faad14' }} /><span>Kết quả câu {currentOrder + 1}</span></Space>}>
+            <ArenaRevealBoard results={revealData.results} showRawTime />
+          </Card>
+        ) : (
+          <Card style={{ marginTop: 16 }}>
+            <ArenaBuzzStrip buzzes={buzzes} />
+          </Card>
+        )}
       </Col>
 
       {/* Cột phải: bảng xếp hạng */}
-      <Col span={8}>
+      <Col xs={24} lg={8}>
         <Card title={<Space><TrophyOutlined style={{ color: '#faad14' }} /><span>Bảng điểm</span></Space>}>
-          <List
-            dataSource={[...teams].sort((a, b) => b.score - a.score)}
-            renderItem={(team, idx) => (
-              <List.Item style={{ padding: '8px 0' }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                  <Space>
-                    <Text style={{ minWidth: 20 }}>#{idx + 1}</Text>
-                    <Avatar size="small" style={{ backgroundColor: team.color }}>{team.name[0]}</Avatar>
-                    <Text>{team.name}</Text>
-                  </Space>
-                  <Statistic value={team.score} suffix="đ" valueStyle={{ fontSize: 16, color: idx === 0 ? '#faad14' : undefined }} />
-                </Space>
-              </List.Item>
-            )}
-          />
+          <ArenaLeaderboard teams={leaderboard} />
         </Card>
       </Col>
     </Row>
@@ -923,9 +886,13 @@ function GameControl({
 
 // ─── ResultScreen ─────────────────────────────────────────────────────────────
 
-function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () => void }) {
+function ResultScreen({ ranking, onBack }: { ranking: ArenaLeaderboardRow[]; onBack: () => void }) {
   const podium = ranking.slice(0, 3)
   const encouragement = ranking.slice(3)
+
+  useEffect(() => {
+    if (ranking.length > 0) void fireGoldSparkle()
+  }, [ranking.length])
 
   return (
     <Card
@@ -941,8 +908,8 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
             <Col>
               <div style={{ textAlign: 'center' }}>
                 <RankMedal rank={2} />
-                <div style={{ background: podium[1].color, color: '#fff', borderRadius: 8, padding: '12px 24px', marginTop: 8, minWidth: 120, height: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Text strong style={{ color: '#fff', fontSize: 16 }}>{podium[1].name}</Text><br />
+                <div style={{ background: podium[1].teamColor, color: '#fff', borderRadius: 8, padding: '12px 24px', marginTop: 8, minWidth: 120, height: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Text strong style={{ color: '#fff', fontSize: 16 }}>{podium[1].teamName}</Text><br />
                   <Text style={{ color: '#fff' }}>{podium[1].score} điểm</Text>
                 </div>
               </div>
@@ -953,8 +920,8 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
             <Col>
               <div style={{ textAlign: 'center' }}>
                 <RankMedal rank={1} />
-                <div style={{ background: podium[0].color, color: '#fff', borderRadius: 8, padding: '16px 32px', marginTop: 8, minWidth: 140, height: 100, display: 'flex', flexDirection: 'column', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
-                  <Text strong style={{ color: '#fff', fontSize: 18 }}>{podium[0].name}</Text><br />
+                <div style={{ background: podium[0].teamColor, color: '#fff', borderRadius: 8, padding: '16px 32px', marginTop: 8, minWidth: 140, height: 100, display: 'flex', flexDirection: 'column', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+                  <Text strong style={{ color: '#fff', fontSize: 18 }}>{podium[0].teamName}</Text><br />
                   <Text style={{ color: '#fff', fontSize: 16 }}>{podium[0].score} điểm</Text>
                 </div>
               </div>
@@ -965,8 +932,8 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
             <Col>
               <div style={{ textAlign: 'center' }}>
                 <RankMedal rank={3} />
-                <div style={{ background: podium[2].color, color: '#fff', borderRadius: 8, padding: '10px 20px', marginTop: 8, minWidth: 110, height: 70, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Text strong style={{ color: '#fff', fontSize: 15 }}>{podium[2].name}</Text><br />
+                <div style={{ background: podium[2].teamColor, color: '#fff', borderRadius: 8, padding: '10px 20px', marginTop: 8, minWidth: 110, height: 70, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Text strong style={{ color: '#fff', fontSize: 15 }}>{podium[2].teamName}</Text><br />
                   <Text style={{ color: '#fff' }}>{podium[2].score} điểm</Text>
                 </div>
               </div>
@@ -981,9 +948,9 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
           <Divider>🏅 Khuyến khích</Divider>
           <Row gutter={[16, 16]} justify="center">
             {encouragement.map((team) => (
-              <Col key={team.id}>
-                <Tag color={team.color} style={{ padding: '6px 14px', fontSize: 14 }}>
-                  #{team.rank} {team.name} — {team.score} điểm
+              <Col key={team.teamId}>
+                <Tag color={team.teamColor} style={{ padding: '6px 14px', fontSize: 14 }}>
+                  #{team.rank} {team.teamName} — {team.score} điểm
                 </Tag>
               </Col>
             ))}

@@ -8,6 +8,7 @@ Hướng dẫn cho Claude Code khi làm việc trong repo này.
 
 Tài liệu kiến trúc & trạng thái triển khai đầy đủ: [.github/agents/7800quiz.agent.md](.github/agents/7800quiz.agent.md).
 Hướng dẫn phát hành nội bộ (domain quiz.vbalaichau.com + Nginx prod): [DEPLOYMENT.md](DEPLOYMENT.md).
+Tài liệu đầy đủ về module Đấu trường (Arena) — tính năng, kiến trúc, idempotency, hiệu ứng: [ARENA.md](ARENA.md).
 
 ## Monorepo
 

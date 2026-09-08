@@ -50,6 +50,15 @@ export function playWinSound() {
   beep(784, 220, 200)
 }
 
+// Arpeggio 3 nốt cao, ngắn gọn hơn playWinSound — chỉ đội NHANH NHẤT trả lời
+// đúng trong 1 câu mới nghe thấy, phân biệt với "đúng" (playCorrectSound) và
+// "vô địch chung cuộc" (playWinSound).
+export function playFastestSound() {
+  beep(880, 70, 0)
+  beep(1046, 70, 60)
+  beep(1318, 120, 120)
+}
+
 export async function fireConfetti() {
   const confetti = (await import('canvas-confetti')).default
   confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } })
@@ -65,4 +74,18 @@ export async function fireConfettiBurst() {
     confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 }, colors })
     if (Date.now() < end) requestAnimationFrame(frame)
   })()
+}
+
+// Lấp lánh nhỏ tông vàng cho đội nhanh nhất đúng — nhẹ hơn fireConfettiBurst
+// (dùng cho vô địch chung cuộc), không làm rối màn hình công bố từng câu.
+export async function fireGoldSparkle() {
+  const confetti = (await import('canvas-confetti')).default
+  confetti({
+    particleCount: 24,
+    spread: 60,
+    scalar: 0.7,
+    startVelocity: 28,
+    origin: { y: 0.4 },
+    colors: ['#FFB300', '#E0B44C', '#F8F4EC'],
+  })
 }
