@@ -2,7 +2,7 @@ import { useState } from 'react'
 import React from 'react'
 import {
   App, Button, Table, Space, Modal, Form, Input, Select, Popconfirm,
-  Typography, Switch, Checkbox, DatePicker, Tag, Row, Col, Divider, Upload, Alert,
+  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -149,7 +149,7 @@ export default function CanBoPage() {
     setEditing(null)
     setFormUnitId(undefined)
     form.resetFields()
-    form.setFieldsValue({ isActive: true, isPartyMember: false, isUnionMember: false, isYouthUnionMember: false, isItStaff: false })
+    form.setFieldsValue({ isActive: true })
     setModalOpen(true)
   }
 
@@ -164,19 +164,9 @@ export default function CanBoPage() {
       cbCode: record.cbCode,
       fullName: record.fullName,
       email: record.email,
-      phoneNumber: record.phoneNumber,
       userAD: record.userAD,
-      userIPCAS: record.userIPCAS,
-      maCbtd: record.maCbtd,
-      cccd: record.cccd,
-      ngayCapCmt: record.ngayCapCmt,
-      noiCapCmt: record.noiCapCmt,
       gioiTinh: record.gioiTinh,
       position: record.position,
-      isPartyMember: record.isPartyMember,
-      isUnionMember: record.isUnionMember,
-      isYouthUnionMember: record.isYouthUnionMember,
-      isItStaff: record.isItStaff,
       isActive: record.isActive,
       ngaySinh: record.ngaySinh ? dayjs(record.ngaySinh) : undefined,
       departmentId: deptId,
@@ -270,7 +260,6 @@ export default function CanBoPage() {
       }
     },
     { title: 'Chức vụ', dataIndex: 'position', width: 150 },
-    { title: 'SĐT', dataIndex: 'phoneNumber', width: 120 },
     { title: 'Email', dataIndex: 'email', width: 200 },
     {
       title: 'Trạng thái', dataIndex: 'isActive', width: 100,
@@ -383,7 +372,6 @@ export default function CanBoPage() {
               : '-',
           },
           { label: 'Chức vụ', render: (record) => record.position ?? '-' },
-          { label: 'SĐT', render: (record) => record.phoneNumber ?? '-' },
         ]}
         cardActions={renderCanBoActions}
       />
@@ -420,54 +408,20 @@ export default function CanBoPage() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="phoneNumber" label="Số điện thoại">
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={8}>
               <Form.Item name="userAD" label="User AD (tên đăng nhập)">
                 <Input placeholder="Dùng để đăng nhập" />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item name="userIPCAS" label="User IPCAS">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="maCbtd" label="Mã CBTD">
-                <Input />
-              </Form.Item>
-            </Col>
           </Row>
 
-          <Divider titlePlacement="left" plain>CCCD / Giấy tờ</Divider>
+          <Divider titlePlacement="left" plain>Thông tin cá nhân</Divider>
           <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="cccd" label="Số CCCD/CMT">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="ngayCapCmt" label="Ngày cấp CCCD">
-                <Input placeholder="dd/MM/yyyy" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item name="ngaySinh" label="Ngày sinh">
                 <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" placeholder="Chọn ngày sinh" />
               </Form.Item>
             </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={16}>
-              <Form.Item name="noiCapCmt" label="Nơi cấp CCCD">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item name="gioiTinh" label="Giới tính">
                 <Select placeholder="Chọn giới tính" allowClear>
                   <Select.Option value="Nam">Nam</Select.Option>
@@ -520,13 +474,6 @@ export default function CanBoPage() {
             </Col>
           </Row>
 
-          <Divider titlePlacement="left" plain>Đoàn thể & Cờ hiệu</Divider>
-          <Row gutter={16}>
-            <Col span={6}><Form.Item name="isPartyMember" valuePropName="checked"><Checkbox>Công tác Đảng</Checkbox></Form.Item></Col>
-            <Col span={6}><Form.Item name="isUnionMember" valuePropName="checked"><Checkbox>Công đoàn</Checkbox></Form.Item></Col>
-            <Col span={6}><Form.Item name="isYouthUnionMember" valuePropName="checked"><Checkbox>Đoàn thanh niên</Checkbox></Form.Item></Col>
-            <Col span={6}><Form.Item name="isItStaff" valuePropName="checked"><Checkbox>Cán bộ IT</Checkbox></Form.Item></Col>
-          </Row>
           <Form.Item name="isActive" label="Trạng thái" valuePropName="checked">
             <Switch checkedChildren="Đang làm" unCheckedChildren="Đã nghỉ" />
           </Form.Item>
