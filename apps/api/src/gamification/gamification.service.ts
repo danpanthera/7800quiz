@@ -33,14 +33,14 @@ export class GamificationService {
     newLevel: number;
     newBadges: { code: string; name: string; iconSlug: string }[];
   }> {
-    // Upsert UserProgress
+    // Cập nhật (hoặc tạo mới) UserProgress
     let progress = await this.prisma.userProgress.upsert({
       where: { userId },
       update: { xp: { increment: amount } },
       create: { userId, xp: amount },
     });
 
-    // Insert XpTransaction
+    // Ghi lại XpTransaction
     await this.prisma.xpTransaction.create({
       data: {
         userProgressId: progress.id,
@@ -52,12 +52,12 @@ export class GamificationService {
       },
     });
 
-    // Re-fetch updated progress
+    // Lấy lại progress vừa cập nhật
     progress = await this.prisma.userProgress.findUniqueOrThrow({
       where: { userId },
     });
 
-    // Recalculate level (DB-driven)
+    // Tính lại cấp độ (dựa theo dữ liệu trong DB)
     const levelDef = await this.prisma.levelDefinition.findFirst({
       where: { minXp: { lte: progress.xp } },
       orderBy: { minXp: 'desc' },
@@ -73,7 +73,7 @@ export class GamificationService {
       });
     }
 
-    // Check badges
+    // Kiểm tra điều kiện huy hiệu
     const newBadges = await this.checkAndAwardBadges(userId, progress.id);
 
     return { levelUp, newLevel, newBadges };
@@ -127,7 +127,7 @@ export class GamificationService {
       },
     });
 
-    // Streak milestone bonus
+    // Thưởng XP cho các mốc chuỗi ngày (streak)
     if (newStreak === 7 || newStreak === 30) {
       const bonusXp = newStreak === 7 ? 100 : 500;
       await this.awardXp(
@@ -193,7 +193,7 @@ export class GamificationService {
           data: { userProgressId, userId, badgeDefinitionId: badge.id },
         });
 
-        // Award xpBonus if any
+        // Cộng thêm xpBonus nếu huy hiệu có thưởng XP
         if (badge.xpBonus > 0) {
           await this.prisma.userProgress.update({
             where: { userId },
@@ -480,6 +480,94 @@ export class GamificationService {
     }>,
   ) {
     return this.prisma.levelDefinition.update({ where: { id }, data });
+  }
+
+  // ─── recomputeUserProgress ───────────────────────────────────────────────
+  // Gọi sau khi xóa bài thi/vết tích thi của 1 người dùng (xem AdminService)
+  // để XP, cấp độ, huy hiệu và bảng xếp hạng phản ánh đúng dữ liệu còn lại.
+  // Giả định gọi nơi khác đã dọn xong các XpTransaction mồ côi (referenceId
+  // trỏ tới bài thi vừa xóa) trước khi gọi hàm này.
+  async recomputeUserProgress(userId: string): Promise<void> {
+    const progress = await this.prisma.userProgress.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
+
+    // 1. Đếm lại tổng bài nộp / bài đạt từ dữ liệu Submission còn lại
+    const [totalSubmissions, totalPassed] = await Promise.all([
+      this.prisma.submission.count({ where: { userId } }),
+      this.prisma.submission.count({ where: { userId, isPassed: true } }),
+    ]);
+
+    // 2. Tính lại XP = tổng các XpTransaction còn lại, rồi suy ra cấp độ
+    const recalcXpAndLevel = async () => {
+      const agg = await this.prisma.xpTransaction.aggregate({
+        where: { userId },
+        _sum: { amount: true },
+      });
+      const xp = agg._sum.amount ?? 0;
+      const levelDef = await this.prisma.levelDefinition.findFirst({
+        where: { minXp: { lte: xp } },
+        orderBy: { minXp: 'desc' },
+      });
+      return { xp, level: levelDef?.level ?? 1 };
+    };
+    const { xp, level } = await recalcXpAndLevel();
+
+    await this.prisma.userProgress.update({
+      where: { userId },
+      data: { xp, level, totalSubmissions, totalPassed },
+    });
+
+    // 3. Gỡ những huy hiệu không còn đủ điều kiện với dữ liệu mới (dùng đúng
+    //    totalSubmissions/totalPassed/level vừa cập nhật ở bước 2)
+    const userBadges = await this.prisma.userBadge.findMany({
+      where: { userId },
+      select: { badgeDefinitionId: true, badgeDefinition: true },
+    });
+    const evalProgress = {
+      totalSubmissions,
+      totalPassed,
+      currentStreak: progress.currentStreak,
+      totalArenaWins: progress.totalArenaWins,
+      level,
+    };
+    const revokedIds: string[] = [];
+    for (const ub of userBadges) {
+      const condition = ub.badgeDefinition
+        .conditionJson as unknown as BadgeCondition;
+      const stillMet = await this.evaluateCondition(
+        condition,
+        userId,
+        evalProgress,
+      );
+      if (!stillMet) revokedIds.push(ub.badgeDefinitionId);
+    }
+
+    if (revokedIds.length > 0) {
+      await this.prisma.userBadge.deleteMany({
+        where: { userId, badgeDefinitionId: { in: revokedIds } },
+      });
+      // Thu hồi luôn XP thưởng gắn với các huy hiệu vừa bị gỡ, rồi tính lại XP/cấp độ
+      await this.prisma.xpTransaction.deleteMany({
+        where: {
+          userId,
+          source: XpSource.BADGE_BONUS,
+          referenceId: { in: revokedIds },
+        },
+      });
+      const after = await recalcXpAndLevel();
+      await this.prisma.userProgress.update({
+        where: { userId },
+        data: { xp: after.xp, level: after.level },
+      });
+    }
+
+    // 4. Ngược lại, dữ liệu mới cũng có thể vừa đủ điều kiện cho huy hiệu nào
+    //    đó trước kia chưa đạt — dùng lại đúng luồng awardXp/checkAndAwardBadges
+    //    hiện có để nhất quán (kể cả cộng XP thưởng nếu có).
+    await this.checkAndAwardBadges(userId, progress.id);
   }
 
   async deleteLevel(id: string) {

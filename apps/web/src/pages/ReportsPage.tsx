@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type Key } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Button, Card, Col, Input, Popconfirm, Progress, Row,
@@ -33,7 +33,7 @@ interface Dept {
   parent: { id: string; name: string } | null
 }
 
-// Resizable header cell cho phép admin kéo thả độ rộng cột
+// Ô tiêu đề có thể kéo giãn, cho phép admin kéo thả để đổi độ rộng cột
 const ResizableTitle = (props: React.HTMLAttributes<HTMLElement> & {
   onResize: (e: React.SyntheticEvent, data: ResizeCallbackData) => void
   width: number
@@ -87,6 +87,15 @@ export default function ReportsPage() {
   const [filterQuiz, setFilterQuiz] = useState<string | undefined>()
   const [filterScore, setFilterScore] = useState<string | undefined>()
   const [colWidths, setColWidths] = useState<number[]>(DEFAULT_COL_WIDTHS)
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
+
+  // Xóa xong bài thi thì Thành tích/Bảng xếp hạng đã được server tính lại —
+  // làm mới luôn các trang liên quan nếu admin đang mở song song.
+  const invalidateAfterDelete = () => {
+    qc.invalidateQueries({ queryKey: ['reports'] })
+    qc.invalidateQueries({ queryKey: ['leaderboard'] })
+    qc.invalidateQueries({ queryKey: ['badge-stats'] })
+  }
 
   const handleResize = useCallback(
     (index: number) => (_: React.SyntheticEvent, { size }: ResizeCallbackData) => {
@@ -111,7 +120,17 @@ export default function ReportsPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/reports/${id}`),
-    onSuccess: () => { message.success('Đã xóa bài thi'); qc.invalidateQueries({ queryKey: ['reports'] }) },
+    onSuccess: () => { message.success('Đã xóa bài thi'); invalidateAfterDelete() },
+    onError: () => message.error('Xóa thất bại'),
+  })
+
+  const bulkDeleteMut = useMutation({
+    mutationFn: (ids: string[]) => api.delete('/admin/reports/bulk', { data: { ids } }).then((r) => r.data),
+    onSuccess: (data: { deleted: number }) => {
+      setSelectedRowKeys([])
+      invalidateAfterDelete()
+      message.success(`Đã xóa ${data.deleted} bài thi — thành tích và bảng xếp hạng đã được cập nhật lại`)
+    },
     onError: () => message.error('Xóa thất bại'),
   })
 
@@ -322,11 +341,42 @@ export default function ReportsPage() {
         )}
       </Space>
 
+      {/* Xóa hàng loạt / xóa toàn bộ — xóa xong Thành tích & Bảng xếp hạng tự cập nhật lại */}
+      <Space wrap style={{ marginBottom: 12 }}>
+        {selectedRowKeys.length > 0 && (
+          <Popconfirm
+            title={`Xóa ${selectedRowKeys.length} bài thi đã chọn?`}
+            description="Thành tích (XP, huy hiệu) và bảng xếp hạng của các cán bộ liên quan sẽ được tính lại. Không thể hoàn tác."
+            okText="Xóa" okButtonProps={{ danger: true }}
+            cancelText="Hủy"
+            onConfirm={() => bulkDeleteMut.mutate(selectedRowKeys as string[])}
+          >
+            <Button danger icon={<DeleteOutlined />} loading={bulkDeleteMut.isPending}>
+              Xóa đã chọn ({selectedRowKeys.length})
+            </Button>
+          </Popconfirm>
+        )}
+        {filtered.length > 0 && (
+          <Popconfirm
+            title={hasFilter ? `Xóa toàn bộ ${filtered.length} bài thi đang lọc?` : `Xóa/reset toàn bộ ${filtered.length} bài thi?`}
+            description="Thành tích (XP, huy hiệu) và bảng xếp hạng của mọi cán bộ liên quan sẽ được tính lại. Không thể hoàn tác."
+            okText="Xóa toàn bộ" okButtonProps={{ danger: true }}
+            cancelText="Hủy"
+            onConfirm={() => bulkDeleteMut.mutate(filtered.map((r) => r.id))}
+          >
+            <Button danger icon={<DeleteOutlined />} loading={bulkDeleteMut.isPending}>
+              {hasFilter ? 'Xóa toàn bộ (đang lọc)' : 'Xóa / Reset toàn bộ'}
+            </Button>
+          </Popconfirm>
+        )}
+      </Space>
+
       <ManageTable<ReportRow>
         rowKey="id"
         loading={isLoading}
         dataSource={filtered}
         columns={columns}
+        rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, preserveSelectedRowKeys: true }}
         pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'], showTotal: (t) => `${t} bài thi` }}
         size="small"
         scroll={{ x: 'max-content' }}

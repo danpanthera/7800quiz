@@ -4,8 +4,9 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { AssignmentStatus, Prisma } from '@prisma/client';
+import { AssignmentStatus, Prisma, XpSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { GamificationService } from '../gamification/gamification.service';
 import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
@@ -20,7 +21,7 @@ const nspellLib = require('nspell') as (dict: {
   dic: Buffer;
 }) => NSpellChecker;
 
-// Lazily initialized spell checker
+// Bộ kiểm tra chính tả khởi tạo trễ (lazy)
 let _spellChecker: NSpellChecker | null = null;
 async function getSpellChecker(): Promise<NSpellChecker> {
   if (!_spellChecker) {
@@ -30,7 +31,7 @@ async function getSpellChecker(): Promise<NSpellChecker> {
   return _spellChecker;
 }
 
-// ── Duplicate detection helpers ─────────────────────────────────────────
+// ── Các hàm hỗ trợ phát hiện trùng lặp ───────────────────────────────────
 function normalizeText(text: string): string {
   return text
     .toLowerCase()
@@ -59,7 +60,10 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private gamification: GamificationService,
+  ) {}
 
   // Danh sách field cán bộ được phép ghi từ client — chặn các field hệ thống
   // (id, createdAt, updatedAt) và các quan hệ (department, assignments) lọt vào Prisma
@@ -343,9 +347,25 @@ export class AdminService {
       explanation?: string;
       subjectId?: string;
       points?: number;
+      questionType?: string;
+      options?: { content: string; isCorrect: boolean; orderIndex: number }[];
     },
   ) {
-    return this.prisma.question.update({ where: { id }, data });
+    const { options, questionType, ...rest } = data;
+    return this.prisma.question.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...(questionType ? { questionType: questionType as any } : {}),
+        // Đáp án của câu hỏi ngân hàng chưa gắn vào bài thi nào nên thay hẳn
+        // toàn bộ options cũ bằng danh sách mới — đơn giản và tránh lệch
+        // orderIndex/isCorrect so với thứ tự admin vừa sắp trên form. Bài thi
+        // đã chốt không bị ảnh hưởng vì nội dung câu hỏi được đóng băng vào
+        // QuizVersion.snapshot lúc build đề, không đọc trực tiếp từ đây.
+        ...(options ? { options: { deleteMany: {}, create: options } } : {}),
+      },
+      include: { options: true },
+    });
   }
 
   deleteBankQuestion(id: string) {
@@ -360,7 +380,7 @@ export class AdminService {
     return { deleted: result.count };
   }
 
-  // ── Duplicate detection ───────────────────────────────────────────────
+  // ── Phát hiện trùng lặp ────────────────────────────────────────────────
   async checkDuplicates(texts: string[]): Promise<
     {
       index: number;
@@ -411,13 +431,13 @@ export class AdminService {
           });
       }
 
-      // Sort by score desc, top 3
+      // Sắp xếp theo điểm giảm dần, lấy top 3
       matches.sort((a, b) => b.score - a.score);
       return { index, text, matches: matches.slice(0, 3) };
     });
   }
 
-  // ── Spell check (Vietnamese) ──────────────────────────────────────────
+  // ── Kiểm tra chính tả (tiếng Việt) ──────────────────────────────────────
   async checkSpelling(texts: string[]): Promise<
     {
       rowIndex: number;
@@ -485,7 +505,7 @@ export class AdminService {
       defval: null,
     });
 
-    // Parse all valid rows first
+    // Phân tích (parse) tất cả các dòng hợp lệ trước
     type ParsedRow = {
       rowNumber: number;
       content: string;
@@ -697,7 +717,7 @@ export class AdminService {
     };
   }
 
-  // ── Questions (for quiz) ──────────────────────────────────────────────
+  // ── Questions (dùng cho bài thi) ────────────────────────────────────────
   getQuestions() {
     return this.prisma.question.findMany({
       where: { isBank: false },
@@ -713,7 +733,7 @@ export class AdminService {
     return this.prisma.question.delete({ where: { id } });
   }
 
-  // ── Quizzes (full CRUD) ───────────────────────────────────────────────
+  // ── Quizzes (đầy đủ CRUD) ─────────────────────────────────────────────
   getQuizzes() {
     return this.prisma.quiz.findMany({
       include: {
@@ -771,10 +791,10 @@ export class AdminService {
         'Không thể xóa bộ đề đã được phân công hoặc có đợt thi. Hãy xóa phân công trước.',
       );
 
-    // Cascade delete arena sessions (ArenaTeam/ArenaRound/ArenaBuzz are cascaded by DB)
+    // Xóa lan truyền (cascade) các phiên Arena (ArenaTeam/ArenaRound/ArenaBuzz đã được DB cascade)
     await this.prisma.arenaSession.deleteMany({ where: { quizId: id } });
 
-    // Cascade delete: submission_answers → submissions → quiz_versions → quiz
+    // Xóa lan truyền (cascade): submission_answers → submissions → quiz_versions → quiz
     const versions = await this.prisma.quizVersion.findMany({
       where: { quizId: id },
       select: { id: true },
@@ -799,7 +819,7 @@ export class AdminService {
     return this.prisma.quiz.delete({ where: { id } });
   }
 
-  // ── Pick random questions from bank ──────────────────────────────────
+  // ── Chọn ngẫu nhiên câu hỏi từ ngân hàng ─────────────────────────────
   async pickRandomToQuiz(
     quizId: string,
     params: {
@@ -811,7 +831,7 @@ export class AdminService {
   ) {
     const { replaceAll } = params;
 
-    // Normalize: convert legacy (subjectId + count) to subjectSlots format
+    // Chuẩn hoá: chuyển định dạng cũ (subjectId + count) sang định dạng subjectSlots
     const slots: { subjectId?: string; count: number }[] = params.subjectSlots
       ?.length
       ? params.subjectSlots
@@ -844,7 +864,7 @@ export class AdminService {
           `Chỉ có ${bankQuestions.length} câu trong ngân hàng cho lĩnh vực này`,
         );
 
-      // Fisher-Yates shuffle
+      // Xáo trộn theo thuật toán Fisher-Yates
       const shuffled = [...bankQuestions];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -893,7 +913,7 @@ export class AdminService {
     return { added: pickedAll.length, quizId };
   }
 
-  // ── Assignments ──────────────────────────────────────────────────────
+  // ── Phân công (Assignments) ──────────────────────────────────────────
   private readonly assignmentInclude = {
     quiz: { select: { id: true, title: true } },
     user: {
@@ -1041,7 +1061,7 @@ export class AdminService {
     return { deleted: result.count, skipped };
   }
 
-  // ── Reports ──────────────────────────────────────────────────────────
+  // ── Báo cáo (Reports) ────────────────────────────────────────────────
   async getReports() {
     const rows = await this.prisma.submission.findMany({
       include: {
@@ -1078,14 +1098,67 @@ export class AdminService {
   }
 
   async deleteReport(id: string) {
-    await this.prisma.submissionAnswer.deleteMany({
-      where: { submissionId: id },
-    });
-    await this.prisma.auditLog.deleteMany({ where: { entityId: id } });
-    return this.prisma.submission.delete({ where: { id } });
+    const result = await this.deleteReportsBulk([id]);
+    return result;
   }
 
-  // ── Users ────────────────────────────────────────────────────────────
+  /**
+   * Xóa "vết tích đã thi" (bản ghi Submission) theo danh sách id — đồng thời
+   * dọn sạch mọi dấu vết liên quan (QuizAttempt gắn với submission, XpTransaction
+   * mồ côi phát sinh từ bài thi đó) rồi tính lại XP/cấp độ/huy hiệu cho từng
+   * người dùng bị ảnh hưởng, để Thành tích & Bảng xếp hạng luôn khớp với dữ
+   * liệu bài thi còn lại — không để lại số liệu "ma" từ bài đã xóa.
+   */
+  async deleteReportsBulk(ids: string[]) {
+    if (ids.length === 0) return { deleted: 0 };
+
+    const submissions = await this.prisma.submission.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, userId: true },
+    });
+    if (submissions.length === 0) return { deleted: 0 };
+
+    const submissionIds = submissions.map((s) => s.id);
+    const affectedUserIds = [...new Set(submissions.map((s) => s.userId))];
+
+    // Submission.id === QuizAttempt.id trong luồng làm bài hiện tại (attempts.service.ts);
+    // xóa theo cả hai chiều (submissionId lẫn chính id) để không sót attempt cũ.
+    await this.prisma.quizAttempt.deleteMany({
+      where: {
+        OR: [
+          { submissionId: { in: submissionIds } },
+          { id: { in: submissionIds } },
+        ],
+      },
+    });
+
+    // XpTransaction không có FK tới Submission (chỉ referenceId dạng chuỗi tự do)
+    // nên phải tự dọn — chỉ các nguồn XP phát sinh trực tiếp từ bài thi.
+    await this.prisma.xpTransaction.deleteMany({
+      where: {
+        referenceId: { in: submissionIds },
+        source: { in: [XpSource.EXAM_PASS, XpSource.EXAM_FAIL, XpSource.EXAM_PERFECT] },
+      },
+    });
+
+    await this.prisma.submissionAnswer.deleteMany({
+      where: { submissionId: { in: submissionIds } },
+    });
+    await this.prisma.auditLog.deleteMany({
+      where: { entityId: { in: submissionIds } },
+    });
+    const { count } = await this.prisma.submission.deleteMany({
+      where: { id: { in: submissionIds } },
+    });
+
+    for (const userId of affectedUserIds) {
+      await this.gamification.recomputeUserProgress(userId);
+    }
+
+    return { deleted: count };
+  }
+
+  // ── Người dùng (Users) ───────────────────────────────────────────────
   getUsers() {
     return this.prisma.user.findMany({
       select: {
@@ -1114,7 +1187,7 @@ export class AdminService {
     quizId: string;
     canBoIds?: string[] | 'all';
     departmentIds?: string[];
-    userIds?: string[] | 'all'; // backward compat
+    userIds?: string[] | 'all'; // tương thích ngược
     status?: AssignmentStatus;
     startAt?: string;
     endAt?: string;
@@ -1126,7 +1199,7 @@ export class AdminService {
       endAt: data.endAt ? new Date(data.endAt) : undefined,
     };
 
-    // departmentIds path (giao theo nhiều phòng ban cùng lúc)
+    // Nhánh xử lý departmentIds (giao theo nhiều phòng ban cùng lúc)
     if (data.departmentIds !== undefined) {
       const result = await this.prisma.assignment.createMany({
         data: data.departmentIds.map((departmentId) => ({
@@ -1138,7 +1211,7 @@ export class AdminService {
       return { count: result.count };
     }
 
-    // canBoIds path (primary)
+    // Nhánh xử lý canBoIds (chính)
     if (data.canBoIds !== undefined) {
       const ids =
         data.canBoIds === 'all'
@@ -1156,7 +1229,7 @@ export class AdminService {
       return { count: result.count };
     }
 
-    // userIds path (backward compat)
+    // Nhánh xử lý userIds (tương thích ngược)
     const ids =
       data.userIds === 'all'
         ? (
@@ -1173,7 +1246,7 @@ export class AdminService {
     return { count: result.count };
   }
 
-  // ── Academic Years ───────────────────────────────────────────────────
+  // ── Năm học (Academic Years) ─────────────────────────────────────────
   getAcademicYears() {
     return this.prisma.academicYear.findMany({
       include: { _count: { select: { classes: true } } },
@@ -1213,7 +1286,7 @@ export class AdminService {
     return this.prisma.academicYear.delete({ where: { id } });
   }
 
-  // ── Classes ──────────────────────────────────────────────────────────
+  // ── Lớp học (Classes) ────────────────────────────────────────────────
   getClasses(academicYearId?: string) {
     return this.prisma.class.findMany({
       where: academicYearId ? { academicYearId } : undefined,
@@ -1284,7 +1357,7 @@ export class AdminService {
     return this.prisma.class.delete({ where: { id } });
   }
 
-  // ── Class Members ────────────────────────────────────────────────────
+  // ── Thành viên lớp học (Class Members) ───────────────────────────────
   async addClassMember(classId: string, userId: string) {
     const existing = await this.prisma.classMember.findUnique({
       where: { classId_userId: { classId, userId } },
@@ -1313,7 +1386,7 @@ export class AdminService {
     return { added: newIds.length, skipped: existingIds.size };
   }
 
-  // ── Exam Sessions ────────────────────────────────────────────────────
+  // ── Đợt thi (Exam Sessions) ──────────────────────────────────────────
   getExamSessions(classId?: string) {
     return this.prisma.examSession.findMany({
       where: classId ? { classId } : undefined,
@@ -1393,7 +1466,7 @@ export class AdminService {
     return this.prisma.examSession.delete({ where: { id } });
   }
 
-  // ── Departments ──────────────────────────────────────────────────────
+  // ── Chi nhánh/Phòng ban (Departments) ────────────────────────────────
   getDepartments() {
     return this.prisma.department.findMany({
       include: {
@@ -1402,6 +1475,78 @@ export class AdminService {
       },
       orderBy: { code: 'asc' },
     });
+  }
+
+  /** Chặn parentId trỏ tới chính nó hoặc tới một đơn vị không phải chi nhánh gốc — hệ thống chỉ hỗ trợ 2 cấp */
+  private async assertValidParent(parentId: string, selfId?: string) {
+    if (parentId === selfId) {
+      throw new BadRequestException(
+        'Không thể chọn chính đơn vị này làm đơn vị cha',
+      );
+    }
+    const parent = await this.prisma.department.findUnique({
+      where: { id: parentId },
+    });
+    if (!parent) throw new NotFoundException('Không tìm thấy chi nhánh cha');
+    if (parent.parentId) {
+      throw new BadRequestException(
+        'Chỉ được chọn chi nhánh gốc làm đơn vị cha — hệ thống chỉ hỗ trợ 2 cấp',
+      );
+    }
+  }
+
+  async createDepartment(data: {
+    name: string;
+    code: string;
+    parentId?: string | null;
+  }) {
+    const existing = await this.prisma.department.findUnique({
+      where: { code: data.code },
+    });
+    if (existing) throw new ConflictException(`Mã "${data.code}" đã tồn tại`);
+
+    if (data.parentId) await this.assertValidParent(data.parentId);
+
+    return this.prisma.department.create({
+      data: {
+        name: data.name,
+        code: data.code,
+        parentId: data.parentId ?? null,
+      },
+    });
+  }
+
+  async updateDepartment(
+    id: string,
+    data: { name?: string; code?: string; parentId?: string | null },
+  ) {
+    if (data.code) {
+      const existing = await this.prisma.department.findUnique({
+        where: { code: data.code },
+      });
+      if (existing && existing.id !== id) {
+        throw new ConflictException(`Mã "${data.code}" đã tồn tại`);
+      }
+    }
+
+    if (data.parentId) {
+      const current = await this.prisma.department.findUnique({
+        where: { id },
+        include: { _count: { select: { children: true } } },
+      });
+      if (current && current._count.children > 0) {
+        throw new BadRequestException(
+          'Đơn vị này đang có phòng ban trực thuộc — không thể chuyển thành phòng ban con',
+        );
+      }
+      await this.assertValidParent(data.parentId, id);
+    }
+
+    return this.prisma.department.update({ where: { id }, data });
+  }
+
+  deleteDepartment(id: string) {
+    return this.prisma.department.delete({ where: { id } });
   }
 
   // ── Cán bộ (Staff Management) ─────────────────────────────────────────
@@ -1637,7 +1782,7 @@ export class AdminService {
     }
 
     // Cache phòng ban để giảm DB queries
-    const deptCache = new Map<string, string>(); // key = "BRCD::DEPTNM" → departmentId
+    const deptCache = new Map<string, string>(); // khoá = "BRCD::DEPTNM" → departmentId
 
     const getOrCreateDepartment = async (
       brcd: string,
@@ -1921,7 +2066,7 @@ export class AdminService {
       orderBy: { submittedAt: 'asc' },
     });
 
-    // Group by userId
+    // Gom nhóm theo userId
     const byUser: Record<string, typeof submissions> = {};
     for (const s of submissions) {
       if (!byUser[s.userId]) byUser[s.userId] = [];
@@ -1963,7 +2108,7 @@ export class AdminService {
     });
   }
 
-  // ── Leaderboard ──────────────────────────────────────────────────────
+  // ── Bảng xếp hạng (Leaderboard) ───────────────────────────────────────
   async getExamSessionLeaderboard(sessionId: string) {
     const gradebook = await this.getExamSessionGradebook(sessionId);
     return gradebook
@@ -1972,7 +2117,7 @@ export class AdminService {
       .map((g, idx) => ({ rank: idx + 1, ...g }));
   }
 
-  // ── Attempt History ──────────────────────────────────────────────────
+  // ── Lịch sử lượt làm bài (Attempt History) ───────────────────────────
   async getAttemptHistory(sessionId: string, userId: string) {
     const session = await this.prisma.examSession.findUniqueOrThrow({
       where: { id: sessionId },
@@ -2002,7 +2147,7 @@ export class AdminService {
     return submissions.map((s, idx) => ({ attempt: idx + 1, ...s }));
   }
 
-  // ── Export Gradebook Excel ───────────────────────────────────────────
+  // ── Xuất bảng điểm ra Excel (Export Gradebook) ───────────────────────
   async exportGradebook(
     sessionId: string,
   ): Promise<{ buffer: Buffer; filename: string }> {
@@ -2164,7 +2309,7 @@ export class AdminService {
       .map((m) => m.user);
   }
 
-  // ── Certificate Data ──────────────────────────────────────────────────
+  // ── Dữ liệu chứng nhận (Certificate Data) ────────────────────────────
   async getCertificateData(sessionId: string, userId: string) {
     const session = await this.prisma.examSession.findUniqueOrThrow({
       where: { id: sessionId },

@@ -253,6 +253,12 @@ export class AdminController {
     return this.adminService.getReports();
   }
 
+  @Delete('reports/bulk')
+  @Roles(...TRAINING_ROLES)
+  deleteReportsBulk(@Body() body: { ids: string[] }) {
+    return this.adminService.deleteReportsBulk(body.ids);
+  }
+
   @Delete('reports/:id')
   @Roles(...TRAINING_ROLES)
   deleteReport(@Param('id') id: string) {
@@ -438,6 +444,26 @@ export class AdminController {
   @Roles(...TRAINING_ROLES)
   getDepartments() {
     return this.adminService.getDepartments();
+  }
+
+  @Post('departments')
+  createDepartment(
+    @Body() body: { name: string; code: string; parentId?: string | null },
+  ) {
+    return this.adminService.createDepartment(body);
+  }
+
+  @Put('departments/:id')
+  updateDepartment(
+    @Param('id') id: string,
+    @Body() body: { name?: string; code?: string; parentId?: string | null },
+  ) {
+    return this.adminService.updateDepartment(id, body);
+  }
+
+  @Delete('departments/:id')
+  deleteDepartment(@Param('id') id: string) {
+    return this.adminService.deleteDepartment(id);
   }
 
   // ── Cán bộ ────────────────────────────────────────────────────────────
