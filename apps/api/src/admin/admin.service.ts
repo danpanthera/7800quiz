@@ -1168,8 +1168,8 @@ export class AdminService {
     }));
   }
 
-  async deleteReport(id: string) {
-    const result = await this.deleteReportsBulk([id]);
+  async deleteReport(id: string, actorUserId?: string) {
+    const result = await this.deleteReportsBulk([id], actorUserId);
     return result;
   }
 
@@ -1180,7 +1180,7 @@ export class AdminService {
    * người dùng bị ảnh hưởng, để Thành tích & Bảng xếp hạng luôn khớp với dữ
    * liệu bài thi còn lại — không để lại số liệu "ma" từ bài đã xóa.
    */
-  async deleteReportsBulk(ids: string[]) {
+  async deleteReportsBulk(ids: string[], actorUserId?: string) {
     if (ids.length === 0) return { deleted: 0 };
 
     const submissions = await this.prisma.submission.findMany({
@@ -1217,9 +1217,9 @@ export class AdminService {
     await this.prisma.submissionAnswer.deleteMany({
       where: { submissionId: { in: submissionIds } },
     });
-    await this.prisma.auditLog.deleteMany({
-      where: { entityId: { in: submissionIds } },
-    });
+    // KHÔNG xóa AuditLog liên quan — nhật ký quản trị phải bất biến/append-only,
+    // vẫn giữ lại bằng chứng "ai đã nộp/xóa bài gì" dù chính bài thi đó không
+    // còn tồn tại nữa (trước đây có xóa nhầm, làm mất dấu vết audit).
     const { count } = await this.prisma.submission.deleteMany({
       where: { id: { in: submissionIds } },
     });
@@ -1228,7 +1228,56 @@ export class AdminService {
       await this.gamification.recomputeUserProgress(userId);
     }
 
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorUserId,
+        action: 'DELETE_REPORTS_BULK',
+        meta: { submissionIds, count },
+      },
+    });
+
     return { deleted: count };
+  }
+
+  // ── Nhật ký quản trị (Audit Log) ───────────────────────────────────────
+  async getAuditLogs(
+    filters: {
+      action?: string;
+      userId?: string;
+      from?: string;
+      to?: string;
+      limit?: number;
+    } = {},
+  ) {
+    const { action, userId, from, to, limit = 200 } = filters;
+    const rows = await this.prisma.auditLog.findMany({
+      where: {
+        ...(action ? { action } : {}),
+        ...(userId ? { userId } : {}),
+        ...(from || to
+          ? {
+              createdAt: {
+                ...(from ? { gte: new Date(from) } : {}),
+                ...(to ? { lte: new Date(to) } : {}),
+              },
+            }
+          : {}),
+      },
+      include: { user: { select: { fullName: true, username: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 500),
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      userName: r.user?.fullName ?? null,
+      username: r.user?.username ?? null,
+      action: r.action,
+      entityId: r.entityId,
+      meta: r.meta,
+      ipAddress: r.ipAddress,
+      createdAt: r.createdAt,
+    }));
   }
 
   // ── Người dùng (Users) ───────────────────────────────────────────────
@@ -1747,18 +1796,32 @@ export class AdminService {
     });
   }
 
-  deleteCanBo(id: string) {
-    return this.prisma.canBo.delete({ where: { id } });
+  async deleteCanBo(id: string, actorUserId?: string) {
+    const result = await this.prisma.canBo.delete({ where: { id } });
+    await this.prisma.auditLog.create({
+      data: { userId: actorUserId, action: 'DELETE_CAN_BO', entityId: id },
+    });
+    return result;
   }
 
-  async bulkDeleteCanBo(ids: string[]): Promise<{ deleted: number }> {
+  async bulkDeleteCanBo(
+    ids: string[],
+    actorUserId?: string,
+  ): Promise<{ deleted: number }> {
     const result = await this.prisma.canBo.deleteMany({
       where: { id: { in: ids } },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorUserId,
+        action: 'DELETE_CAN_BO_BULK',
+        meta: { canBoIds: ids, deleted: result.count },
+      },
     });
     return { deleted: result.count };
   }
 
-  async resetCanBoPasswords(ids: string[]) {
+  async resetCanBoPasswords(ids: string[], actorUserId?: string) {
     const canBoList = await this.prisma.canBo.findMany({
       where: { id: { in: ids } },
       select: { id: true, cbCode: true, fullName: true, userAD: true },
@@ -1786,6 +1849,14 @@ export class AdminService {
       reset++;
       details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: true });
     }
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorUserId,
+        action: 'RESET_CAN_BO_PASSWORDS',
+        meta: { canBoIds: ids, reset, noAccount: noAccount.length },
+      },
+    });
 
     return { reset, noAccount: noAccount.length, details };
   }

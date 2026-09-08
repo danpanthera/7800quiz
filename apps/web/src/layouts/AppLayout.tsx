@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
 import {
   ApartmentOutlined,
+  AuditOutlined,
   BankOutlined,
   BarChartOutlined,
   BookOutlined,
@@ -52,6 +53,7 @@ const adminNavigation: NavigationItem[] = [
   { key: '/manage/branches', icon: <ApartmentOutlined />, label: 'Chi nhánh/Phòng ban' },
   { key: '/manage/classes', icon: <TeamOutlined />, label: 'Lớp học' },
   { key: '/manage/academic-years', icon: <CalendarOutlined />, label: 'Năm học' },
+  { key: '/manage/audit-logs', icon: <AuditOutlined />, label: 'Nhật ký quản trị' },
 ]
 
 const roleLabels: Record<UserRole, string> = {

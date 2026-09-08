@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  Request,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -262,14 +263,37 @@ export class AdminController {
 
   @Delete('reports/bulk')
   @Roles(...TRAINING_ROLES)
-  deleteReportsBulk(@Body() body: { ids: string[] }) {
-    return this.adminService.deleteReportsBulk(body.ids);
+  deleteReportsBulk(
+    @Body() body: { ids: string[] },
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.deleteReportsBulk(body.ids, req.user.id);
   }
 
   @Delete('reports/:id')
   @Roles(...TRAINING_ROLES)
-  deleteReport(@Param('id') id: string) {
-    return this.adminService.deleteReport(id);
+  deleteReport(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.deleteReport(id, req.user.id);
+  }
+
+  @Get('audit-logs')
+  getAuditLogs(
+    @Query()
+    query: {
+      action?: string;
+      userId?: string;
+      from?: string;
+      to?: string;
+      limit?: string;
+    },
+  ) {
+    return this.adminService.getAuditLogs({
+      ...query,
+      limit: query.limit ? Number(query.limit) : undefined,
+    });
   }
 
   // ── Users ─────────────────────────────────────────────────────────────
@@ -485,13 +509,19 @@ export class AdminController {
   }
 
   @Post('can-bo/reset-passwords')
-  resetCanBoPasswords(@Body() body: { ids: string[] }) {
-    return this.adminService.resetCanBoPasswords(body.ids);
+  resetCanBoPasswords(
+    @Body() body: { ids: string[] },
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.resetCanBoPasswords(body.ids, req.user.id);
   }
 
   @Delete('can-bo/bulk')
-  bulkDeleteCanBo(@Body() body: { ids: string[] }) {
-    return this.adminService.bulkDeleteCanBo(body.ids);
+  bulkDeleteCanBo(
+    @Body() body: { ids: string[] },
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.bulkDeleteCanBo(body.ids, req.user.id);
   }
 
   @Post('can-bo/import')
@@ -512,7 +542,10 @@ export class AdminController {
   }
 
   @Delete('can-bo/:id')
-  deleteCanBo(@Param('id') id: string) {
-    return this.adminService.deleteCanBo(id);
+  deleteCanBo(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.deleteCanBo(id, req.user.id);
   }
 }
