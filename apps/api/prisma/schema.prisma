@@ -428,7 +428,7 @@ model ArenaSession {
   status              ArenaStatus   @default(LOBBY)
   currentRoundOrder   Int           @default(0) @map("current_round_order")
   // Điểm theo thứ tự đúng: [rank1, rank2, ..., rank9]
-  pointsForRank       Json          @default("[10,7,5,3,2,2,2,2,2]") @map("points_for_rank")
+  pointsForRank       Json          @default("[10,7,5,3,2,2,2,2,2,2]") @map("points_for_rank")
   penaltyWrong        Int           @default(0) @map("penalty_wrong")
   createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)

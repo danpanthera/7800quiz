@@ -13,6 +13,7 @@ import {
   Prisma,
   XpSource,
   type ArenaBuzz,
+  type QuestionType,
 } from '@prisma/client';
 import { GamificationService } from '../gamification/gamification.service';
 import { ArenaEventBus } from './arena-event-bus';
@@ -45,6 +46,7 @@ const TEAM_COLORS = [
   '#E67E22',
   '#2C3E50',
   '#F1C40F',
+  '#95A5A6',
 ];
 
 // Số giây hiện lĩnh vực câu hỏi trước khi bật chính thức, để các đội chuẩn bị
@@ -124,9 +126,23 @@ export class ArenaService {
   // ─── HTTP ─────────────────────────────────────────────────────────────────
 
   async createSession(dto: CreateArenaDto) {
+    if (!dto.quizId && !dto.mixSlots?.length)
+      throw new BadRequestException(
+        'Cần chọn bộ đề có sẵn hoặc trộn câu hỏi theo tỷ lệ lĩnh vực',
+      );
+    if (dto.quizId && dto.mixSlots?.length)
+      throw new BadRequestException(
+        'Chỉ chọn 1 trong 2 cách nạp câu hỏi: bộ đề có sẵn hoặc trộn theo tỷ lệ',
+      );
+
+    // Trộn theo tỷ lệ: dựng 1 Quiz mới từ ngân hàng câu hỏi trước, rồi coi như
+    // một bộ đề có sẵn bình thường từ đây trở đi.
+    const quizId =
+      dto.quizId ?? (await this.buildMixedQuiz(dto.mixName, dto.mixSlots!));
+
     // Kiểm tra quiz có tồn tại
     const quiz = await this.prisma.quiz.findUnique({
-      where: { id: dto.quizId },
+      where: { id: quizId },
       include: { questions: { include: { options: true } } },
     });
     if (!quiz) throw new NotFoundException('Quiz không tồn tại');
@@ -143,12 +159,12 @@ export class ArenaService {
       attempts++;
     } while (attempts < 10);
 
-    const pointsForRank = dto.pointsForRank ?? [10, 7, 5, 3, 2, 2, 2, 2, 2];
+    const pointsForRank = dto.pointsForRank ?? [10, 7, 5, 3, 2, 2, 2, 2, 2, 2];
 
     const session = await this.prisma.arenaSession.create({
       data: {
         name: dto.name,
-        quizId: dto.quizId,
+        quizId,
         joinCode,
         hostMode: dto.hostMode ?? 'MANUAL',
         autoAdvanceSec: dto.autoAdvanceSec ?? 10,
@@ -187,7 +203,7 @@ export class ArenaService {
       });
     }
 
-    // Đội đặt trước — tối đa 8 đội, 0 người ban đầu, người chơi tự chọn vào lúc join
+    // Đội đặt trước — tối đa 10 đội, 0 người ban đầu, người chơi tự chọn vào lúc join
     const presetNames = (dto.presetTeamNames ?? [])
       .map((n) => n.trim())
       .filter(Boolean);
@@ -203,6 +219,99 @@ export class ArenaService {
     }
 
     return this.getSessionDetail(session.id);
+  }
+
+  // Trộn câu hỏi theo tỷ lệ lĩnh vực (thay cho chọn 1 bộ đề có sẵn): dựng 1
+  // Quiz mới làm "vật chứa", chọn ngẫu nhiên đúng `count` câu mỗi lĩnh vực từ
+  // ngân hàng câu hỏi (Fisher-Yates — cùng thuật toán với
+  // AdminService#pickRandomToQuiz ở trang Bộ đề) rồi SAO CHÉP thành Question
+  // mới gắn quiz đó, giữ nguyên bản gốc trong ngân hàng để dùng lại cho phiên
+  // khác. Web đã quy đổi % → số câu (số dư lớn nhất) nên ở đây chỉ cần cộng
+  // dồn theo `count`, không cần biết lại tỷ lệ %.
+  private async buildMixedQuiz(
+    mixName: string | undefined,
+    slots: { subjectId?: string; count: number }[],
+  ): Promise<string> {
+    const pickedAll: {
+      subjectId: string | null;
+      content: string;
+      imageUrl: string | null;
+      explanation: string | null;
+      questionType: QuestionType;
+      points: number;
+      options: { content: string; isCorrect: boolean; orderIndex: number }[];
+    }[] = [];
+
+    for (const slot of slots) {
+      if (!slot.count || slot.count <= 0) continue;
+      const bankQuestions = await this.prisma.question.findMany({
+        where: {
+          isBank: true,
+          ...(slot.subjectId ? { subjectId: slot.subjectId } : {}),
+        },
+        include: { options: { orderBy: { orderIndex: 'asc' } } },
+      });
+      if (bankQuestions.length === 0)
+        throw new BadRequestException(
+          'Có lĩnh vực đã chọn không có câu hỏi nào trong ngân hàng',
+        );
+      if (slot.count > bankQuestions.length)
+        throw new BadRequestException(
+          `Chỉ có ${bankQuestions.length} câu trong ngân hàng cho 1 lĩnh vực đã chọn`,
+        );
+
+      const shuffled = [...bankQuestions];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      pickedAll.push(...shuffled.slice(0, slot.count));
+    }
+
+    if (pickedAll.length === 0)
+      throw new BadRequestException('Không có câu hỏi nào được chọn để trộn');
+
+    // Xáo trộn lần nữa toàn bộ danh sách đã gộp — tránh dồn hết câu của 1
+    // lĩnh vực lại gần nhau trong 1 ván đấu trực tiếp.
+    for (let i = pickedAll.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pickedAll[i], pickedAll[j]] = [pickedAll[j], pickedAll[i]];
+    }
+
+    const quiz = await this.prisma.quiz.create({
+      data: {
+        title:
+          mixName?.trim() ||
+          `Đấu trường — Trộn tự động ${new Date().toLocaleString('vi-VN')}`,
+        durationMin: 0,
+      },
+    });
+
+    let orderIdx = 0;
+    for (const q of pickedAll) {
+      await this.prisma.question.create({
+        data: {
+          quizId: quiz.id,
+          subjectId: q.subjectId,
+          content: q.content,
+          imageUrl: q.imageUrl,
+          explanation: q.explanation,
+          questionType: q.questionType,
+          points: q.points,
+          orderIndex: orderIdx++,
+          isBank: false,
+          options: {
+            create: q.options.map((o) => ({
+              content: o.content,
+              isCorrect: o.isCorrect,
+              orderIndex: o.orderIndex,
+            })),
+          },
+        },
+      });
+    }
+
+    return quiz.id;
   }
 
   // Danh sách đội đã làm phẳng members về {userId, fullName} — dùng lại cho
@@ -459,8 +568,8 @@ export class ArenaService {
     const teamName = opts.teamName?.trim();
     if (!teamName) throw new BadRequestException('Nhập tên đội để tham gia');
 
-    if (session.teams.length >= 9)
-      throw new BadRequestException('Phiên đã đủ 9 đội');
+    if (session.teams.length >= 10)
+      throw new BadRequestException('Phiên đã đủ 10 đội');
 
     const existingName = session.teams.find(
       (t) => t.name.toLowerCase() === teamName.toLowerCase(),

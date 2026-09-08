@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Button, Card, Col, Form, InputNumber, Row, Select, Space, Spin, Table, Tag,
-  Typography, Divider, Alert, List, Modal, Input, Radio,
+  Typography, Divider, Alert, List, Modal, Input, Radio, Switch,
   Avatar, Popconfirm, message, Checkbox,
 } from 'antd'
 import {
@@ -9,6 +9,7 @@ import {
   ArrowRightOutlined, StopOutlined, CopyOutlined, ReloadOutlined,
   DeleteOutlined, LockOutlined, SafetyOutlined, UserDeleteOutlined,
   UsergroupAddOutlined, MailOutlined, PlusOutlined, SwapOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import type { Socket } from 'socket.io-client'
@@ -385,6 +386,28 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
 
 // ─── CreateForm ───────────────────────────────────────────────────────────────
 
+interface Subject { id: string; name: string; _count?: { questions: number } }
+interface SubjectRatio { subjectId?: string; percent: number }
+
+/**
+ * Quy đổi tỷ lệ % mỗi lĩnh vực thành số câu cụ thể, tổng luôn khớp chính xác
+ * `total` (không lệch do làm tròn) — thuật toán số dư lớn nhất (Largest
+ * Remainder Method), giống hệt trang Quản lý bộ đề (QuizzesPage.tsx) để 2 nơi
+ * trộn câu hỏi theo tỷ lệ không lệch công thức nhau.
+ */
+function phanBoTheoTyLe(total: number, ratios: SubjectRatio[]): number[] {
+  const raw = ratios.map((r) => (total * (r.percent || 0)) / 100)
+  const counts = raw.map(Math.floor)
+  let conThieu = total - counts.reduce((a, b) => a + b, 0)
+  const thuTuPhanDu = raw
+    .map((v, i) => ({ i, phanDu: v - counts[i] }))
+    .sort((a, b) => b.phanDu - a.phanDu)
+  for (let k = 0; k < thuTuPhanDu.length && conThieu > 0; k++, conThieu--) {
+    counts[thuTuPhanDu[k].i]++
+  }
+  return counts
+}
+
 function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => void; onBack: () => void }) {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
@@ -396,14 +419,43 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
     queryKey: ['users-select'],
     queryFn: () => api.get('/admin/users').then((r) => r.data),
   })
+  const { data: subjects = [] } = useQuery<Subject[]>({
+    queryKey: ['subjects'],
+    queryFn: () => api.get('/admin/subjects').then((r) => r.data),
+  })
 
   async function onFinish(values: Record<string, unknown>) {
     setLoading(true)
     try {
       const passcode = (values.passcode as string | undefined)?.trim()
       const invitedUserIds = values.invitedUserIds as string[] | undefined
+      const mixEnabled = values.mixEnabled as boolean | undefined
+
+      let mixSlots: { subjectId?: string; count: number }[] | undefined
+      let mixName: string | undefined
+      let quizId: string | undefined
+      if (mixEnabled) {
+        const total = values.totalQuestionCount as number
+        const ratios = (values.subjectRatios ?? []) as SubjectRatio[]
+        const counts = phanBoTheoTyLe(total, ratios)
+        mixSlots = ratios
+          .map((r, i) => ({ subjectId: r.subjectId, count: counts[i] }))
+          .filter((s) => s.count > 0)
+        mixName = (values.mixName as string | undefined)?.trim() || undefined
+      } else {
+        quizId = values.quizId as string
+      }
+
       const res = await api.post('/admin/arena-sessions', {
-        ...values,
+        name: values.name,
+        quizId,
+        mixName,
+        mixSlots,
+        hostMode: values.hostMode,
+        questionDurationSec: values.questionDurationSec,
+        revealPauseSec: values.revealPauseSec,
+        penaltyWrong: values.penaltyWrong,
+        presetTeamNames: values.presetTeamNames,
         passcode: passcode || undefined,
         invitedUserIds: invitedUserIds?.length ? invitedUserIds : undefined,
         pointsForRank: (values.pointsForRank as string).split(',').map((v) => parseInt(v.trim())),
@@ -420,14 +472,94 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
       <Form form={form} layout="vertical" onFinish={onFinish}
         initialValues={{
           hostMode: 'MANUAL', questionDurationSec: 20, revealPauseSec: 5,
-          pointsForRank: '10,7,5,3,2,2,2,2,2', penaltyWrong: 0,
+          pointsForRank: '10,7,5,3,2,2,2,2,2,2', penaltyWrong: 0,
+          mixEnabled: false, subjectRatios: [{ percent: 100 }],
         }}>
         <Form.Item name="name" label="Tên phiên" rules={[{ required: true }]}>
           <Input placeholder="VD: Đấu trường Tháng 5 — Tín dụng" />
         </Form.Item>
-        <Form.Item name="quizId" label="Bộ đề" rules={[{ required: true }]}>
-          <Select placeholder="Chọn bộ đề" options={quizzes?.map((q) => ({ value: q.id, label: q.title }))} />
+
+        <Form.Item name="mixEnabled" label="Trộn câu hỏi theo tỷ lệ lĩnh vực" valuePropName="checked"
+          tooltip='Bật để tự lấy ngẫu nhiên câu hỏi từ ngân hàng theo tỷ lệ % mỗi lĩnh vực bạn ấn định — VD: 40% Tín dụng, 60% CNTT — thay vì chọn 1 bộ đề có sẵn.'>
+          <Switch />
         </Form.Item>
+        <Form.Item noStyle shouldUpdate={(prev, cur) => prev.mixEnabled !== cur.mixEnabled}>
+          {() => form.getFieldValue('mixEnabled') ? (
+            <>
+              <Form.Item name="mixName" label="Tên bộ đề trộn (tuỳ chọn)">
+                <Input placeholder="Để trống sẽ tự đặt tên theo thời điểm tạo" maxLength={200} />
+              </Form.Item>
+              <Form.Item name="totalQuestionCount" label="Tổng số câu hỏi" rules={[{ required: true, message: 'Nhập tổng số câu hỏi' }]}>
+                <InputNumber min={1} max={500} style={{ width: 160 }} />
+              </Form.Item>
+              <Form.Item label="Tỷ lệ theo lĩnh vực (tổng phải đúng 100%)">
+                <Form.List name="subjectRatios" rules={[{
+                  validator: async (_, ratios: SubjectRatio[]) => {
+                    if (!ratios || ratios.length === 0) return Promise.reject(new Error('Thêm ít nhất 1 lĩnh vực'))
+                    const total = ratios.reduce((s, r) => s + (r?.percent || 0), 0)
+                    if (Math.round(total) !== 100) return Promise.reject(new Error(`Tổng tỷ lệ đang là ${total}% — phải đúng 100%`))
+                  },
+                }]}>
+                  {(fields, { add, remove }, { errors }) => (
+                    <>
+                      {fields.map(({ key, name }) => (
+                        <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                          <Form.Item name={[name, 'subjectId']} noStyle rules={[{ required: true, message: 'Chọn lĩnh vực' }]}>
+                            <Select showSearch optionFilterProp="label" placeholder="Chọn lĩnh vực" style={{ width: 260 }}
+                              options={subjects.map((s) => ({ value: s.id, label: `${s.name} (${s._count?.questions ?? 0} câu)` }))} />
+                          </Form.Item>
+                          <Form.Item name={[name, 'percent']} noStyle rules={[{ required: true, message: 'Nhập %' }]}>
+                            <InputNumber min={0} max={100} addonAfter="%" placeholder="Tỷ lệ" style={{ width: 110 }} />
+                          </Form.Item>
+                          {fields.length > 1 && (
+                            <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f', cursor: 'pointer' }} />
+                          )}
+                        </Space>
+                      ))}
+                      <Form.ErrorList errors={errors} />
+                      <Button type="dashed" onClick={() => add({ percent: 0 })} icon={<PlusOutlined />} size="small">
+                        Thêm lĩnh vực
+                      </Button>
+                    </>
+                  )}
+                </Form.List>
+              </Form.Item>
+              <Form.Item shouldUpdate noStyle>
+                {() => {
+                  const total = form.getFieldValue('totalQuestionCount') as number | undefined
+                  const ratios = (form.getFieldValue('subjectRatios') ?? []) as SubjectRatio[]
+                  const tongTyLe = ratios.reduce((s, r) => s + (r?.percent || 0), 0)
+                  if (!total || ratios.length === 0) return null
+                  const counts = phanBoTheoTyLe(total, ratios)
+                  return (
+                    <div style={{ marginTop: -8, marginBottom: 12 }}>
+                      <Text type={tongTyLe === 100 ? 'secondary' : 'danger'} style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                        Tổng tỷ lệ: {tongTyLe}%{tongTyLe !== 100 && ' — phải đúng 100%'}
+                      </Text>
+                      {ratios.map((r, i) => {
+                        if (!r.subjectId) return null
+                        const subj = subjects.find((s) => s.id === r.subjectId)
+                        const available = subj?._count?.questions ?? 0
+                        const need = counts[i]
+                        const thieu = need > available
+                        return (
+                          <Text key={i} type={thieu ? 'danger' : 'secondary'} style={{ fontSize: 12, display: 'block' }}>
+                            {subj?.name ?? '—'}: {need} câu{thieu && ` (ngân hàng chỉ có ${available} câu — không đủ!)`}
+                          </Text>
+                        )
+                      })}
+                    </div>
+                  )
+                }}
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item name="quizId" label="Bộ đề" rules={[{ required: true, message: 'Chọn bộ đề' }]}>
+              <Select placeholder="Chọn bộ đề" options={quizzes?.map((q) => ({ value: q.id, label: q.title }))} />
+            </Form.Item>
+          )}
+        </Form.Item>
+
         <Form.Item name="hostMode" label="Chế độ điều khiển">
           <Radio.Group>
             <Radio value="MANUAL">Manual — MC bấm từng bước</Radio>
@@ -448,8 +580,8 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
         >
           <InputNumber min={2} max={30} style={{ width: 140 }} addonAfter="giây" />
         </Form.Item>
-        <Form.Item name="pointsForRank" label="Điểm theo thứ tự đúng (9 giá trị, cách nhau dấu phẩy)"
-          extra="Rank 1 đến Rank 9, VD: 10,7,5,3,2,2,2,2,2">
+        <Form.Item name="pointsForRank" label="Điểm theo thứ tự đúng (10 giá trị, cách nhau dấu phẩy)"
+          extra="Rank 1 đến Rank 10, VD: 10,7,5,3,2,2,2,2,2,2">
           <Input />
         </Form.Item>
         <Form.Item name="penaltyWrong" label="Trừ điểm nếu sai">
@@ -490,7 +622,7 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
           />
         </Form.Item>
         <Divider titlePlacement="left" styles={{ content: { margin: 0 } }} style={{ fontSize: 13, color: '#8c8c8c' }}>
-          <TeamOutlined /> Đội đặt trước (tuỳ chọn, tối đa 8 đội)
+          <TeamOutlined /> Đội đặt trước (tuỳ chọn, tối đa 10 đội)
         </Divider>
         <Form.List name="presetTeamNames">
           {(fields, { add, remove }) => (
@@ -505,7 +637,7 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
                   </Space.Compact>
                 </Form.Item>
               ))}
-              {fields.length < 8 && (
+              {fields.length < 10 && (
                 <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add()}>Thêm đội</Button>
               )}
             </>
@@ -638,7 +770,7 @@ function Lobby({ session, teams, onStart, onKick, onKickMember, onMoveMember, on
       </Col>
       <Col xs={24} lg={14}>
         <Card
-          title={<Space><TeamOutlined /><span>Đội tham gia ({teams.length}/9)</span></Space>}
+          title={<Space><TeamOutlined /><span>Đội tham gia ({teams.length}/10)</span></Space>}
           extra={
             <Space>
               <Button onClick={onBack}>Quay lại</Button>
