@@ -11,6 +11,7 @@ import { AdminModule } from './admin/admin.module';
 import { ArenaModule } from './arena/arena.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { AttemptsModule } from './attempts/attempts.module';
+import { PerformanceModule } from './performance/performance.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AttemptsModule } from './attempts/attempts.module';
     ArenaModule,
     GamificationModule,
     AttemptsModule,
+    PerformanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

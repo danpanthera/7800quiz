@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  CalendarOutlined, ClockCircleOutlined, FileTextOutlined, FireOutlined,
+  AimOutlined, CalendarOutlined, ClockCircleOutlined, FileTextOutlined, FireOutlined,
   ThunderboltOutlined, TrophyOutlined, RightOutlined, HistoryOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -42,6 +42,14 @@ interface Assignment {
     durationMin: number
     maxAttempts: number
   }
+}
+
+interface SubjectPerformance {
+  subjectId: string
+  subjectName: string
+  totalAnswered: number
+  correctCount: number
+  correctRate: number
 }
 
 interface MyProgress {
@@ -150,6 +158,10 @@ export default function MyQuizzesPage() {
     queryKey: ['my-progress'],
     queryFn: () => api.get('/me/progress').then((r) => r.data),
   })
+  const subjectPerformanceQuery = useQuery<SubjectPerformance[]>({
+    queryKey: ['my-subject-performance'],
+    queryFn: () => api.get('/me/subject-performance').then((r) => r.data),
+  })
   const badgesQuery = useQuery<BadgeItem[]>({
     queryKey: ['my-badges'],
     queryFn: () => api.get('/me/badges').then((r) => r.data),
@@ -244,6 +256,31 @@ export default function MyQuizzesPage() {
           <dd>#{progress?.rank ?? '—'}</dd>
         </div>
       </dl>
+
+      {/* ── Bản đồ điểm yếu theo lĩnh vực — chỉ hiện khi có ít nhất 1 lĩnh vực
+          chưa đúng 100%, tính từ toàn bộ lịch sử bài đã nộp ── */}
+      {(() => {
+        const weakSubjects = (subjectPerformanceQuery.data ?? []).filter((s) => s.correctRate < 100)
+        if (weakSubjects.length === 0) return null
+        return (
+          <Card
+            title={<Space><AimOutlined /> Lĩnh vực cần cải thiện</Space>}
+            bordered={false}
+          >
+            <Space direction="vertical" style={{ width: '100%' }} size={16}>
+              {weakSubjects.slice(0, 3).map((s) => (
+                <div key={s.subjectId}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text strong>{s.subjectName}</Text>
+                    <Text type="secondary">{s.correctCount}/{s.totalAnswered} câu đúng</Text>
+                  </div>
+                  <Progress percent={s.correctRate} status={s.correctRate < 60 ? 'exception' : 'normal'} />
+                </div>
+              ))}
+            </Space>
+          </Card>
+        )
+      })()}
 
       {/* ── Đề thi được gán ── */}
       <section>
