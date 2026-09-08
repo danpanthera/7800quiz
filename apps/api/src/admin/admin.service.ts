@@ -781,6 +781,54 @@ export class AdminService {
     return this.prisma.quiz.update({ where: { id }, data });
   }
 
+  // Nhân bản toàn bộ bộ đề (câu hỏi + đáp án) thành bộ đề MỚI độc lập — sửa bản
+  // sao không ảnh hưởng bản gốc. Mặc định TẮT hoạt động để admin tự kiểm tra/
+  // chỉnh sửa trước khi giao cho học viên, tránh lộ đề trùng ngay khi vừa tạo.
+  async duplicateQuiz(id: string) {
+    const original = await this.prisma.quiz.findUniqueOrThrow({
+      where: { id },
+      include: {
+        questions: {
+          include: { options: { orderBy: { orderIndex: 'asc' } } },
+          orderBy: { orderIndex: 'asc' },
+        },
+      },
+    });
+
+    return this.prisma.quiz.create({
+      data: {
+        title: `${original.title} (Bản sao)`,
+        description: original.description,
+        topic: original.topic,
+        durationMin: original.durationMin,
+        passScore: original.passScore,
+        instantFeedback: original.instantFeedback,
+        maxAttempts: original.maxAttempts,
+        isActive: false,
+        questions: {
+          create: original.questions.map((q) => ({
+            subjectId: q.subjectId,
+            content: q.content,
+            imageUrl: q.imageUrl,
+            explanation: q.explanation,
+            questionType: q.questionType,
+            orderIndex: q.orderIndex,
+            points: q.points,
+            isBank: false,
+            options: {
+              create: q.options.map((o) => ({
+                content: o.content,
+                isCorrect: o.isCorrect,
+                orderIndex: o.orderIndex,
+              })),
+            },
+          })),
+        },
+      },
+      include: { _count: { select: { assignments: true, questions: true } } },
+    });
+  }
+
   async deleteQuiz(id: string) {
     const quiz = await this.prisma.quiz.findUniqueOrThrow({
       where: { id },

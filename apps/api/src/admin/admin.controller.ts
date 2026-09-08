@@ -193,6 +193,12 @@ export class AdminController {
     return this.adminService.deleteQuiz(id);
   }
 
+  @Post('quizzes/:id/duplicate')
+  @Roles(...TRAINING_ROLES)
+  duplicateQuiz(@Param('id') id: string) {
+    return this.adminService.duplicateQuiz(id);
+  }
+
   @Post('quizzes/:id/pick-random')
   @Roles(...TRAINING_ROLES)
   pickRandom(

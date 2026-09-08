@@ -5,7 +5,7 @@ import {
   Modal, Form, Input, InputNumber, Switch, Drawer, Select, theme,
   Tooltip, Divider,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined, CopyOutlined } from '@ant-design/icons'
 import ManageTable from '../components/ManageTable'
 import { useDeviceType } from '../hooks/useDeviceType'
 import api, { getErrorMessage } from '../lib/api'
@@ -127,6 +127,12 @@ export default function QuizzesPage() {
     onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi xóa bộ đề')),
   })
 
+  const duplicateMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/quizzes/${id}/duplicate`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['quizzes'] }); message.success('Đã nhân bản bộ đề (bản sao đang ở trạng thái Tắt)') },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi nhân bản bộ đề')),
+  })
+
   const pickMutation = useMutation({
     mutationFn: ({ id, ...data }: { id: string } & PickFormValues) => api.post(`/admin/quizzes/${id}/pick-random`, data),
     onSuccess: (res) => {
@@ -214,6 +220,15 @@ export default function QuizzesPage() {
       </Tooltip>
       <Tooltip title="Sửa bộ đề">
         <Button aria-label={`Sửa ${quiz.title}`} icon={<EditOutlined />} size="small" onClick={() => openEdit(quiz)} />
+      </Tooltip>
+      <Tooltip title="Nhân bản bộ đề">
+        <Button
+          aria-label={`Nhân bản ${quiz.title}`}
+          icon={<CopyOutlined />}
+          size="small"
+          loading={duplicateMutation.isPending && duplicateMutation.variables === quiz.id}
+          onClick={() => duplicateMutation.mutate(quiz.id)}
+        />
       </Tooltip>
       <Popconfirm title="Xóa bộ đề?" onConfirm={() => deleteMutation.mutate(quiz.id)}>
         <Tooltip title="Xóa bộ đề">
