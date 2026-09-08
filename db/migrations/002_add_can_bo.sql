@@ -1,4 +1,4 @@
--- Migration: Add can_bo table for staff management
+-- Migration: Thêm bảng can_bo để quản lý cán bộ
 CREATE TABLE IF NOT EXISTS can_bo (
   id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   cb_code              VARCHAR(20) NOT NULL UNIQUE,

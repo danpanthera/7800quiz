@@ -1,4 +1,4 @@
-// Prisma schema for 7800Quiz — Internal Bank Quiz System
+// Schema Prisma cho 7800Quiz — Hệ thống quiz nội bộ ngân hàng
 
 generator client {
   provider = "prisma-client-js"
@@ -288,7 +288,7 @@ model SubmissionAnswer {
   id                String   @id @default(uuid())
   submissionId      String   @map("submission_id")
   questionId        String   @map("question_id")
-  selectedOptionIds Json     @map("selected_option_ids") // array of option IDs
+  selectedOptionIds Json     @map("selected_option_ids") // mảng ID của các lựa chọn
   answeredAt        DateTime @map("answered_at")
 
   submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
@@ -528,7 +528,7 @@ model ArenaBuzz {
   arenaRoundId      String   @map("arena_round_id")
   teamId            String   @map("team_id")
   selectedOptionIds Json     @map("selected_option_ids")
-  answeredAt        DateTime @map("answered_at") // server timestamp
+  answeredAt        DateTime @map("answered_at") // mốc thời gian tính trên server
   isCorrect         Boolean  @map("is_correct")
   pointsAwarded     Int      @default(0) @map("points_awarded")
   correctRank       Int?     @map("correct_rank") // 1 = nhanh nhất đúng
@@ -571,7 +571,7 @@ model CanBo {
   @@map("can_bo")
 }
 
-// ─── Sprint 9: Gamification ────────────────────────────────────────────────
+// ─── Sprint 9: Game hoá ────────────────────────────────────────────────────
 
 model UserProgress {
   id               String    @id @default(uuid())
@@ -598,7 +598,7 @@ model LevelDefinition {
   level     Int      @unique
   name      String
   minXp     Int      @map("min_xp")
-  color     String // hex color, vd: "#4CAF50"
+  color     String // mã màu hex, vd: "#4CAF50"
   iconSlug  String?  @map("icon_slug")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

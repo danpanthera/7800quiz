@@ -22,7 +22,7 @@ const ARENA_HOST_ROLES = [UserRole.ADMIN, UserRole.TRAINER] as const;
 export class ArenaController {
   constructor(private arenaService: ArenaService) {}
 
-  // ─── Admin endpoints (require JWT) ──────────────────────────────────────
+  // ─── Endpoint quản trị (yêu cầu JWT) ────────────────────────────────────
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...ARENA_HOST_ROLES)
@@ -74,7 +74,7 @@ export class ArenaController {
     return this.arenaService.getMyHistory(req.user.id);
   }
 
-  // ─── Public endpoint — trang join của người chơi xem trước thông tin phiên
+  // ─── Endpoint công khai — trang join của người chơi xem trước thông tin phiên
   // đấu bằng joinCode, TRƯỚC khi đăng nhập (đăng nhập chỉ bắt buộc lúc join thật) ──
 
   @Get('arena/join/:joinCode')

@@ -18,7 +18,7 @@ import api, { getErrorMessage } from '../lib/api'
 const { Title, Text } = Typography
 const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
 
 interface TeamMember { userId: string; fullName: string }
 interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number; members?: TeamMember[]; isPreset?: boolean }
@@ -49,13 +49,13 @@ interface ArenaSession {
 
 type PageView = 'list' | 'create' | 'lobby' | 'game' | 'result'
 
-// ─── Medal helper ─────────────────────────────────────────────────────────────
+// ─── Hàm hỗ trợ huy chương ────────────────────────────────────────────────────
 function RankMedal({ rank }: { rank: number }) {
   const medals: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' }
   return <span style={{ fontSize: 20 }}>{medals[rank] ?? '🏅'}</span>
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Component chính ──────────────────────────────────────────────────────────
 export default function ArenaPage() {
   const [view, setView] = useState<PageView>('list')
   const [session, setSession] = useState<ArenaSession | null>(null)
@@ -68,7 +68,7 @@ export default function ArenaPage() {
   const socketRef = useRef<Socket | null>(null)
   const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // ─── Socket helpers ───────────────────────────────────────────────────────
+  // ─── Hàm hỗ trợ Socket ──────────────────────────────────────────────────────
 
   const connectSocket = useCallback((sessionId: string) => {
     const token = localStorage.getItem('token')
@@ -77,7 +77,7 @@ export default function ArenaPage() {
 
     socket.emit('arena.host', { sessionId })
 
-    // Track hostMode inside closure (shared between question + revealed handlers)
+    // Lưu hostMode trong closure (dùng chung giữa handler câu hỏi và handler reveal)
     let capturedHostMode = 'MANUAL'
 
     socket.on('arena.team_joined', ({ team }: { team: ArenaTeam }) => {
@@ -101,7 +101,7 @@ export default function ArenaPage() {
           setAutoTimer((s) => {
             if (s <= 1) {
               clearInterval(autoTimerRef.current!)
-              // Auto-reveal when countdown reaches zero
+              // Tự động reveal đáp án khi đếm ngược về 0
               socket.emit('arena.reveal', { sessionId })
               return 0
             }
@@ -119,7 +119,7 @@ export default function ArenaPage() {
       setRevealData(data)
       setTeams(data.leaderboard)
       if (autoTimerRef.current) clearInterval(autoTimerRef.current)
-      // AUTO mode: advance to next question after 3s pause (so players can see result)
+      // Chế độ AUTO: chuyển sang câu tiếp theo sau 3s tạm dừng (để người chơi kịp xem kết quả)
       if (capturedHostMode === 'AUTO') {
         setTimeout(() => socket.emit('arena.next', { sessionId }), 3000)
       }
@@ -143,7 +143,7 @@ export default function ArenaPage() {
 
   useEffect(() => () => disconnectSocket(), [disconnectSocket])
 
-  // ─── Socket emit helpers ──────────────────────────────────────────────────
+  // ─── Hàm hỗ trợ emit Socket ─────────────────────────────────────────────────
 
   function emitStart() { socketRef.current?.emit('arena.start', { sessionId: session!.id }) }
   function emitReveal() { socketRef.current?.emit('arena.reveal', { sessionId: session!.id }) }
@@ -168,7 +168,7 @@ export default function ArenaPage() {
     })
   }
 
-  // ─── View router ──────────────────────────────────────────────────────────
+  // ─── Điều hướng view ──────────────────────────────────────────────────────
 
   if (view === 'list') return <SessionList onNew={() => setView('create')} onOpen={(s) => { setSession(s); setTeams(s.teams); connectSocket(s.id); setView('lobby') }} />
   if (view === 'create') return <CreateForm onCreated={(s) => { setSession(s); setTeams([]); connectSocket(s.id); setView('lobby') }} onBack={() => setView('list')} />
@@ -738,7 +738,7 @@ function GameControl({ session, teams, currentQuestion, buzzes, revealData, auto
 
   return (
     <Row gutter={16}>
-      {/* Left: Question panel */}
+      {/* Cột trái: khung câu hỏi */}
       <Col span={16}>
         <Card
           title={
@@ -795,7 +795,7 @@ function GameControl({ session, teams, currentQuestion, buzzes, revealData, auto
           )}
         </Card>
 
-        {/* Buzz tracker */}
+        {/* Theo dõi buzz-in */}
         <Card style={{ marginTop: 16 }} title={<Space><ThunderboltOutlined style={{ color: '#faad14' }} /><span>Đội đã trả lời ({buzzes.length})</span></Space>}>
           {buzzes.length === 0 ? (
             <Text type="secondary">Chưa có đội nào trả lời…</Text>
@@ -816,7 +816,7 @@ function GameControl({ session, teams, currentQuestion, buzzes, revealData, auto
         </Card>
       </Col>
 
-      {/* Right: Leaderboard */}
+      {/* Cột phải: bảng xếp hạng */}
       <Col span={8}>
         <Card title={<Space><TrophyOutlined style={{ color: '#faad14' }} /><span>Bảng điểm</span></Space>}>
           <List
@@ -851,11 +851,11 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
       title={<Space><TrophyOutlined style={{ color: '#faad14', fontSize: 20 }} /><Title level={4} style={{ margin: 0 }}>Kết quả Đấu trường</Title></Space>}
       extra={<Button onClick={onBack}>Về trang chủ</Button>}
     >
-      {/* Podium */}
+      {/* Bục trao giải */}
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
         <Title level={3}>🏆 Bảng xếp hạng</Title>
         <Row justify="center" gutter={24} align="bottom" style={{ marginTop: 24 }}>
-          {/* 2nd */}
+          {/* Hạng 2 */}
           {podium[1] && (
             <Col>
               <div style={{ textAlign: 'center' }}>
@@ -867,7 +867,7 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
               </div>
             </Col>
           )}
-          {/* 1st */}
+          {/* Hạng 1 */}
           {podium[0] && (
             <Col>
               <div style={{ textAlign: 'center' }}>
@@ -879,7 +879,7 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
               </div>
             </Col>
           )}
-          {/* 3rd */}
+          {/* Hạng 3 */}
           {podium[2] && (
             <Col>
               <div style={{ textAlign: 'center' }}>
@@ -894,7 +894,7 @@ function ResultScreen({ ranking, onBack }: { ranking: ArenaTeam[]; onBack: () =>
         </Row>
       </div>
 
-      {/* Encouragement */}
+      {/* Giải khuyến khích */}
       {encouragement.length > 0 && (
         <>
           <Divider>🏅 Khuyến khích</Divider>

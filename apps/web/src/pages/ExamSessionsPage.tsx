@@ -271,7 +271,7 @@ export default function ExamSessionsPage() {
     </Space>
   )
 
-  // ── Table columns ──────────────────────────────────────────────────────
+  // ── Cột bảng ────────────────────────────────────────────────────────────
   const columns = [
     {
       title: 'Tên đợt thi', dataIndex: 'name',

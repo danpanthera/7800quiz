@@ -17,7 +17,7 @@ const { Title, Text } = Typography
 const WS_URL = import.meta.env.VITE_WS_URL ?? window.location.origin
 const OPTION_COLORS = ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12']
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
 
 interface TeamMember { userId: string; fullName: string }
 interface ArenaTeam { id: string; name: string; color: string; score: number; rank?: number; members?: TeamMember[] }
@@ -50,7 +50,7 @@ function RankMedal({ rank }: { rank: number }) {
   return <span style={{ fontSize: 20 }}>{medals[rank] ?? '🏅'}</span>
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────────
+// ─── Component chính ────────────────────────────────────────────────────────
 
 export default function ArenaPlayerPage() {
   const { joinCode = '' } = useParams()

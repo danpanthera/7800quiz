@@ -1,7 +1,7 @@
 /* ── Google Fonts ─────────────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
 
-/* ── CSS Variables ────────────────────────────────────────────────────────── */
+/* ── Biến CSS ─────────────────────────────────────────────────────────────── */
 /*
  * Thang breakpoint dùng trong toàn bộ file này PHẢI khớp apps/web/src/lib/breakpoints.ts
  * và antd Grid mặc định (sm=576, md=768, lg=992, xl=1200). CSS custom property không dùng
@@ -48,7 +48,7 @@
   color-scheme: light;
 }
 
-/* ── Reset ────────────────────────────────────────────────────────────────── */
+/* ── Đặt lại mặc định ─────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
@@ -694,8 +694,10 @@ select {
 }
 
 .login-brand-footer.ant-typography {
-  color: rgba(248, 244, 236, 0.62);
-  font-size: 12px;
+  color: var(--pearl-white);
+  font-size: clamp(16px, 1.5vw, 20px);
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
 
 .login-form-region {
@@ -1234,15 +1236,15 @@ select {
   }
 }
 
-/* ── Custom scrollbar ─────────────────────────────────────────────────────── */
+/* ── Thanh cuộn tuỳ chỉnh ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(122, 20, 40,0.25); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(122, 20, 40,0.45); }
 
-/* ── Ant Design overrides ─────────────────────────────────────────────────── */
+/* ── Ghi đè giao diện Ant Design ──────────────────────────────────────────── */
 
-/* Buttons — more prominent */
+/* Nút bấm — nổi bật hơn */
 .ant-btn {
   font-weight: 600 !important;
   transition: all 0.18s ease !important;
@@ -1279,7 +1281,7 @@ select {
   box-shadow: 0 6px 16px rgba(229, 57, 53, 0.30) !important;
 }
 
-/* Cards */
+/* Thẻ (Card) */
 .ant-card {
   border: 1px solid #E8EDF5 !important;
   transition: var(--transition) !important;
@@ -1289,7 +1291,7 @@ select {
   box-shadow: 0 4px 20px rgba(122, 20, 40,0.10) !important;
 }
 
-/* Tables */
+/* Bảng (Table) */
 .ant-table-wrapper {
   border-radius: 12px;
   overflow: hidden;
@@ -1309,7 +1311,7 @@ select {
   border-bottom: none !important;
 }
 
-/* Modal */
+/* Hộp thoại (Modal) */
 .ant-modal-content {
   border-radius: 16px !important;
   overflow: hidden;
@@ -1326,7 +1328,7 @@ select {
   color: var(--agribank-red-dark) !important;
 }
 
-/* Drawer */
+/* Ngăn kéo (Drawer) */
 .ant-drawer-header {
   border-bottom: 1px solid #EFE6DD !important;
 }
@@ -1337,13 +1339,13 @@ select {
   color: var(--agribank-red-dark) !important;
 }
 
-/* Form */
+/* Biểu mẫu (Form) */
 .ant-form-item-label > label {
   font-weight: 600 !important;
   color: #344054 !important;
 }
 
-/* Input focus glow */
+/* Hiệu ứng sáng viền khi Input được focus */
 .ant-input:focus,
 .ant-input-focused,
 .ant-input-affix-wrapper:focus,
@@ -1351,29 +1353,29 @@ select {
   box-shadow: 0 0 0 3px rgba(122, 20, 40,0.12) !important;
 }
 
-/* Select */
+/* Ô chọn (Select) */
 .ant-select-selector:focus-within {
   box-shadow: 0 0 0 3px rgba(122, 20, 40,0.12) !important;
 }
 
-/* Tag */
+/* Nhãn (Tag) */
 .ant-tag {
   font-weight: 600 !important;
   border: none !important;
   padding: 2px 10px !important;
 }
 
-/* Pagination */
+/* Phân trang (Pagination) */
 .ant-pagination-item-active {
   box-shadow: 0 2px 8px rgba(122, 20, 40,0.25) !important;
 }
 
-/* Popconfirm / Tooltip */
+/* Xác nhận nhanh / Chú giải (Popconfirm / Tooltip) */
 .ant-popconfirm-buttons .ant-btn-dangerous {
   box-shadow: 0 2px 8px rgba(229, 57, 53, 0.20) !important;
 }
 
-/* Menu link color override */
+/* Ghi đè màu link trong Menu */
 .ant-menu-dark .ant-menu-item a,
 .ant-menu-dark .ant-menu-item span a {
   color: rgba(255, 255, 255, 0.82) !important;
@@ -1384,7 +1386,7 @@ select {
   color: #ffffff !important;
 }
 
-/* Smooth page transitions */
+/* Hiệu ứng chuyển trang mượt */
 .ant-layout-content {
   animation: fadeIn 0.22s ease;
 }

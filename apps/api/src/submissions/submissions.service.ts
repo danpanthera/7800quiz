@@ -136,7 +136,7 @@ export class SubmissionsService {
       newBadges: { code: string; name: string; iconSlug: string }[];
     };
     if (score === 100) {
-      // Pass + perfect
+      // Đạt + điểm tuyệt đối
       const passResult = await this.gamification.awardXp(
         userId,
         50,

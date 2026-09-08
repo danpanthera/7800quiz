@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   // ── Cơ cấu tổ chức ─────────────────────────────────────────────────────
-  // Top-level units (code prefix 01..09 để giữ thứ tự khi sort)
+  // Đơn vị cấp cao nhất (tiền tố mã 01..09 để giữ thứ tự khi sắp xếp)
   const units = [
     { code: '01-HS',  name: 'Hội Sở' },
     { code: '02-BL',  name: 'CN Bình Lư' },
@@ -23,7 +23,7 @@ async function main() {
     unitMap[u.code] = r.id;
   }
 
-  // Sub-departments — tên/mã chuẩn sau đợt hợp nhất về 9 chi nhánh
+  // Phòng ban trực thuộc — tên/mã chuẩn sau đợt hợp nhất về 9 chi nhánh
   // (xem migration 20260904040000_hop_nhat_9_chi_nhanh)
   const subDepts = [
     // Hội Sở — đã hoà chung toàn bộ phòng ban của CN Lai Châu cũ
@@ -81,8 +81,8 @@ async function main() {
     });
   }
 
-  // ── Map các phòng ban cũ (flat) vào đơn vị cha tương ứng ─────────────
-  // ── Chuẩn hóa tên + gán parentId cho các phòng ban legacy ───────────
+  // ── Ánh xạ các phòng ban cũ (dạng phẳng) vào đơn vị cha tương ứng ─────
+  // ── Chuẩn hóa tên + gán parentId cho các phòng ban kế thừa ───────────
   const legacyMapping: { code: string; unitCode: string; name: string }[] = [
     // Hội Sở
     { code: 'HoiSoBgd',     unitCode: '01-HS', name: 'Hội Sở - Ban Giám đốc' },
@@ -144,7 +144,7 @@ async function main() {
     create: { name: 'Phòng Công nghệ Thông tin', code: '01-HS-IT', parentId: unitMap['01-HS'] },
   });
 
-  // Users
+  // Tài khoản người dùng
   const adminHash = await bcrypt.hash('Admin@1234', 10);
   const staffHash = await bcrypt.hash('Staff@1234', 10);
 
@@ -174,7 +174,7 @@ async function main() {
     },
   });
 
-  // Quiz
+  // Bài quiz
   const quiz = await prisma.quiz.upsert({
     where: { id: 'quiz-demo-001' },
     update: {},
@@ -189,7 +189,7 @@ async function main() {
     },
   });
 
-  // Quiz version snapshot
+  // Snapshot phiên bản quiz
   const qv = await prisma.quizVersion.upsert({
     where: { quizId_version: { quizId: quiz.id, version: 1 } },
     update: {},
@@ -200,7 +200,7 @@ async function main() {
     },
   });
 
-  // Questions
+  // Câu hỏi
   const q1 = await prisma.question.create({
     data: {
       quizId: quiz.id,
@@ -237,7 +237,7 @@ async function main() {
     },
   });
 
-  // Assignment cho staff user
+  // Giao quiz cho tài khoản nhân viên
   const staff = await prisma.user.findUnique({ where: { username: 'nhanvien01' } });
   if (staff) {
     await prisma.assignment.create({
@@ -257,7 +257,7 @@ async function main() {
   console.log('  📝 Quiz: Kiểm tra nghiệp vụ tín dụng cơ bản');
   console.log('  📋 Assignment: nhanvien01 → quiz demo (7 ngày)');
 
-  // ── Sprint 9: Seed LevelDefinition ──────────────────────────────────────
+  // ── Sprint 9: Khởi tạo dữ liệu LevelDefinition ────────────────────────────
   const levels = [
     { level: 1,  name: 'Tân binh',            minXp: 0,     color: '#9E9E9E' },
     { level: 2,  name: 'Học viên',             minXp: 100,   color: '#4CAF50' },
@@ -279,7 +279,7 @@ async function main() {
   }
   console.log('  🏆 10 LevelDefinition seeded');
 
-  // ── Sprint 9: Seed BadgeDefinition ───────────────────────────────────────
+  // ── Sprint 9: Khởi tạo dữ liệu BadgeDefinition ────────────────────────────
   const badges = [
     { code: 'first_exam',    name: 'Bước đầu tiên',      description: 'Hoàn thành bài thi đầu tiên',          iconSlug: 'badge_first_exam',    category: 'EXAM'     as const, conditionJson: { type: 'submission_count', value: 1  }, xpBonus: 0   },
     { code: 'exam_10',       name: 'Siêng năng',          description: 'Hoàn thành 10 bài thi',                iconSlug: 'badge_exam_10',       category: 'EXAM'     as const, conditionJson: { type: 'submission_count', value: 10 }, xpBonus: 50  },

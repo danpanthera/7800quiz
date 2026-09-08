@@ -62,7 +62,7 @@ export default function QuizzesPage() {
   const [quizForm] = Form.useForm()
   const [pickForm] = Form.useForm()
 
-  // ── Resizable drawer ──────────────────────────────────────────────────
+  // ── Điều chỉnh độ rộng Drawer ─────────────────────────────────────────
   const [drawerWidth, setDrawerWidth] = useState(640)
   // isResizing: state (đọc được an toàn trong lúc render, dùng để tắt transition CSS khi đang kéo).
   // isResizingRef: ref song song, chỉ dùng trong closure của listener mousemove gắn trực tiếp vào
@@ -92,7 +92,7 @@ export default function QuizzesPage() {
     window.addEventListener('mouseup', onUp)
   }, [drawerWidth])
 
-  // ── Queries ───────────────────────────────────────────────────────────
+  // ── Truy vấn dữ liệu ──────────────────────────────────────────────────
   const { data: quizzes = [], isLoading } = useQuery<Quiz[]>({
     queryKey: ['quizzes'],
     queryFn: () => api.get('/admin/quizzes').then((r) => r.data),
@@ -109,7 +109,7 @@ export default function QuizzesPage() {
     enabled: !!detailQuiz,
   })
 
-  // ── Mutations ─────────────────────────────────────────────────────────
+  // ── Thao tác ghi dữ liệu ──────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: (data: QuizFormValues) => api.post<Quiz>('/admin/quizzes', data).then((r) => r.data),
   })
@@ -137,7 +137,7 @@ export default function QuizzesPage() {
     onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi')),
   })
 
-  // ── Handlers ─────────────────────────────────────────────────────────
+  // ── Xử lý sự kiện ─────────────────────────────────────────────────────
   const openNew = () => {
     setEditQuiz(null)
     quizForm.resetFields()
@@ -154,7 +154,7 @@ export default function QuizzesPage() {
     setPickModalOpen(true)
   }
 
-  // Sync form values when pickTarget changes (Modal key causes remount, but initialValues uses stale closure)
+  // Đồng bộ giá trị form khi pickTarget đổi (key của Modal làm nó remount, nhưng initialValues lại dùng closure cũ)
   useEffect(() => {
     if (pickTarget && pickModalOpen) {
       pickForm.setFieldsValue({
@@ -222,7 +222,7 @@ export default function QuizzesPage() {
     </Space>
   )
 
-  // ── Columns ───────────────────────────────────────────────────────────
+  // ── Cột bảng dữ liệu ──────────────────────────────────────────────────
   const columns = [
     { title: 'Tên bộ đề', dataIndex: 'title', ellipsis: true },
     { title: 'Chuyên đề', dataIndex: 'topic', width: 160, render: (v: string) => v ? <Tag color="geekblue">{v}</Tag> : '-' },
@@ -267,7 +267,7 @@ export default function QuizzesPage() {
         cardActions={renderQuizActions}
       />
 
-      {/* Modal: Create / Edit Quiz */}
+      {/* Modal: Tạo / Sửa bộ đề */}
       <Modal
         title={editQuiz ? 'Sửa bộ đề' : 'Tạo bộ đề mới'}
         open={quizModalOpen}
@@ -410,7 +410,7 @@ export default function QuizzesPage() {
         </Form>
       </Modal>
 
-      {/* Drawer: Quiz detail (danh sách câu hỏi) */}
+      {/* Drawer: Chi tiết bộ đề (danh sách câu hỏi) */}
       <Drawer
         title={`Câu hỏi trong bộ đề: ${detailQuiz?.title ?? ''}`}
         open={detailDrawerOpen}
@@ -422,7 +422,7 @@ export default function QuizzesPage() {
         }
         styles={{ wrapper: { width: isCompactView ? '100%' : drawerWidth, transition: isResizing ? 'none' : undefined } }}
       >
-        {/* Resize handle */}
+        {/* Tay kéo thay đổi độ rộng */}
         {!isCompactView && (
           <div
             onMouseDown={onResizeStart}
@@ -463,7 +463,7 @@ export default function QuizzesPage() {
         </div>
       </Drawer>
 
-      {/* Modal: Pick random */}
+      {/* Modal: Lấy câu ngẫu nhiên */}
       <Modal
         key={pickTarget?.id ?? 'pick'}
         title={`Lấy câu hỏi ngẫu nhiên → ${pickTarget?.title ?? ''}`}

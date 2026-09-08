@@ -1,18 +1,18 @@
--- 7800Quiz — Initial Database Migration
--- PostgreSQL Schema
--- Run with: psql -U postgres -d quiz7800 -f 001_init.sql
+-- 7800Quiz — Migration khởi tạo cơ sở dữ liệu
+-- Schema PostgreSQL
+-- Chạy bằng: psql -U postgres -d quiz7800 -f 001_init.sql
 
--- Enable UUID extension
+-- Bật extension UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Enums
+-- Các kiểu enum
 CREATE TYPE user_role AS ENUM ('STAFF', 'ADMIN', 'TRAINER');
 CREATE TYPE question_type AS ENUM ('SINGLE', 'MULTIPLE');
 CREATE TYPE assignment_status AS ENUM ('ACTIVE', 'CLOSED', 'DRAFT');
 CREATE TYPE submission_status AS ENUM ('PENDING_SYNC', 'SYNCED', 'GRADED', 'SYNC_ERROR');
 CREATE TYPE sync_status AS ENUM ('PENDING', 'PROCESSING', 'DONE', 'FAILED');
 
--- Departments
+-- Phòng ban
 CREATE TABLE departments (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name       VARCHAR(255) NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE departments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Users
+-- Người dùng
 CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username      VARCHAR(100) NOT NULL UNIQUE,
@@ -35,7 +35,7 @@ CREATE TABLE users (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Quizzes
+-- Bài quiz
 CREATE TABLE quizzes (
     id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title        VARCHAR(500) NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE quizzes (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Quiz versions (snapshot khi publish)
+-- Phiên bản quiz (snapshot khi publish)
 CREATE TABLE quiz_versions (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     quiz_id    UUID NOT NULL REFERENCES quizzes(id),
@@ -58,7 +58,7 @@ CREATE TABLE quiz_versions (
     UNIQUE (quiz_id, version)
 );
 
--- Questions
+-- Câu hỏi
 CREATE TABLE questions (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     quiz_id       UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
@@ -70,7 +70,7 @@ CREATE TABLE questions (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Question options (đáp án lựa chọn)
+-- Các lựa chọn đáp án của câu hỏi
 CREATE TABLE question_options (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
@@ -79,7 +79,7 @@ CREATE TABLE question_options (
     order_index INTEGER NOT NULL DEFAULT 0
 );
 
--- Assignments (giao quiz cho user/phòng ban)
+-- Phân công (giao quiz cho user/phòng ban)
 CREATE TABLE assignments (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     quiz_id       UUID NOT NULL REFERENCES quizzes(id),
@@ -92,7 +92,7 @@ CREATE TABLE assignments (
     CONSTRAINT assignment_target_check CHECK (user_id IS NOT NULL OR department_id IS NOT NULL)
 );
 
--- Submissions (bài nộp — UUID từ app làm idempotency key)
+-- Bài nộp (UUID từ app làm idempotency key)
 CREATE TABLE submissions (
     id              UUID PRIMARY KEY, -- UUID do app tạo, idempotent
     user_id         UUID NOT NULL REFERENCES users(id),
@@ -109,16 +109,16 @@ CREATE TABLE submissions (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Submission answers
+-- Đáp án bài nộp
 CREATE TABLE submission_answers (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id       UUID NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
     question_id         UUID NOT NULL REFERENCES questions(id),
-    selected_option_ids JSONB NOT NULL, -- array of option UUIDs
+    selected_option_ids JSONB NOT NULL, -- mảng UUID của các lựa chọn
     answered_at         TIMESTAMPTZ NOT NULL
 );
 
--- Sync outbox (hàng đợi sync từ app lên server)
+-- Outbox đồng bộ (hàng đợi sync từ app lên server)
 CREATE TABLE sync_outbox (
     id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     entity_type  VARCHAR(50) NOT NULL,  -- 'submission'
@@ -130,7 +130,7 @@ CREATE TABLE sync_outbox (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Audit logs
+-- Nhật ký hoạt động (audit log)
 CREATE TABLE audit_logs (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id    UUID REFERENCES users(id),
@@ -141,7 +141,7 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes
+-- Chỉ mục
 CREATE INDEX idx_users_department ON users(department_id);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_assignments_quiz ON assignments(quiz_id);

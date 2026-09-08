@@ -29,11 +29,11 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   handleConnection(client: Socket) {
-    // Connection tracked implicitly via rooms
+    // Kết nối được theo dõi ngầm thông qua các room
   }
 
   handleDisconnect(client: Socket) {
-    // Clean up if needed
+    // Dọn dẹp nếu cần
   }
 
   private getRoomName(sessionId: string) {
@@ -70,7 +70,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Admin: host a session ────────────────────────────────────────────────
+  // ─── Admin: điều hành phiên đấu ───────────────────────────────────────────
 
   @SubscribeMessage('arena.host')
   async handleHost(
@@ -119,7 +119,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.data.teamId = team.id;
       client.data.userId = player.userId;
 
-      // Broadcast new team to everyone in room
+      // Thông báo đội mới cho tất cả người trong room
       this.server.to(this.getRoomName(session.id)).emit('arena.team_joined', {
         team: {
           id: team.id,
@@ -132,7 +132,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
 
-      // Send private confirmation back to joining client with their teamId
+      // Gửi xác nhận riêng về cho client vừa tham gia, kèm teamId của họ
       client.emit('arena.joined_you', {
         teamId: team.id,
         teamColor: team.color,
@@ -151,7 +151,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Admin: start session ─────────────────────────────────────────────────
+  // ─── Admin: bắt đầu phiên đấu ─────────────────────────────────────────────
 
   @SubscribeMessage('arena.start')
   async handleStart(
@@ -330,7 +330,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.selectedOptionIds,
         userId,
       );
-      // Notify everyone that a team has buzzed (no correct/wrong revealed yet)
+      // Thông báo cho mọi người là có đội vừa bấm trả lời (chưa tiết lộ đúng/sai)
       const sessionId = client.data.sessionId as string;
       this.server.to(this.getRoomName(sessionId)).emit('arena.buzz_in', {
         teamId: result.buzz.teamId,
@@ -348,7 +348,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Admin: reveal answer ─────────────────────────────────────────────────
+  // ─── Admin: hiện đáp án ───────────────────────────────────────────────────
 
   @SubscribeMessage('arena.reveal')
   async handleReveal(
@@ -372,7 +372,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Admin: next question ─────────────────────────────────────────────────
+  // ─── Admin: câu hỏi tiếp theo ─────────────────────────────────────────────
 
   @SubscribeMessage('arena.next')
   async handleNext(
@@ -399,7 +399,7 @@ export class ArenaGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ─── Admin: end session early ─────────────────────────────────────────────
+  // ─── Admin: kết thúc phiên sớm ────────────────────────────────────────────
 
   @SubscribeMessage('arena.end')
   async handleEnd(

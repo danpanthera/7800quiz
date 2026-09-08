@@ -39,14 +39,14 @@ export class ArenaService {
   // ─── HTTP ─────────────────────────────────────────────────────────────────
 
   async createSession(dto: CreateArenaDto) {
-    // Verify quiz exists
+    // Kiểm tra quiz có tồn tại
     const quiz = await this.prisma.quiz.findUnique({
       where: { id: dto.quizId },
       include: { questions: { include: { options: true } } },
     });
     if (!quiz) throw new NotFoundException('Quiz không tồn tại');
 
-    // Generate unique joinCode
+    // Tạo joinCode duy nhất
     let joinCode: string;
     let attempts = 0;
     do {
@@ -73,7 +73,7 @@ export class ArenaService {
       },
     });
 
-    // Pre-create ArenaRounds from quiz questions
+    // Tạo trước các ArenaRound từ danh sách câu hỏi của quiz
     const questions = quiz.questions.sort(
       (a, b) => a.orderIndex - b.orderIndex,
     );
@@ -280,7 +280,7 @@ export class ArenaService {
     return this.endSession(id);
   }
 
-  // ─── Socket.IO Business Logic ──────────────────────────────────────────────
+  // ─── Socket.IO — Xử lý nghiệp vụ ───────────────────────────────────────────
 
   async joinTeam(
     joinCode: string,
@@ -600,7 +600,7 @@ export class ArenaService {
     if (session.status !== ArenaStatus.RUNNING)
       throw new BadRequestException('Phiên không đang chạy');
 
-    // Mark previous round as REVEALED if still ACTIVE
+    // Đánh dấu round trước đó thành REVEALED nếu vẫn đang ACTIVE
     await this.prisma.arenaRound.updateMany({
       where: { arenaSessionId: sessionId, status: ArenaRoundStatus.ACTIVE },
       data: { status: ArenaRoundStatus.REVEALED, revealedAt: new Date() },
@@ -621,7 +621,7 @@ export class ArenaService {
       data: { currentRoundOrder: order },
     });
 
-    // Return question WITHOUT correct answer info
+    // Trả về câu hỏi KHÔNG kèm thông tin đáp án đúng
     return {
       roundId: round.id,
       order: round.order,
@@ -656,7 +656,7 @@ export class ArenaService {
     if (round.status !== ArenaRoundStatus.ACTIVE)
       throw new BadRequestException('Round không đang active');
 
-    // Check team belongs to session và phải là thành viên đội mới được trả lời thay đội
+    // Kiểm tra đội thuộc phiên này và phải là thành viên đội mới được trả lời thay đội
     // (đội nhiều người: bất kỳ ai trong đội bấm trước cũng tính là câu trả lời chung)
     const team = await this.prisma.arenaTeam.findFirst({
       where: { id: teamId, arenaSessionId: round.arenaSessionId },
@@ -667,13 +667,13 @@ export class ArenaService {
     });
     if (!membership) throw new BadRequestException('Bạn không thuộc đội này');
 
-    // Check not already answered
+    // Kiểm tra chưa trả lời trước đó
     const existingBuzz = await this.prisma.arenaBuzz.findUnique({
       where: { arenaRoundId_teamId: { arenaRoundId, teamId } },
     });
     if (existingBuzz) throw new BadRequestException('Đội đã trả lời câu này');
 
-    // Server-side correctness check
+    // Kiểm tra đúng/sai phía server
     const correctOptionIds = round.question.options
       .filter((o) => o.isCorrect)
       .map((o) => o.id)
@@ -689,7 +689,7 @@ export class ArenaService {
         selectedOptionIds,
         answeredAt: new Date(),
         isCorrect,
-        pointsAwarded: 0, // will be calculated on reveal
+        pointsAwarded: 0, // sẽ được tính khi reveal
       },
     });
 
@@ -723,11 +723,11 @@ export class ArenaService {
     const pointsForRank = session.pointsForRank as number[];
     const penaltyWrong = session.penaltyWrong;
 
-    // Rank correct buzzes by answeredAt
+    // Xếp hạng các lượt trả lời đúng theo thời gian answeredAt
     const correctBuzzes = round.buzzes.filter((b) => b.isCorrect);
     const wrongBuzzes = round.buzzes.filter((b) => !b.isCorrect);
 
-    // Assign points
+    // Gán điểm
     for (let i = 0; i < correctBuzzes.length; i++) {
       const pts = pointsForRank[i] ?? pointsForRank[pointsForRank.length - 1];
       await this.prisma.arenaBuzz.update({
@@ -752,13 +752,13 @@ export class ArenaService {
       }
     }
 
-    // Mark round REVEALED
+    // Đánh dấu round là REVEALED
     await this.prisma.arenaRound.update({
       where: { id: round.id },
       data: { status: ArenaRoundStatus.REVEALED, revealedAt: new Date() },
     });
 
-    // Refresh teams with updated scores
+    // Lấy lại danh sách đội với điểm số đã cập nhật
     const updatedTeams = await this.prisma.arenaTeam.findMany({
       where: { arenaSessionId: sessionId },
       orderBy: { score: 'desc' },
@@ -802,7 +802,7 @@ export class ArenaService {
       include: { members: true },
     });
 
-    // Assign final ranks
+    // Gán hạng cuối cùng
     for (let i = 0; i < teams.length; i++) {
       await this.prisma.arenaTeam.update({
         where: { id: teams[i].id },
