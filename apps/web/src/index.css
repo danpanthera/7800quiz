@@ -466,6 +466,14 @@ select {
   line-height: 1.25;
 }
 
+.dash-hero-title {
+  display: block;
+  margin-top: 2px;
+  color: rgba(248, 244, 236, 0.82);
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .dash-hero-level {
   padding: 8px 16px;
   border-radius: 999px;
@@ -1462,6 +1470,30 @@ select {
   background: var(--bg-layout);
 }
 
+/* "Sân khấu" Đấu trường — nền gradient nhẹ tái dùng đúng 2 màu thương hiệu đã
+   có sẵn (đỏ/vàng Agribank) thay vì bịa bảng màu mới, tránh lệch tông với
+   phần còn lại của app. Gắn thêm vào phần tử đã tồn tại (arena-player-shell)
+   nên không cần đổi cấu trúc JSX, không rủi ro hồi quy layout. */
+.arena-stage {
+  background:
+    radial-gradient(circle at 12% -8%, rgba(255, 179, 0, 0.10), transparent 45%),
+    radial-gradient(circle at 100% 0%, rgba(155, 0, 20, 0.08), transparent 50%),
+    var(--bg-layout);
+}
+
+/* Hiệu ứng thẻ câu hỏi/kết quả vào màn — dành cho nơi CHƯA có animation
+   chuyển cảnh nào khác (arena-view-transition của ArenaPlayerPage đã tự lo
+   phần này nên không gắn thêm ở đó để tránh 2 animation cùng chỉnh
+   opacity/transform chồng lên nhau). */
+.arena-card {
+  animation: arena-card-enter 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+
+@keyframes arena-card-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .arena-player-topbar {
   padding: calc(10px + var(--safe-top)) calc(16px + var(--safe-right)) 10px calc(16px + var(--safe-left));
   display: flex;
@@ -1625,6 +1657,15 @@ select {
 
 .arena-result-mine {
   box-shadow: 0 0 0 2px var(--agribank-red) inset;
+}
+
+/* Hàng đội nhanh nhất-đúng — viền vàng nổi bật thêm ngoài nền xanh của
+   arena-result-correct, tách biệt với box-shadow inset của arena-result-mine
+   (dùng outline) nên 2 hiệu ứng không đè lên nhau khi trùng cùng 1 hàng. */
+.arena-result-row.arena-result-fastest {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+  background: linear-gradient(90deg, rgba(255, 179, 0, 0.12), rgba(47, 191, 113, 0.08));
 }
 
 .arena-result-outcome-icon {
@@ -1796,7 +1837,8 @@ select {
   .arena-result-row,
   .arena-crown,
   .arena-points-delta,
-  .arena-rank-badge { animation: none; }
+  .arena-rank-badge,
+  .arena-card { animation: none; }
   .arena-lb-row { transition: none !important; } /* chặn cả FLIP do JS đặt transform inline */
 }
 

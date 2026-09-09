@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import ManageTable from '../components/ManageTable'
 import api, { getErrorMessage } from '../lib/api'
+import { positionRank } from '../lib/position'
 
 interface Department { id: string; name: string; code: string; parentId?: string | null; parent?: { id: string; name: string; code: string } | null; _count?: { children: number; canBo: number } }
 
@@ -35,17 +36,6 @@ function deptPriority(name: string, code: string): number {
   return 10
 }
 
-// Thứ tự ưu tiên chức vụ: GĐ > PGĐ > TP > PP > NV
-function positionRank(pos?: string | null): number {
-  if (!pos) return 9
-  const p = pos.toLowerCase()
-  if (p.includes('giám đốc') && !p.includes('phó')) return 1
-  if (p.includes('phó giám đốc') || p.includes('pgđ')) return 2
-  if (p.includes('trưởng')) return 3
-  if (p.includes('phó')) return 4
-  if (p.includes('nhân viên')) return 5
-  return 6
-}
 interface CanBoItem {
   id: string; cbCode: string; fullName: string; username?: string;
   email?: string; phoneNumber?: string; userAD?: string; userIPCAS?: string;

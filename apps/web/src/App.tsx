@@ -10,6 +10,7 @@ import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import MyQuizzesPage from './pages/MyQuizzesPage'
+import ArenaLobbyPage from './pages/ArenaLobbyPage'
 import LeaderboardPage from './pages/LeaderboardPage'
 import PracticePage from './pages/PracticePage'
 import ReviewPage from './pages/ReviewPage'
@@ -195,6 +196,7 @@ export default function App() {
 
                 <Route element={<RoleGuard allowedRoles={USER_ROLES} />}>
                   <Route path="my/quizzes" element={<MyQuizzesPage />} />
+        <Route path="my/arena" element={<ArenaLobbyPage />} />
                   <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
                   <Route path="my/results/:submissionId" element={<QuizResultPage />} />
                   <Route path="my/leaderboard" element={<LeaderboardPage />} />

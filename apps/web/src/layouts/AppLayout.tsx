@@ -25,6 +25,7 @@ import {
   ScheduleOutlined,
   StarOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
   TrophyOutlined,
   UserOutlined,
   WarningOutlined,
@@ -46,6 +47,7 @@ interface NavigationItem {
 
 const staffNavigation: NavigationItem[] = [
   { key: '/my/quizzes', icon: <FileTextOutlined />, label: 'Bài kiểm tra của tôi' },
+  { key: '/my/arena', icon: <ThunderboltOutlined />, label: 'Đấu trường' },
   { key: '/my/leaderboard', icon: <TrophyOutlined />, label: 'Bảng xếp hạng' },
   { key: '/my/practice', icon: <ExperimentOutlined />, label: 'Luyện tập tự do' },
   { key: '/my/review', icon: <RedoOutlined />, label: 'Ôn tập ngắt quãng' },

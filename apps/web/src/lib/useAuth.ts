@@ -1,12 +1,22 @@
 import { createContext, useContext } from 'react'
 import type { UserRole } from './permissions'
 
+export interface AuthUserDepartment {
+  id: string
+  name: string
+  parentName: string | null
+}
+
 export interface AuthUser {
   id: string
   username: string
   fullName: string
   role: UserRole
   mustChangePassword: boolean
+  // Chức vụ (Giám đốc/Phó giám đốc/Trưởng phòng/Phó phòng...) và phòng ban —
+  // null nếu tài khoản không gắn hồ sơ CanBo hoặc chưa gán phòng ban.
+  position?: string | null
+  department?: AuthUserDepartment | null
 }
 
 export interface AuthContextType {

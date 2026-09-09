@@ -17,12 +17,25 @@ function getStoredUser(): AuthUser | null {
       return null
     }
 
+    const department =
+      value.department &&
+      typeof value.department.id === 'string' &&
+      typeof value.department.name === 'string'
+        ? {
+            id: value.department.id,
+            name: value.department.name,
+            parentName: typeof value.department.parentName === 'string' ? value.department.parentName : null,
+          }
+        : null
+
     return {
       id: value.id,
       username: value.username,
       fullName: value.fullName,
       role: value.role,
       mustChangePassword: value.mustChangePassword === true,
+      position: typeof value.position === 'string' ? value.position : null,
+      department,
     }
   } catch {
     localStorage.removeItem('user')

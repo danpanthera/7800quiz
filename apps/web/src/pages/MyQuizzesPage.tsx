@@ -1,16 +1,17 @@
-import { useState } from 'react'
 import {
   AimOutlined, CalendarOutlined, ClockCircleOutlined, FileTextOutlined, FireOutlined,
-  ThunderboltOutlined, TrophyOutlined, RightOutlined, HistoryOutlined,
+  ThunderboltOutlined, TrophyOutlined, HistoryOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  Button, Card, Empty, Input, List, Progress, Skeleton, Space, Tag, Typography, message,
+  Button, Card, Empty, List, Progress, Skeleton, Space, Tag, Typography, message,
 } from 'antd'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
+import type { AuthUserDepartment } from '../lib/useAuth'
+import { isManagerPosition } from '../lib/position'
 import DailyQuestionCard from '../components/DailyQuestionCard'
 
 const { Title, Text } = Typography
@@ -87,19 +88,6 @@ interface XpTx {
   createdAt: string
 }
 
-interface ArenaHistoryItem {
-  sessionId: string
-  sessionName: string
-  joinCode: string
-  status: 'LOBBY' | 'RUNNING' | 'FINISHED'
-  quizTitle: string
-  teamName: string
-  teamColor: string
-  score: number
-  rank: number | null
-  joinedAt: string
-}
-
 // Giữ đồng bộ với bảng màu đang dùng ở AchievementsPage (trang quản trị)
 const CATEGORY_COLOR: Record<string, string> = {
   EXAM: 'blue',
@@ -122,6 +110,17 @@ const XP_SOURCE_LABEL: Record<string, string> = {
 
 const formatDate = (value: string | null) =>
   value ? dayjs(value).format('DD/MM/YYYY') : null
+
+// Ban Giám đốc là đơn vị cấp chi nhánh — với cán bộ thuộc đơn vị này, nêu
+// thẳng tên chi nhánh (vd "Giám đốc CN Phong Thổ") thay vì lặp "Ban Giám đốc"
+// (đã ngụ ý sẵn trong chức danh). Các phòng/phòng giao dịch khác thì nêu đủ
+// cả tên phòng lẫn chi nhánh (vd "Trưởng phòng Phòng Giao dịch số 5, CN Phong Thổ").
+function formatDepartmentChain(department: AuthUserDepartment): string {
+  if (department.name.toLowerCase().includes('ban giám đốc')) {
+    return department.parentName ?? department.name
+  }
+  return department.parentName ? `${department.name}, ${department.parentName}` : department.name
+}
 
 // Trạng thái hiển thị của 1 đề thi, suy từ lần làm bài gần nhất (myAttempt) +
 // số lần đã dùng so với giới hạn thi lại (quiz.maxAttempts, 0 = không giới hạn)
@@ -149,7 +148,6 @@ const STATE_TAG: Record<AssignmentState, { color: string; label: string }> = {
 export default function MyQuizzesPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [joinCode, setJoinCode] = useState('')
 
   const assignmentsQuery = useQuery<Assignment[]>({
     queryKey: ['my-assignments'],
@@ -171,11 +169,6 @@ export default function MyQuizzesPage() {
     queryKey: ['my-xp-history'],
     queryFn: () => api.get('/me/xp-history', { params: { limit: 10 } }).then((r) => r.data),
   })
-  const arenaHistoryQuery = useQuery<ArenaHistoryItem[]>({
-    queryKey: ['my-arena-history'],
-    queryFn: () => api.get('/me/arena-history').then((r) => r.data),
-  })
-
   const startAttemptMutation = useMutation({
     mutationFn: (assignmentId: string) => api.post('/me/attempts', {
       id: crypto.randomUUID(),
@@ -187,17 +180,12 @@ export default function MyQuizzesPage() {
 
   const progress = progressQuery.data
   const openCount = assignmentsQuery.data?.filter((a) => getAssignmentState(a) !== 'done').length ?? 0
-  const liveArena = arenaHistoryQuery.data?.filter((a) => a.status !== 'FINISHED') ?? []
-  const pastArena = arenaHistoryQuery.data?.filter((a) => a.status === 'FINISHED') ?? []
 
-  const handleJoinArena = () => {
-    const code = joinCode.trim().toUpperCase()
-    if (code.length < 4) {
-      message.warning('Nhập mã tham gia do người dẫn cung cấp (6 ký tự)')
-      return
-    }
-    navigate(`/arena/join/${code}`)
-  }
+  // Chỉ nêu kèm chức danh + phòng ban khi cán bộ giữ chức vụ quản lý (Phó
+  // phòng trở lên) — nhân viên thường chỉ hiện tên như trước.
+  const managerTitle = user && isManagerPosition(user.position)
+    ? [user.position, user.department ? formatDepartmentChain(user.department) : null].filter(Boolean).join(' ')
+    : null
 
   return (
     <div className="page-stack">
@@ -211,6 +199,7 @@ export default function MyQuizzesPage() {
               <div>
                 <Text className="dash-hero-greeting">Xin chào</Text>
                 <Title level={2} className="dash-hero-name">{user?.fullName ?? 'Học viên'}</Title>
+                {managerTitle && <Text className="dash-hero-title">{managerTitle}</Text>}
               </div>
               <span className="dash-hero-level">
                 <TrophyOutlined />
@@ -403,71 +392,6 @@ export default function MyQuizzesPage() {
           <Empty description="Hiện chưa có bài kiểm tra được giao" />
         )}
       </section>
-
-      {/* ── Đấu trường ── */}
-      <Card title={<><ThunderboltOutlined /> Đấu trường</>}>
-        <div className="dash-arena-join">
-          <Input
-            value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            onPressEnter={handleJoinArena}
-            placeholder="NHẬP MÃ"
-            maxLength={6}
-            style={{ width: 160 }}
-          />
-          <Button type="primary" icon={<RightOutlined />} onClick={handleJoinArena}>
-            Tham gia
-          </Button>
-          <Text type="secondary">Nhập mã 6 ký tự do người dẫn chương trình cung cấp</Text>
-        </div>
-
-        {liveArena.length > 0 && (
-          <List
-            className="dash-arena-list"
-            style={{ marginTop: 16 }}
-            header={<Text strong>Đang diễn ra</Text>}
-            dataSource={liveArena}
-            renderItem={(item) => (
-              <List.Item
-                actions={[
-                  <Button key="join" type="link" onClick={() => navigate(`/arena/join/${item.joinCode}`)}>
-                    Vào lại
-                  </Button>,
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={<Tag color={item.teamColor}>{item.teamName}</Tag>}
-                  title={item.sessionName}
-                  description={item.quizTitle}
-                />
-                <Tag color="processing">{item.status === 'LOBBY' ? 'Đang chờ' : 'Đang thi'}</Tag>
-              </List.Item>
-            )}
-          />
-        )}
-
-        <List
-          className="dash-arena-list"
-          style={{ marginTop: 16 }}
-          header={<Text strong>Đã tham gia</Text>}
-          loading={arenaHistoryQuery.isLoading}
-          dataSource={pastArena}
-          locale={{ emptyText: 'Chưa tham gia phiên Đấu trường nào' }}
-          renderItem={(item) => (
-            <List.Item>
-              <List.Item.Meta
-                avatar={<Tag color={item.teamColor}>{item.teamName}</Tag>}
-                title={item.sessionName}
-                description={`${item.quizTitle} · ${dayjs(item.joinedAt).format('DD/MM/YYYY')}`}
-              />
-              <Space>
-                {item.rank && <Tag color={item.rank === 1 ? 'gold' : 'default'}>Hạng {item.rank}</Tag>}
-                <Text strong>{item.score} điểm</Text>
-              </Space>
-            </List.Item>
-          )}
-        />
-      </Card>
 
       {/* ── Huy hiệu ── */}
       <Card title={<><TrophyOutlined /> Huy hiệu của tôi</>}>

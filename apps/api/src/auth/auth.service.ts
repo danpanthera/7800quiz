@@ -34,7 +34,11 @@ interface UserForSession {
   email: string | null;
   role: string;
   mustChangePassword: boolean;
-  department: { id: string; name: string } | null;
+  department: {
+    id: string;
+    name: string;
+    parent: { id: string; name: string } | null;
+  } | null;
 }
 
 @Injectable()
@@ -47,7 +51,7 @@ export class AuthService {
   async login(dto: LoginDto, meta: LoginMeta = {}) {
     let user = await this.prisma.user.findUnique({
       where: { username: dto.username },
-      include: { department: true },
+      include: { department: { include: { parent: true } } },
     });
 
     // Nếu không tìm thấy User, tự tạo tài khoản theo UserAD; chỉ dùng mã CB khi chưa có UserAD.
@@ -60,7 +64,7 @@ export class AuthService {
             { cbCode: dto.username, userAD: '', isActive: true },
           ],
         },
-        include: { department: true },
+        include: { department: { include: { parent: true } } },
       });
       if (canBo) {
         const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
@@ -76,7 +80,7 @@ export class AuthService {
             mustChangePassword: true,
             departmentId: canBo.departmentId ?? undefined,
           },
-          include: { department: true },
+          include: { department: { include: { parent: true } } },
         });
       }
     }
@@ -133,7 +137,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: { department: true },
+      include: { department: { include: { parent: true } } },
     });
     if (!user || !user.isActive) {
       throw new UnauthorizedException(
@@ -212,13 +216,22 @@ export class AuthService {
   // kiểm tra phiên còn sống ở MỌI request, nhờ đó thu hồi phiên có hiệu lực ngay
   // (việc 16) thay vì phải chờ token hết hạn.
   private async issueSession(user: UserForSession, meta: LoginMeta) {
-    const session = await this.prisma.userSession.create({
-      data: {
-        userId: user.id,
-        userAgent: meta.userAgent?.slice(0, 300),
-        ipAddress: meta.ipAddress,
-      },
-    });
+    const [session, canBo] = await Promise.all([
+      this.prisma.userSession.create({
+        data: {
+          userId: user.id,
+          userAgent: meta.userAgent?.slice(0, 300),
+          ipAddress: meta.ipAddress,
+        },
+      }),
+      // Chức vụ (Giám đốc/Phó giám đốc/Trưởng phòng/Phó phòng...) chỉ có ở hồ
+      // sơ CanBo, chưa đồng bộ sang User — tra theo username (đã đảm bảo khớp
+      // với User.username qua syncCanBoUser, xem admin.service.ts).
+      this.prisma.canBo.findFirst({
+        where: { username: user.username },
+        select: { position: true },
+      }),
+    ]);
 
     const token = this.jwtService.sign({
       sub: user.id,
@@ -236,8 +249,13 @@ export class AuthService {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+        position: canBo?.position ?? null,
         department: user.department
-          ? { id: user.department.id, name: user.department.name }
+          ? {
+              id: user.department.id,
+              name: user.department.name,
+              parentName: user.department.parent?.name ?? null,
+            }
           : null,
       },
     };
