@@ -75,7 +75,7 @@ Checklist bổ sung cần làm khi go-live:
 ### 0.5. Checklist chuẩn bị trước khi bắt tay vào làm
 
 - [ ] Máy chủ Windows Server 2016 trở lên: tối thiểu **4 vCPU / 8GB RAM / 80GB ổ đĩa (ưu tiên SSD)** dành riêng cho máy ảo, cộng thêm phần cho bản thân Windows — tổng máy chủ nên có **6–8 vCPU / 16GB RAM** (mức này đã tính dư cho ~200 người dùng, kể cả kịch bản toàn bộ cùng vào thi một lúc)
-- [ ] Ổ `D:` còn ít nhất **80GB trống** — toàn bộ tài liệu này dùng `D:\7800quiz\` làm thư mục gốc phía Windows (mã nguồn, ISO, máy ảo). Nếu máy chủ chỉ có ổ `C:` hoặc muốn dùng đường dẫn khác, đổi qua tham số `-VmPath` khi chạy `prod-setup-vm.ps1` (Giai đoạn 2.2) và thay `D:\7800quiz\` bằng đường dẫn đó ở mọi bước còn lại
+- [ ] Ổ `D:` còn ít nhất **80GB trống** — toàn bộ tài liệu này dùng `D:\quiz\` làm thư mục gốc phía Windows (mã nguồn, ISO, máy ảo). Nếu máy chủ chỉ có ổ `C:` hoặc muốn dùng đường dẫn khác, đổi qua tham số `-VmPath` khi chạy `prod-setup-vm.ps1` (Giai đoạn 2.2) và thay `D:\quiz\` bằng đường dẫn đó ở mọi bước còn lại
 - [ ] Một nguồn Internet tạm thời có thể cắm được vào máy chủ (dây mạng công ty nối tạm ra ngoài, router/modem/hotspot có cổng Ethernet) — đã xác nhận với bộ phận an ninh thông tin về việc tạm thời kết nối máy chủ này ra Internet
 - [ ] Biết máy chủ có mấy card mạng vật lý — nếu có từ 2 trở lên, dùng riêng 1 card cho Internet tạm thời để khỏi phải rút/cắm dây mạng nội bộ
 - [ ] Dải IP tĩnh nội bộ dành cho máy ảo (hỏi bộ phận mạng), và biết được máy chủ nằm ở subnet/VLAN nào
@@ -140,7 +140,7 @@ Quy tắc vận hành: **không cập nhật Windows trong tuần diễn ra kỳ
 ### 1.5. Loại trừ khỏi phần mềm diệt virus
 
 Nếu máy có cài antivirus/EDR của ngân hàng, đề nghị bộ phận an ninh thông tin loại trừ khỏi quét realtime (Docker chạy trong máy ảo nên antivirus của Windows chủ yếu cần tránh quét file đĩa ảo dung lượng lớn, gây chậm máy):
-`D:\7800quiz\` — thư mục gốc phía Windows dùng xuyên suốt tài liệu này (mã nguồn, ISO, máy ảo đều nằm chung ở đây, xem 2.2).
+`D:\quiz\` — thư mục gốc phía Windows dùng xuyên suốt tài liệu này (mã nguồn, ISO, máy ảo đều nằm chung ở đây, xem 2.2).
 
 ### ✅ Checklist Giai đoạn 1
 - [ ] Xác nhận phiên bản Windows (2016 trở lên)
@@ -173,20 +173,20 @@ Test-NetConnection 8.8.8.8
 
 ### 2.2. Dựng máy ảo (tự động qua script)
 
-Thư mục gốc phía Windows dùng xuyên suốt tài liệu này là `D:\7800quiz\` — clone/copy toàn bộ mã nguồn 7800quiz thẳng vào đó (tức là `scripts\prod-setup-vm.ps1` nằm tại `D:\7800quiz\scripts\prod-setup-vm.ps1`). ISO và máy ảo cũng được lưu chung trong `D:\7800quiz\` (script tự tạo thư mục nếu chưa có) — không cần tách thư mục riêng.
+Thư mục gốc phía Windows dùng xuyên suốt tài liệu này là `D:\quiz\` — clone/copy toàn bộ mã nguồn 7800quiz thẳng vào đó (tức là `scripts\prod-setup-vm.ps1` nằm tại `D:\quiz\scripts\prod-setup-vm.ps1`). ISO và máy ảo cũng được lưu chung trong `D:\quiz\` (script tự tạo thư mục nếu chưa có) — không cần tách thư mục riêng.
 
-Nếu đã tải sẵn ISO Ubuntu (VD `ubuntu-24.04.4-live-server-amd64.iso`): đặt file đó **trực tiếp vào `D:\7800quiz\`** trước khi chạy script — script tự tìm thấy và dùng luôn, không cần tải lại. Không có sẵn thì script tự tải bản LTS mới nhất (cần Internet, đúng lúc này đang có).
+Nếu đã tải sẵn ISO Ubuntu (VD `ubuntu-24.04.4-live-server-amd64.iso`): đặt file đó **trực tiếp vào `D:\quiz\`** trước khi chạy script — script tự tìm thấy và dùng luôn, không cần tải lại. Không có sẵn thì script tự tải bản LTS mới nhất (cần Internet, đúng lúc này đang có).
 
 ```powershell
-Set-Location D:\7800quiz\scripts    # hoặc đường dẫn scripts/ trong mã nguồn đã có sẵn trên máy
+Set-Location D:\quiz\scripts    # hoặc đường dẫn scripts/ trong mã nguồn đã có sẵn trên máy
 .\prod-setup-vm.ps1 -NetAdapterName "Ethernet"    # đổi "Ethernet" thành đúng tên ở bước 2.1
 ```
 
-Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, chạy lại đúng lệnh sau khi lên lại), dùng ISO đã có sẵn trong `D:\7800quiz\` (hoặc tự tải về nếu chưa có), tạo Virtual Switch tạm `LAN-Tam` gắn với card mạng vừa chỉ định, tạo máy ảo `quiz7800-host` tại `D:\7800quiz\quiz7800-host` (8GB RAM/4 vCPU/80GB — đổi qua tham số `-MemoryGB`/`-vCPU`/`-DiskGB` nếu cần), rồi khởi động máy ảo.
+Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, chạy lại đúng lệnh sau khi lên lại), dùng ISO đã có sẵn trong `D:\quiz\` (hoặc tự tải về nếu chưa có), tạo Virtual Switch tạm `LAN-Tam` gắn với card mạng vừa chỉ định, tạo máy ảo `quiz7800-host` tại `D:\quiz\quiz7800-host` (8GB RAM/4 vCPU/80GB — đổi qua tham số `-MemoryGB`/`-vCPU`/`-DiskGB` nếu cần), rồi khởi động máy ảo.
 
-> Nếu chưa có sẵn mã nguồn (nên script chưa nằm sẵn trên máy): tải trực tiếp 2 file `prod-setup-vm.ps1` và `prod-setup-app.sh` từ repo về `D:\7800quiz\` bằng trình duyệt hoặc `Invoke-WebRequest`, chạy y hệt như trên (khi đó bỏ qua `\scripts` ở lệnh `Set-Location` vì 2 file nằm phẳng ngay trong `D:\7800quiz\`).
+> Nếu chưa có sẵn mã nguồn (nên script chưa nằm sẵn trên máy): tải trực tiếp 2 file `prod-setup-vm.ps1` và `prod-setup-app.sh` từ repo về `D:\quiz\` bằng trình duyệt hoặc `Invoke-WebRequest`, chạy y hệt như trên (khi đó bỏ qua `\scripts` ở lệnh `Set-Location` vì 2 file nằm phẳng ngay trong `D:\quiz\`).
 >
-> Muốn dùng ổ/thư mục khác thay vì `D:\7800quiz\`: thêm tham số `-VmPath "<đường-dẫn>"` vào lệnh `prod-setup-vm.ps1` ở trên, rồi thay `D:\7800quiz\` bằng đường dẫn đó ở các bước còn lại của tài liệu.
+> Muốn dùng ổ/thư mục khác thay vì `D:\quiz\`: thêm tham số `-VmPath "<đường-dẫn>"` vào lệnh `prod-setup-vm.ps1` ở trên, rồi thay `D:\quiz\` bằng đường dẫn đó ở các bước còn lại của tài liệu.
 
 ### 2.3. Cài Ubuntu (làm tay) rồi chạy script ứng dụng
 
@@ -570,7 +570,7 @@ Bản sao lưu chưa từng được phục hồi thử thì chưa phải là b�
 | Đăng nhập báo "Thử đăng nhập quá nhiều lần" dù đúng mật khẩu | Đã vượt 5 lần thử/phút từ cùng IP (rate-limit chống brute-force) | Đợi 1 phút rồi thử lại — đây là hành vi cố ý, không phải lỗi |
 | Máy chủ khởi động lại xong nhưng máy ảo/container không tự chạy | Automatic Start Action chưa đặt đúng | Hyper-V Manager → VM Settings → Automatic Start Action = Always start automatically (xem Giai đoạn 2.4) |
 | Cột thời gian trong file Excel xuất ra bị lệch 7 tiếng | Biến `TZ` chưa được nạp đúng | Kiểm tra `.env.prod` có `TZ=Asia/Ho_Chi_Minh`, chạy `docker compose ... up -d api` |
-| `prod-setup-vm.ps1` báo không tìm thấy link ISO | Chưa đặt sẵn file `.iso` trong `D:\7800quiz\`, mà trang `releases.ubuntu.com` cũng đổi cấu trúc hoặc bị mạng chặn | Tải tay ISO tại `https://ubuntu.com/download/server`, đặt file vào `D:\7800quiz\` (script tự nhận diện) rồi chạy lại script |
+| `prod-setup-vm.ps1` báo không tìm thấy link ISO | Chưa đặt sẵn file `.iso` trong `D:\quiz\`, mà trang `releases.ubuntu.com` cũng đổi cấu trúc hoặc bị mạng chặn | Tải tay ISO tại `https://ubuntu.com/download/server`, đặt file vào `D:\quiz\` (script tự nhận diện) rồi chạy lại script |
 | `crontab -l` không thấy dòng backup, hoặc backup không tự chạy lúc 02:00 | Cron chạy dưới user khác, hoặc dịch vụ `cron` chưa bật | `sudo systemctl status cron`; đăng ký lại bằng đúng user đã `usermod -aG docker` (xem Giai đoạn 8) |
 
 ### Lệnh chẩn đoán nhanh (chạy trong máy ảo Ubuntu)
@@ -599,7 +599,7 @@ curl -s http://127.0.0.1:8080/api/health   # kiểm tra bỏ qua HTTPS/chứng c
 
 | File | Vị trí | Vai trò |
 |---|---|---|
-| `scripts/prod-setup-vm.ps1` | `D:\7800quiz\scripts\` (Windows) | Dựng máy ảo Ubuntu tự động (Giai đoạn 2.2) |
+| `scripts/prod-setup-vm.ps1` | `D:\quiz\scripts\` (Windows) | Dựng máy ảo Ubuntu tự động (Giai đoạn 2.2) |
 | `scripts/prod-setup-app.sh` | Mã nguồn (trong VM) | Cài Docker + build + khởi tạo ứng dụng tự động (Giai đoạn 2.3) |
 | `docker-compose.prod.yml` | `/opt/7800quiz` (trong VM) | Cấu hình toàn bộ hệ thống production |
 | `Caddyfile` | `/opt/7800quiz` (trong VM) | Cấu hình reverse proxy + HTTPS nội bộ (`tls internal`) |
