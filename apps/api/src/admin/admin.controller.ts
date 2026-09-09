@@ -69,8 +69,8 @@ export class AdminController {
 
   @Post('bank-questions')
   @Roles(...TRAINING_ROLES)
-  createBankQuestion(@Body() body: any) {
-    return this.adminService.createBankQuestion(body);
+  createBankQuestion(@Request() req: any, @Body() body: any) {
+    return this.adminService.createBankQuestion(body, req.user);
   }
 
   @Put('bank-questions/:id')
@@ -104,6 +104,7 @@ export class AdminController {
   @Roles(...TRAINING_ROLES)
   @UseInterceptors(FileInterceptor('file'))
   importQuestions(
+    @Request() req: any,
     @UploadedFile() file: Express.Multer.File,
     @Body('subjectId') subjectId: string,
     @Body('dryRun') dryRun?: string,
@@ -114,6 +115,7 @@ export class AdminController {
       subjectId,
       dryRun === 'true',
       sheetName,
+      req.user,
     );
   }
 
@@ -121,8 +123,15 @@ export class AdminController {
   // upload lại file Excel gốc (không còn khớp nếu admin đã chỉnh nội dung).
   @Post('bank-questions/import/confirm')
   @Roles(...TRAINING_ROLES)
-  confirmImportBankQuestions(@Body() body: ImportBankQuestionsDto) {
-    return this.adminService.importBankQuestionRows(body.subjectId, body.rows);
+  confirmImportBankQuestions(
+    @Request() req: any,
+    @Body() body: ImportBankQuestionsDto,
+  ) {
+    return this.adminService.importBankQuestionRows(
+      body.subjectId,
+      body.rows,
+      req.user,
+    );
   }
 
   // ── Duplicate check ───────────────────────────────────────────────────

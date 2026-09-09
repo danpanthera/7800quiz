@@ -11,6 +11,8 @@ import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import MyQuizzesPage from './pages/MyQuizzesPage'
 import LeaderboardPage from './pages/LeaderboardPage'
+import PracticePage from './pages/PracticePage'
+import ReviewPage from './pages/ReviewPage'
 import QuizPlayerPage from './pages/QuizPlayerPage'
 import QuizResultPage from './pages/QuizResultPage'
 import QuestionsPage from './pages/QuestionsPage'
@@ -34,6 +36,9 @@ import ArenaPlayerPage from './pages/ArenaPlayerPage'
 import ArenaSpectatorPage from './pages/ArenaSpectatorPage'
 import AchievementsPage from './pages/AchievementsPage'
 import LevelsPage from './pages/LevelsPage'
+import AssignmentSchedulesPage from './pages/AssignmentSchedulesPage'
+import QuestionApprovalPage from './pages/QuestionApprovalPage'
+import TournamentsPage from './pages/TournamentsPage'
 import { ADMIN_ROLES, TRAINING_ROLES, USER_ROLES } from './lib/permissions'
 
 const queryClient = new QueryClient({
@@ -191,6 +196,8 @@ export default function App() {
                   <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
                   <Route path="my/results/:submissionId" element={<QuizResultPage />} />
                   <Route path="my/leaderboard" element={<LeaderboardPage />} />
+                  <Route path="my/practice" element={<PracticePage />} />
+                  <Route path="my/review" element={<ReviewPage />} />
                 </Route>
 
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>
@@ -208,6 +215,9 @@ export default function App() {
                   <Route path="manage/arena/:id/replay" element={<ArenaReplayPage />} />
                   <Route path="manage/achievements" element={<AchievementsPage />} />
                   <Route path="manage/levels" element={<LevelsPage />} />
+                  <Route path="manage/assignment-schedules" element={<AssignmentSchedulesPage />} />
+                  <Route path="manage/question-approval" element={<QuestionApprovalPage />} />
+                  <Route path="manage/tournaments" element={<TournamentsPage />} />
                 </Route>
 
                 <Route element={<RoleGuard allowedRoles={ADMIN_ROLES} />}>

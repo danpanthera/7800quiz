@@ -323,22 +323,30 @@ export class AdminService {
     });
   }
 
-  createBankQuestion(data: {
-    content: string;
-    imageUrl?: string;
-    explanation?: string;
-    subjectId?: string;
-    points?: number;
-    questionType?: string;
-    options: { content: string; isCorrect: boolean; orderIndex: number }[];
-  }) {
+  createBankQuestion(
+    data: {
+      content: string;
+      imageUrl?: string;
+      explanation?: string;
+      subjectId?: string;
+      points?: number;
+      questionType?: string;
+      options: { content: string; isCorrect: boolean; orderIndex: number }[];
+    },
+    submittedBy?: { id: string; role: string },
+  ) {
     const { options, questionType, ...rest } = data;
+    // Việc 9 — quy trình duyệt câu hỏi mới: TRAINER tự tạo phải chờ ADMIN duyệt,
+    // ADMIN tự tạo thì coi như đã duyệt luôn (khỏi tự duyệt bài của chính mình).
+    const needsApproval = submittedBy?.role === 'TRAINER';
     return this.prisma.question.create({
       data: {
         ...rest,
         isBank: true,
         questionType: (questionType as any) ?? 'SINGLE',
         orderIndex: 0,
+        approvalStatus: needsApproval ? 'PENDING' : 'APPROVED',
+        submittedById: submittedBy?.id,
         options: { create: options },
       },
       include: { options: true },
@@ -482,6 +490,7 @@ export class AdminService {
     subjectId: string,
     dryRun = false,
     sheetName?: string,
+    submittedBy?: { id: string; role: string },
   ): Promise<{
     preview?: {
       rowNumber: number;
@@ -592,7 +601,11 @@ export class AdminService {
       return { preview, imported: 0, skipped: 0, errors };
     }
 
-    const created = await this.createBankQuestions(subjectId, parsed);
+    const created = await this.createBankQuestions(
+      subjectId,
+      parsed,
+      submittedBy,
+    );
     return {
       imported: created.imported,
       skipped: created.skipped,
@@ -615,10 +628,13 @@ export class AdminService {
       correctIndex: number;
       explanation: string | null;
     }[],
+    submittedBy?: { id: string; role: string },
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     if (rows.length === 0) return { imported: 0, skipped: 0, errors: [] };
 
     const dupResults = await this.checkDuplicates(rows.map((r) => r.content));
+    // Việc 9 — quy trình duyệt câu hỏi mới: xem createBankQuestion() ở trên.
+    const needsApproval = submittedBy?.role === 'TRAINER';
     let imported = 0;
     let skipped = 0;
     const errors: string[] = [];
@@ -639,6 +655,8 @@ export class AdminService {
             isBank: true,
             questionType: 'SINGLE',
             orderIndex: 0,
+            approvalStatus: needsApproval ? 'PENDING' : 'APPROVED',
+            submittedById: submittedBy?.id,
             options: {
               create: row.optionTexts
                 .map((text, i) =>
@@ -668,6 +686,7 @@ export class AdminService {
   async importBankQuestionRows(
     subjectId: string,
     rows: ImportBankQuestionRowDto[],
+    submittedBy?: { id: string; role: string },
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     if (!subjectId)
       throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
@@ -715,7 +734,11 @@ export class AdminService {
       });
     }
 
-    const created = await this.createBankQuestions(subjectId, valid);
+    const created = await this.createBankQuestions(
+      subjectId,
+      valid,
+      submittedBy,
+    );
     return {
       imported: created.imported,
       skipped: created.skipped,
@@ -907,7 +930,11 @@ export class AdminService {
       if (!count || count <= 0) continue;
 
       const bankQuestions = await this.prisma.question.findMany({
-        where: { isBank: true, ...(subjectId ? { subjectId } : {}) },
+        where: {
+          isBank: true,
+          approvalStatus: 'APPROVED',
+          ...(subjectId ? { subjectId } : {}),
+        },
         include: { options: { orderBy: { orderIndex: 'asc' } } },
       });
 
@@ -1806,7 +1833,8 @@ export class AdminService {
     const notFound: string[] = [];
     for (const code of codes) {
       const found = canBoList.find(
-        (cb) => cb.cbCode === code || cb.userAD === code || cb.username === code,
+        (cb) =>
+          cb.cbCode === code || cb.userAD === code || cb.username === code,
       );
       if (found) matchedIds.add(found.id);
       else notFound.push(code);

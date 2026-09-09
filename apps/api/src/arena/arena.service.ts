@@ -247,6 +247,7 @@ export class ArenaService {
       const bankQuestions = await this.prisma.question.findMany({
         where: {
           isBank: true,
+          approvalStatus: 'APPROVED',
           ...(slot.subjectId ? { subjectId: slot.subjectId } : {}),
         },
         include: { options: { orderBy: { orderIndex: 'asc' } } },

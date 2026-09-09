@@ -11,6 +11,7 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
+import DailyQuestionCard from '../components/DailyQuestionCard'
 
 const { Title, Text } = Typography
 
@@ -256,6 +257,9 @@ export default function MyQuizzesPage() {
           <dd>#{progress?.rank ?? '—'}</dd>
         </div>
       </dl>
+
+      {/* ── Câu hỏi khởi động mỗi ngày — tự ẩn nếu ngân hàng câu hỏi rỗng ── */}
+      <DailyQuestionCard />
 
       {/* ── Bản đồ điểm yếu theo lĩnh vực — chỉ hiện khi có ít nhất 1 lĩnh vực
           chưa đúng 100%, tính từ toàn bộ lịch sử bài đã nộp ── */}

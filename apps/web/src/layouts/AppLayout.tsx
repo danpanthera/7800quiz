@@ -8,8 +8,11 @@ import {
   BarChartOutlined,
   BookOutlined,
   CalendarOutlined,
+  CheckSquareOutlined,
   ClusterOutlined,
+  CrownOutlined,
   DownOutlined,
+  ExperimentOutlined,
   FileTextOutlined,
   IdcardOutlined,
   KeyOutlined,
@@ -17,6 +20,8 @@ import {
   LogoutOutlined,
   MenuOutlined,
   PieChartOutlined,
+  RedoOutlined,
+  ScheduleOutlined,
   StarOutlined,
   TeamOutlined,
   TrophyOutlined,
@@ -41,6 +46,8 @@ interface NavigationItem {
 const staffNavigation: NavigationItem[] = [
   { key: '/my/quizzes', icon: <FileTextOutlined />, label: 'Bài kiểm tra của tôi' },
   { key: '/my/leaderboard', icon: <TrophyOutlined />, label: 'Bảng xếp hạng' },
+  { key: '/my/practice', icon: <ExperimentOutlined />, label: 'Luyện tập tự do' },
+  { key: '/my/review', icon: <RedoOutlined />, label: 'Ôn tập ngắt quãng' },
 ]
 
 const trainingNavigation: NavigationItem[] = [
@@ -48,8 +55,11 @@ const trainingNavigation: NavigationItem[] = [
   { key: '/manage/question-analytics', icon: <PieChartOutlined />, label: 'Phân tích câu hỏi' },
   { key: '/manage/quizzes', icon: <FileTextOutlined />, label: 'Bộ đề' },
   { key: '/manage/assignments', icon: <TeamOutlined />, label: 'Phân công' },
+  { key: '/manage/assignment-schedules', icon: <ScheduleOutlined />, label: 'Lịch giao bài tự động' },
+  { key: '/manage/question-approval', icon: <CheckSquareOutlined />, label: 'Duyệt câu hỏi mới' },
   { key: '/manage/exam-sessions', icon: <CalendarOutlined />, label: 'Kỳ thi' },
   { key: '/manage/arena', icon: <TrophyOutlined />, label: 'Đấu trường' },
+  { key: '/manage/tournaments', icon: <CrownOutlined />, label: 'Giải đấu loại trực tiếp' },
   { key: '/manage/achievements', icon: <StarOutlined />, label: 'Thành tích' },
   { key: '/manage/levels', icon: <TrophyOutlined />, label: 'Cấp độ' },
   { key: '/manage/reports', icon: <BarChartOutlined />, label: 'Báo cáo' },

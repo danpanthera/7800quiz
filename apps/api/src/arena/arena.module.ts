@@ -19,5 +19,8 @@ import { AuthModule } from '../auth/auth.module';
     ArenaClockService,
     ArenaLatencyService,
   ],
+  // Xuất ArenaService để tournament.service.ts (Việc 20) tạo phiên Đấu trường
+  // cho từng trận — tái dùng nguyên cỗ máy chấm điểm/reveal có sẵn.
+  exports: [ArenaService],
 })
 export class ArenaModule {}
