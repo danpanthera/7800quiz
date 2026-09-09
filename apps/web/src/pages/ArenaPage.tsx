@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Button, Card, Col, Form, InputNumber, Row, Select, Space, Spin, Table, Tag,
   Typography, Divider, Alert, List, Modal, Input, Radio, Switch,
@@ -224,6 +225,7 @@ export default function ArenaPage() {
 // ─── SessionList ──────────────────────────────────────────────────────────────
 
 function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSession) => void }) {
+  const navigate = useNavigate()
   const { data, isLoading, refetch } = useQuery<ArenaSession[]>({
     queryKey: ['arena-sessions'],
     queryFn: () => api.get('/admin/arena-sessions').then((r) => r.data),
@@ -331,6 +333,11 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
                   <Button type="link" onClick={() => onOpen(r)}>
                     {r.status === 'FINISHED' ? 'Xem kết quả' : 'Vào phòng'}
                   </Button>
+                  {r.status === 'FINISHED' && (
+                    <Button type="link" onClick={() => navigate(`/manage/arena/${r.id}/replay`)}>
+                      Xem lại chi tiết
+                    </Button>
+                  )}
                   {r.status === 'LOBBY' && (
                     <Popconfirm
                       title="Hủy phiên đấu?"

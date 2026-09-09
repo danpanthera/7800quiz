@@ -29,7 +29,9 @@ import CanBoPage from './pages/CanBoPage'
 import BranchesPage from './pages/BranchesPage'
 import AuditLogsPage from './pages/AuditLogsPage'
 import ArenaPage from './pages/ArenaPage'
+import ArenaReplayPage from './pages/ArenaReplayPage'
 import ArenaPlayerPage from './pages/ArenaPlayerPage'
+import ArenaSpectatorPage from './pages/ArenaSpectatorPage'
 import AchievementsPage from './pages/AchievementsPage'
 import LevelsPage from './pages/LevelsPage'
 import { ADMIN_ROLES, TRAINING_ROLES, USER_ROLES } from './lib/permissions'
@@ -168,6 +170,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/arena/spectate/:joinCode"
+                element={
+                  <RequireAuth>
+                    <ArenaSpectatorPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
                 element={
                   <RequireAuth>
                     <AppLayout />
@@ -195,6 +205,7 @@ export default function App() {
                   <Route path="manage/attempt-violations" element={<AttemptViolationsPage />} />
                   <Route path="manage/exam-sessions" element={<ExamSessionsPage />} />
                   <Route path="manage/arena" element={<ArenaPage />} />
+                  <Route path="manage/arena/:id/replay" element={<ArenaReplayPage />} />
                   <Route path="manage/achievements" element={<AchievementsPage />} />
                   <Route path="manage/levels" element={<LevelsPage />} />
                 </Route>

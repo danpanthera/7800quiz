@@ -211,6 +211,30 @@ export class ArenaGateway
     return { ok: true, sessionId: data.sessionId };
   }
 
+  // ─── Khán giả: xem trực tiếp không tham gia đội (chiếu màn hình lớn hội trường) ──
+  // Chỉ cần đăng nhập (không giới hạn vai trò như MC) — join thẳng room để nhận
+  // đủ mọi broadcast (câu hỏi, reveal, bảng điểm) NHƯNG không tạo team/member nên
+  // không xuất hiện trong danh sách đội và không buzz-in được (không có teamId).
+  @SubscribeMessage('arena.spectate')
+  async handleSpectate(
+    @MessageBody() data: { sessionId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const user = this.extractUser(client);
+    if (!user) return { error: 'Cần đăng nhập để xem trực tiếp' };
+    client.join(this.getRoomName(data.sessionId));
+    client.data.sessionId = data.sessionId;
+    client.data.isSpectator = true;
+    void this.probeLatency(client);
+    try {
+      const state = await this.arenaService.getLiveState(data.sessionId, null);
+      client.emit('arena.state', state);
+    } catch {
+      // Phiên không tồn tại — bỏ qua, để lỗi lộ ra ở các thao tác kế tiếp
+    }
+    return { ok: true, sessionId: data.sessionId };
+  }
+
   // ─── Người chơi: tham gia đội (bắt buộc đăng nhập) ─────────────────────────
 
   @SubscribeMessage('arena.join')
