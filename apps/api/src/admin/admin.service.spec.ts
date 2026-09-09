@@ -1,4 +1,12 @@
+import * as XLSX from 'xlsx';
 import { AdminService } from './admin.service';
+
+function buildExcelBuffer(rows: (string | number)[][]): Buffer {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+}
 
 describe('AdminService.duplicateQuiz', () => {
   it('nhân bản đúng câu hỏi/đáp án, đặt bản sao ở trạng thái Tắt', async () => {
@@ -521,5 +529,116 @@ describe('AdminService.getQuestionAnalytics', () => {
         subject: { select: { name: true } },
       },
     });
+  });
+});
+
+describe('AdminService.extendAssignmentsByFilter', () => {
+  it('không truyền quizId lẫn departmentId → báo lỗi, không gọi updateMany', async () => {
+    const prisma = { assignment: { updateMany: jest.fn() } };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await expect(
+      service.extendAssignmentsByFilter('2026-12-31'),
+    ).rejects.toThrow(
+      'Cần chọn ít nhất bộ đề hoặc chi nhánh/phòng ban để gia hạn',
+    );
+    expect(prisma.assignment.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('lọc theo quizId → cập nhật đúng endAt cho các phân công khớp', async () => {
+    const prisma = {
+      assignment: { updateMany: jest.fn().mockResolvedValue({ count: 5 }) },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.extendAssignmentsByFilter(
+      '2026-12-31',
+      'quiz-1',
+    );
+
+    expect(prisma.assignment.updateMany).toHaveBeenCalledWith({
+      where: { quizId: 'quiz-1' },
+      data: { endAt: new Date('2026-12-31') },
+    });
+    expect(result).toEqual({ extended: 5 });
+  });
+
+  it('lọc theo departmentId → mở rộng cả phòng ban con, và cả canBo/user trực thuộc', async () => {
+    const prisma = {
+      department: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'dept-child' }]),
+      },
+      assignment: { updateMany: jest.fn().mockResolvedValue({ count: 3 }) },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await service.extendAssignmentsByFilter('2026-12-31', undefined, 'dept-1');
+
+    expect(prisma.assignment.updateMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { departmentId: { in: ['dept-1', 'dept-child'] } },
+          { canBo: { departmentId: { in: ['dept-1', 'dept-child'] } } },
+          { user: { departmentId: { in: ['dept-1', 'dept-child'] } } },
+        ],
+      },
+      data: { endAt: new Date('2026-12-31') },
+    });
+  });
+});
+
+describe('AdminService.importAssignmentsFromExcel', () => {
+  it('khớp đúng theo cbCode, tạo assignment qua createAssignmentsBulk, báo notFound cho mã không khớp', async () => {
+    const buffer = buildExcelBuffer([
+      ['CB001'],
+      ['CB002'],
+      ['CB_KHONG_TON_TAI'],
+    ]);
+    const prisma = {
+      canBo: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'canbo-1', cbCode: 'CB001', userAD: null, username: 'cb001' },
+          { id: 'canbo-2', cbCode: 'CB002', userAD: null, username: 'cb002' },
+        ]),
+      },
+      assignment: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.importAssignmentsFromExcel(buffer, 'quiz-1');
+
+    expect(prisma.assignment.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ canBoId: 'canbo-1', quizId: 'quiz-1' }),
+        expect.objectContaining({ canBoId: 'canbo-2', quizId: 'quiz-1' }),
+      ]),
+      skipDuplicates: true,
+    });
+    expect(result).toEqual({ created: 2, notFound: ['CB_KHONG_TON_TAI'] });
+  });
+
+  it('file không có dòng dữ liệu → báo lỗi, không truy vấn CanBo', async () => {
+    const buffer = buildExcelBuffer([]);
+    const prisma = { canBo: { findMany: jest.fn() } };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await expect(
+      service.importAssignmentsFromExcel(buffer, 'quiz-1'),
+    ).rejects.toThrow('File không có dòng dữ liệu nào');
+    expect(prisma.canBo.findMany).not.toHaveBeenCalled();
+  });
+
+  it('không ai khớp → created=0, notFound đủ danh sách, không gọi createMany', async () => {
+    const buffer = buildExcelBuffer([['XYZ']]);
+    const prisma = {
+      canBo: { findMany: jest.fn().mockResolvedValue([]) },
+      assignment: { createMany: jest.fn() },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.importAssignmentsFromExcel(buffer, 'quiz-1');
+
+    expect(result).toEqual({ created: 0, notFound: ['XYZ'] });
+    expect(prisma.assignment.createMany).not.toHaveBeenCalled();
   });
 });

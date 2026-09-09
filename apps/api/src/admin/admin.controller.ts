@@ -232,6 +232,41 @@ export class AdminController {
   createAssignmentsBulk(@Body() body: any) {
     return this.adminService.createAssignmentsBulk(body);
   }
+
+  // Các route "assignments/<tên cố định>" PHẢI khai báo TRƯỚC "assignments/:id" —
+  // Nest/Express khớp route theo thứ tự khai báo, ":id" là wildcard sẽ nuốt luôn
+  // "extend"/"import" nếu đứng sau (đã từng dính lỗi 500 vì thứ tự sai).
+  @Put('assignments/extend')
+  @Roles(...TRAINING_ROLES)
+  extendAssignmentsByFilter(
+    @Body() body: { newEndAt: string; quizId?: string; departmentId?: string },
+  ) {
+    return this.adminService.extendAssignmentsByFilter(
+      body.newEndAt,
+      body.quizId,
+      body.departmentId,
+    );
+  }
+
+  // Import danh sách phân công qua Excel — file 1 cột mã cán bộ/User AD/username
+  @Post('assignments/import')
+  @Roles(...TRAINING_ROLES)
+  @UseInterceptors(FileInterceptor('file'))
+  importAssignments(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('quizId') quizId: string,
+    @Body('startAt') startAt?: string,
+    @Body('endAt') endAt?: string,
+  ) {
+    if (!file) throw new BadRequestException('Chưa chọn file');
+    return this.adminService.importAssignmentsFromExcel(
+      file.buffer,
+      quizId,
+      startAt,
+      endAt,
+    );
+  }
+
   @Put('assignments/:id')
   @Roles(...TRAINING_ROLES)
   updateAssignment(@Param('id') id: string, @Body() body: any) {

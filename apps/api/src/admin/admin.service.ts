@@ -1117,6 +1117,49 @@ export class AdminService {
     return { deleted: result.count, skipped };
   }
 
+  // Gia hạn hàng loạt (đổi endAt) theo bộ đề và/hoặc chi nhánh/phòng ban đang lọc —
+  // cùng cách xác định phạm vi như deleteAssignmentsByFilter ở trên, nhưng không có
+  // khái niệm "bỏ qua" vì gia hạn không va chạm dữ liệu lịch sử (khác xóa).
+  async extendAssignmentsByFilter(
+    newEndAt: string,
+    quizId?: string,
+    departmentId?: string,
+  ) {
+    if (!quizId && !departmentId)
+      throw new BadRequestException(
+        'Cần chọn ít nhất bộ đề hoặc chi nhánh/phòng ban để gia hạn',
+      );
+
+    let departmentIds: string[] | undefined;
+    if (departmentId) {
+      const children = await this.prisma.department.findMany({
+        where: { parentId: departmentId },
+        select: { id: true },
+      });
+      departmentIds = [departmentId, ...children.map((c) => c.id)];
+    }
+
+    const where: Prisma.AssignmentWhereInput = {
+      ...(quizId ? { quizId } : {}),
+      ...(departmentIds
+        ? {
+            OR: [
+              { departmentId: { in: departmentIds } },
+              { canBo: { departmentId: { in: departmentIds } } },
+              { user: { departmentId: { in: departmentIds } } },
+            ],
+          }
+        : {}),
+    };
+
+    const result = await this.prisma.assignment.updateMany({
+      where,
+      data: { endAt: new Date(newEndAt) },
+    });
+
+    return { extended: result.count };
+  }
+
   // ── Báo cáo (Reports) ────────────────────────────────────────────────
   async getReports() {
     const rows = await this.prisma.submission.findMany({
@@ -1591,6 +1634,65 @@ export class AdminService {
       skipDuplicates: true,
     });
     return { count: result.count };
+  }
+
+  // Import danh sách phân công qua Excel — file chỉ cần 1 cột (mã cán bộ, User AD
+  // hoặc username, ở CỘT ĐẦU TIÊN mỗi dòng), bộ đề + thời gian chọn sẵn trên form,
+  // không cần khai báo lại trong file. Tái dùng createAssignmentsBulk() ở trên để
+  // không lặp lại logic tạo Assignment.
+  async importAssignmentsFromExcel(
+    buffer: Buffer,
+    quizId: string,
+    startAt?: string,
+    endAt?: string,
+  ) {
+    const wb = this.readWorkbook(buffer);
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<string[]>(sheet, {
+      header: 1,
+      raw: false,
+    });
+    const codes = [
+      ...new Set(
+        rows
+          .map((r) => (r[0] ?? '').toString().trim())
+          .filter((c) => c.length > 0),
+      ),
+    ];
+    if (codes.length === 0)
+      throw new BadRequestException('File không có dòng dữ liệu nào');
+
+    const canBoList = await this.prisma.canBo.findMany({
+      where: {
+        OR: [
+          { cbCode: { in: codes } },
+          { userAD: { in: codes } },
+          { username: { in: codes } },
+        ],
+      },
+      select: { id: true, cbCode: true, userAD: true, username: true },
+    });
+
+    const matchedIds = new Set<string>();
+    const notFound: string[] = [];
+    for (const code of codes) {
+      const found = canBoList.find(
+        (cb) => cb.cbCode === code || cb.userAD === code || cb.username === code,
+      );
+      if (found) matchedIds.add(found.id);
+      else notFound.push(code);
+    }
+
+    if (matchedIds.size === 0) return { created: 0, notFound };
+
+    const result = await this.createAssignmentsBulk({
+      quizId,
+      canBoIds: [...matchedIds],
+      startAt,
+      endAt,
+    });
+
+    return { created: result.count, notFound };
   }
 
   // ── Năm học (Academic Years) ─────────────────────────────────────────

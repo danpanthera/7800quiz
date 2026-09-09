@@ -2,9 +2,9 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Tag, Typography, Badge, Button, Space, Popconfirm, App,
-  Modal, Form, Select, DatePicker, Radio, Divider, Input,
+  Modal, Form, Select, DatePicker, Radio, Divider, Input, Upload,
 } from 'antd'
-import { SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, ApartmentOutlined, UploadOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import type { AxiosResponse } from 'axios'
 import ManageTable from '../components/ManageTable'
@@ -202,6 +202,49 @@ export default function AssignmentsPage() {
       else message.success(`Đã gỡ phân công của ${deleted} cán bộ/user${skipped > 0 ? `, giữ lại ${skipped} người đã làm bài` : ''}`)
     },
     onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi gỡ phân công theo bộ lọc')),
+  })
+
+  // Gia hạn hàng loạt (đổi endAt) cho các phân công khớp bộ lọc đang hiển thị ở trên
+  const [extendModalOpen, setExtendModalOpen] = useState(false)
+  const [extendForm] = Form.useForm<{ newEndAt: Dayjs }>()
+  const extendMut = useMutation({
+    mutationFn: (newEndAt: string) => api.put<{ extended: number }>('/admin/assignments/extend', {
+      newEndAt,
+      ...(listFilterQuizId ? { quizId: listFilterQuizId } : {}),
+      ...(listFilterDeptId ? { departmentId: listFilterDeptId } : listFilterUnitId ? { departmentId: listFilterUnitId } : {}),
+    }),
+    onSuccess: (res: AxiosResponse<{ extended: number }>) => {
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      setExtendModalOpen(false)
+      extendForm.resetFields()
+      message.success(`Đã gia hạn ${res.data.extended} phân công`)
+    },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi gia hạn hàng loạt')),
+  })
+
+  // Import danh sách phân công qua Excel — file 1 cột mã cán bộ/User AD/username
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importForm] = Form.useForm<{ quizId: string; range?: [Dayjs, Dayjs] }>()
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const importMut = useMutation({
+    mutationFn: (values: { quizId: string; range?: [Dayjs, Dayjs] }) => {
+      const fd = new FormData()
+      fd.append('file', importFile!)
+      fd.append('quizId', values.quizId)
+      if (values.range?.[0]) fd.append('startAt', values.range[0].toISOString())
+      if (values.range?.[1]) fd.append('endAt', values.range[1].toISOString())
+      return api.post<{ created: number; notFound: string[] }>('/admin/assignments/import', fd)
+    },
+    onSuccess: (res: AxiosResponse<{ created: number; notFound: string[] }>) => {
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      setImportModalOpen(false)
+      importForm.resetFields()
+      setImportFile(null)
+      const { created, notFound } = res.data
+      if (notFound.length > 0) message.warning(`Đã tạo ${created} phân công. Không tìm thấy ${notFound.length} mã: ${notFound.slice(0, 5).join(', ')}${notFound.length > 5 ? '...' : ''}`)
+      else message.success(`Đã tạo ${created} phân công`)
+    },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi import phân công')),
   })
 
   const openNew = () => {
@@ -434,6 +477,12 @@ export default function AssignmentsPage() {
             Xóa cán bộ/user theo bộ lọc
           </Button>
         </Popconfirm>
+        <Button disabled={!canBulkDeleteByFilter} onClick={() => setExtendModalOpen(true)}>
+          Gia hạn hàng loạt
+        </Button>
+        <Button onClick={() => setImportModalOpen(true)}>
+          Import phân công (Excel)
+        </Button>
       </Space>
 
       <ManageTable<Assignment>
@@ -618,6 +667,65 @@ export default function AssignmentsPage() {
               <DatePicker showTime format="DD/MM/YYYY HH:mm" placeholder="Không giới hạn" />
             </Form.Item>
           </Space>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="Gia hạn hàng loạt"
+        open={extendModalOpen}
+        onCancel={() => { setExtendModalOpen(false); extendForm.resetFields() }}
+        onOk={() => extendForm.submit()}
+        confirmLoading={extendMut.isPending}
+      >
+        <Typography.Paragraph type="secondary">
+          Đổi hạn nộp bài (đến) cho các phân công đang khớp bộ lọc phía trên ({bulkDeleteScopeText()}).
+        </Typography.Paragraph>
+        <Form form={extendForm} layout="vertical" onFinish={(v) => extendMut.mutate(v.newEndAt.toISOString())}>
+          <Form.Item name="newEndAt" label="Hạn mới" rules={[{ required: true, message: 'Chọn hạn nộp bài mới' }]}>
+            <DatePicker showTime format="DD/MM/YYYY HH:mm" style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="Import phân công (Excel)"
+        open={importModalOpen}
+        onCancel={() => { setImportModalOpen(false); importForm.resetFields(); setImportFile(null) }}
+        onOk={() => importForm.submit()}
+        confirmLoading={importMut.isPending}
+      >
+        <Typography.Paragraph type="secondary">
+          File chỉ cần 1 cột — mã cán bộ, User AD hoặc username, mỗi dòng 1 người. Bộ đề và thời gian chọn chung cho cả danh sách.
+        </Typography.Paragraph>
+        <Form
+          form={importForm}
+          layout="vertical"
+          onFinish={(v) => {
+            if (!importFile) { message.error('Chưa chọn file'); return }
+            importMut.mutate(v)
+          }}
+        >
+          <Form.Item name="quizId" label="Bộ đề" rules={[{ required: true, message: 'Chọn bộ đề' }]}>
+            <Select
+              options={quizzes.map((q) => ({ value: q.id, label: q.title }))}
+              showSearch
+              filterOption={(input, opt) => vn(opt?.label ?? '').includes(vn(input))}
+            />
+          </Form.Item>
+          <Form.Item name="range" label="Thời gian (tuỳ chọn)">
+            <DatePicker.RangePicker showTime format="DD/MM/YYYY HH:mm" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="File Excel" required>
+            <Upload
+              accept=".xlsx,.xls,.csv"
+              maxCount={1}
+              beforeUpload={(file) => { setImportFile(file); return false }}
+              onRemove={() => setImportFile(null)}
+              fileList={importFile ? [{ uid: '1', name: importFile.name, status: 'done' as const }] : []}
+            >
+              <Button icon={<UploadOutlined />}>Chọn file</Button>
+            </Upload>
+          </Form.Item>
         </Form>
       </Modal>
     </>
