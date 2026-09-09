@@ -642,7 +642,7 @@ export default function ArenaPlayerPage() {
   }
 
   return (
-    <div className="arena-player-shell">
+    <div className="arena-player-shell arena-stage">
       <header className="arena-player-topbar">
         <span className="arena-player-brand"><BankOutlined /> 7800Quiz</span>
         <Button size="small" type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>Thoát</Button>

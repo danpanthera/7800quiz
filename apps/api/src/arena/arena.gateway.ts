@@ -82,6 +82,9 @@ export class ArenaGateway
         break;
       case 'question':
         this.server.to(room).emit('arena.question', event.payload);
+        // Đo lại RTT ngay lúc phát câu hỏi — mẫu tươi nhất có thể, ngay
+        // trước lúc người chơi bấm trả lời, để bù trễ chính xác nhất cho vòng này.
+        void this.probeRoomSockets(room);
         break;
       case 'revealed':
         this.server.to(room).emit('arena.revealed', event.payload);
@@ -175,6 +178,15 @@ export class ArenaGateway
     for (const socket of sockets) {
       const inArenaRoom = [...socket.rooms].some((r) => r.startsWith('arena-'));
       if (inArenaRoom) void this.probeLatency(socket as unknown as Socket);
+    }
+  }
+
+  // Đo RTT cho đúng các socket đang ở 1 phòng cụ thể — dùng ngay sau khi phát
+  // câu hỏi, không cần quét toàn bộ server như probeAllArenaSockets().
+  private async probeRoomSockets(room: string): Promise<void> {
+    const sockets = await this.server.in(room).fetchSockets();
+    for (const socket of sockets) {
+      void this.probeLatency(socket as unknown as Socket);
     }
   }
 
