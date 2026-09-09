@@ -65,6 +65,12 @@ npm run lint
 - **Nhắc nghỉ ngơi**: `useScreenTimeReminder` (`AppLayout.tsx`) cộng dồn thời gian tab ở trạng thái `visible` vào `sessionStorage` (KHÔNG phải thời gian đăng nhập) — quá 4 giờ thì bắn `notification.warning`, lặp lại mỗi 1 giờ tiếp theo. Logic tính mốc thuần nằm ở `lib/screen-time.ts` (test được không cần DOM) — không sửa thẳng trong hook.
 - **Thi lại nhiều lần**: `Quiz.maxAttempts` (0 = không giới hạn, mặc định 1) chặn ở `attempts.service.ts:start()` bằng cách đếm `QuizAttempt` đã `GRADED` theo `(userId, assignmentId)` — KHÔNG chặn bằng unique constraint vì cố tình cho phép nhiều `QuizAttempt`/`Submission` cho cùng 1 `assignmentId`. Chỉ cộng XP ở lần nộp bài **đầu tiên** của mỗi assignment (`finalize()`); các lần thi lại sau vẫn được chấm điểm/lưu bình thường nhưng không cộng thêm XP. Báo cáo/gradebook coi điểm **cao nhất** trong các lần thi là kết quả chính thức (`admin.service.ts:getReports()` đánh dấu `isBestForUser`, trang `MyQuizzesPage.tsx` dùng `assignment.bestAttempt`) — KHÔNG áp dụng cho `ExamSession` (tính năng "Đợt thi" đã có `scoringPolicy` riêng, tách biệt hoàn toàn khỏi luồng `Assignment`).
 
+- **Bảo mật đăng nhập** (3 lớp bổ sung cho nhau, đều nằm trong `auth/`):
+  1. *Giới hạn tốc độ theo IP* — `LoginThrottlerGuard`, 5 request/phút, chỉ gắn cho route đăng nhập.
+  2. *Khóa tài khoản tạm* — `auth.service.ts` đếm `User.failedLoginCount`, sai 5 lần liên tiếp thì đặt `lockedUntil = now + 15 phút` rồi reset bộ đếm. Sai mã 2 lớp cũng tính vào bộ đếm này (chặn dò mã 6 chữ số). ADMIN mở khóa sớm tại trang "Giám sát bảo mật".
+  3. *Kiểm soát phiên* — mỗi lần đăng nhập tạo 1 `UserSession`, JWT mang theo `sid`; `jwt.strategy.ts` kiểm tra phiên còn sống ở **mọi** request nên thu hồi phiên có hiệu lực **ngay lập tức**. Hệ quả: token phát hành trước khi có tính năng này (không có `sid`) đều bị từ chối — sau khi deploy, mọi người phải đăng nhập lại **một lần**.
+- **Xác thực 2 lớp (TOTP)**: `auth/totp.ts` tự cài RFC 6238 bằng `crypto` của Node (không thêm thư viện). Bật 2FA thì đăng nhập thành 2 nhịp: `/auth/login` chỉ trả `pendingToken` (JWT `type: 'totp_pending'`, sống 5 phút, **không** dùng gọi API được) → `/auth/login/verify-totp` đổi lấy access token thật. Tắt 2FA bắt buộc nhập lại mật khẩu.
+
 ## Tài khoản seed (dev)
 
 | Username | Password | Role |

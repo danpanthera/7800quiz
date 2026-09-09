@@ -3,6 +3,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth.controller';
+import {
+  AdminSecurityController,
+  SecurityController,
+} from './security.controller';
 import { AuthService } from './auth.service';
 import { getJwtSecret } from './jwt-secret';
 import { JwtStrategy } from './jwt.strategy';
@@ -21,7 +25,7 @@ import { RolesGuard } from './roles.guard';
     // không bị giới hạn tốc độ.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 5 }]),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, SecurityController, AdminSecurityController],
   providers: [AuthService, JwtStrategy, RolesGuard, LoginThrottlerGuard],
   exports: [JwtModule, RolesGuard],
 })

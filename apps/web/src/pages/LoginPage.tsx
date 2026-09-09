@@ -1,24 +1,53 @@
+import { useState } from 'react'
 import { Form, Input, Button, Typography, message } from 'antd'
-import { BankOutlined, UserOutlined, LockOutlined } from '@ant-design/icons'
+import { BankOutlined, UserOutlined, LockOutlined, SafetyOutlined } from '@ant-design/icons'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import api from '../lib/api'
+import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
 
 const { Title, Text } = Typography
 
+interface LoginResponse {
+  accessToken?: string
+  user?: Parameters<ReturnType<typeof useAuth>['login']>[1]
+  requiresTotp?: boolean
+  pendingToken?: string
+}
+
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  // Tài khoản bật xác thực 2 lớp: bước 1 chỉ trả pendingToken, phải nhập tiếp
+  // mã 6 chữ số ở bước 2 mới lấy được access token thật.
+  const [pendingToken, setPendingToken] = useState<string | null>(null)
+
+  const finishLogin = (data: LoginResponse) => {
+    if (!data.accessToken || !data.user) return
+    login(data.accessToken, data.user)
+    navigate('/')
+  }
 
   const mutation = useMutation({
     mutationFn: (values: { username: string; password: string }) =>
-      api.post('/auth/login', values).then((r) => r.data),
+      api.post('/auth/login', values).then((r) => r.data as LoginResponse),
     onSuccess: (data) => {
-      login(data.accessToken, data.user)
-      navigate('/')
+      if (data.requiresTotp && data.pendingToken) {
+        setPendingToken(data.pendingToken)
+        return
+      }
+      finishLogin(data)
     },
-    onError: () => message.error('Sai tài khoản hoặc mật khẩu'),
+    onError: (e) => message.error(getErrorMessage(e, 'Sai tài khoản hoặc mật khẩu')),
+  })
+
+  const totpMutation = useMutation({
+    mutationFn: (values: { code: string }) =>
+      api
+        .post('/auth/login/verify-totp', { pendingToken, code: values.code })
+        .then((r) => r.data as LoginResponse),
+    onSuccess: finishLogin,
+    onError: (e) => message.error(getErrorMessage(e, 'Mã xác thực không đúng')),
   })
 
   return (
@@ -43,10 +72,40 @@ export default function LoginPage() {
           </div>
 
           <header className="login-form-heading">
-            <Text>Chào mừng trở lại</Text>
-            <Title level={2}>Đăng nhập</Title>
+            <Text>{pendingToken ? 'Bảo mật 2 lớp' : 'Chào mừng trở lại'}</Text>
+            <Title level={2}>{pendingToken ? 'Nhập mã xác thực' : 'Đăng nhập'}</Title>
           </header>
 
+          {pendingToken ? (
+            <Form layout="vertical" onFinish={totpMutation.mutate} size="large" requiredMark={false}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                Mở ứng dụng xác thực (Google Authenticator, Microsoft Authenticator...) và nhập mã 6 chữ số đang hiển thị.
+              </Text>
+              <Form.Item
+                label="Mã xác thực"
+                name="code"
+                rules={[{ required: true, message: 'Vui lòng nhập mã 6 chữ số' }]}
+                style={{ marginBottom: 24 }}
+              >
+                <Input
+                  prefix={<SafetyOutlined />}
+                  placeholder="123456"
+                  maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                />
+              </Form.Item>
+              <Form.Item className="login-submit-row">
+                <Button type="primary" htmlType="submit" block loading={totpMutation.isPending}>
+                  Xác nhận
+                </Button>
+              </Form.Item>
+              <Button type="link" block onClick={() => setPendingToken(null)}>
+                Quay lại đăng nhập
+              </Button>
+            </Form>
+          ) : (
           <Form layout="vertical" onFinish={mutation.mutate} size="large" requiredMark={false}>
             <Form.Item
               label="User AD (VD: datnguyentien2)"
@@ -84,6 +143,7 @@ export default function LoginPage() {
               </Button>
             </Form.Item>
           </Form>
+          )}
 
           <Text className="login-support">Liên hệ IT nếu tài khoản bị khóa.</Text>
         </div>

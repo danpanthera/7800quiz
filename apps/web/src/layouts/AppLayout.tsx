@@ -21,6 +21,7 @@ import {
   MenuOutlined,
   PieChartOutlined,
   RedoOutlined,
+  SafetyCertificateOutlined,
   ScheduleOutlined,
   StarOutlined,
   TeamOutlined,
@@ -48,6 +49,7 @@ const staffNavigation: NavigationItem[] = [
   { key: '/my/leaderboard', icon: <TrophyOutlined />, label: 'Bảng xếp hạng' },
   { key: '/my/practice', icon: <ExperimentOutlined />, label: 'Luyện tập tự do' },
   { key: '/my/review', icon: <RedoOutlined />, label: 'Ôn tập ngắt quãng' },
+  { key: '/my/security', icon: <SafetyCertificateOutlined />, label: 'Bảo mật tài khoản' },
 ]
 
 const trainingNavigation: NavigationItem[] = [
@@ -75,6 +77,7 @@ const adminNavigation: NavigationItem[] = [
   { key: '/manage/classes', icon: <TeamOutlined />, label: 'Lớp học' },
   { key: '/manage/academic-years', icon: <CalendarOutlined />, label: 'Năm học' },
   { key: '/manage/audit-logs', icon: <AuditOutlined />, label: 'Nhật ký quản trị' },
+  { key: '/manage/security', icon: <SafetyCertificateOutlined />, label: 'Giám sát bảo mật' },
 ]
 
 const roleLabels: Record<UserRole, string> = {

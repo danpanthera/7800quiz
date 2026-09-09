@@ -39,6 +39,8 @@ import LevelsPage from './pages/LevelsPage'
 import AssignmentSchedulesPage from './pages/AssignmentSchedulesPage'
 import QuestionApprovalPage from './pages/QuestionApprovalPage'
 import TournamentsPage from './pages/TournamentsPage'
+import SecurityPage from './pages/SecurityPage'
+import AdminSecurityPage from './pages/AdminSecurityPage'
 import { ADMIN_ROLES, TRAINING_ROLES, USER_ROLES } from './lib/permissions'
 
 const queryClient = new QueryClient({
@@ -198,6 +200,7 @@ export default function App() {
                   <Route path="my/leaderboard" element={<LeaderboardPage />} />
                   <Route path="my/practice" element={<PracticePage />} />
                   <Route path="my/review" element={<ReviewPage />} />
+                  <Route path="my/security" element={<SecurityPage />} />
                 </Route>
 
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>
@@ -226,6 +229,7 @@ export default function App() {
                   <Route path="manage/staff" element={<CanBoPage />} />
                   <Route path="manage/branches" element={<BranchesPage />} />
                   <Route path="manage/audit-logs" element={<AuditLogsPage />} />
+                  <Route path="manage/security" element={<AdminSecurityPage />} />
                 </Route>
 
                 <Route path="quizzes" element={<HomeRedirect />} />
