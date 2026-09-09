@@ -8,6 +8,7 @@ import {
   AssignmentStatus,
   AttemptViolationType,
   Prisma,
+  QuestionType,
   XpSource,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1384,6 +1385,124 @@ export class AdminService {
       attemptStatus: r.attempt.status,
       totalViolationsInAttempt: r.attempt.violationCount,
     }));
+  }
+
+  // ── Phân tích câu hỏi toàn hệ thống (Question Analytics) ────────────────
+  // Khác với getQuestionStats() (chỉ soi 1 đợt thi/1 lớp) — hàm này gộp MỌI
+  // Submission đã chấm trên toàn hệ thống cho từng câu hỏi đã copy vào bộ đề
+  // (isBank=false). Không gộp xuyên nhiều bộ đề dù nội dung trùng nhau (mỗi
+  // bộ đề có bản copy riêng, id khác nhau) — giữ đơn giản, tránh phải dùng lại
+  // thuật toán so khớp trùng lặp (Jaccard) vốn chỉ để phục vụ lúc import.
+  async getQuestionAnalytics(
+    filters: { quizId?: string; subjectId?: string } = {},
+  ) {
+    const { quizId, subjectId } = filters;
+    const questions = await this.prisma.question.findMany({
+      where: {
+        isBank: false,
+        ...(quizId ? { quizId } : {}),
+        ...(subjectId ? { subjectId } : {}),
+      },
+      include: {
+        options: { select: { id: true, isCorrect: true, orderIndex: true } },
+        quiz: { select: { id: true, title: true } },
+        subject: { select: { name: true } },
+      },
+    });
+    if (questions.length === 0) return [];
+
+    const questionById = new Map(questions.map((q) => [q.id, q]));
+    const answers = await this.prisma.submissionAnswer.findMany({
+      where: { questionId: { in: [...questionById.keys()] } },
+      select: {
+        questionId: true,
+        selectedOptionIds: true,
+        submission: { select: { score: true } },
+      },
+    });
+
+    const byQuestion = new Map<
+      string,
+      { score: number; isCorrect: boolean }[]
+    >();
+    for (const a of answers) {
+      const q = questionById.get(a.questionId);
+      if (!q || a.submission.score === null) continue;
+      const selected = Array.isArray(a.selectedOptionIds)
+        ? (a.selectedOptionIds as string[])
+        : [];
+      const isCorrect = this.isAnswerCorrectForAnalytics(
+        q.questionType,
+        q.options,
+        selected,
+      );
+      const list = byQuestion.get(a.questionId) ?? [];
+      list.push({ score: a.submission.score, isCorrect });
+      byQuestion.set(a.questionId, list);
+    }
+
+    return questions
+      .map((q) => {
+        const rows = byQuestion.get(q.id) ?? [];
+        const total = rows.length;
+        const correct = rows.filter((r) => r.isCorrect).length;
+
+        // Độ phân biệt (discrimination index): so tỷ lệ đúng của nửa điểm cao
+        // nhất với nửa điểm thấp nhất TRONG SỐ người đã làm câu này — cần tối
+        // thiểu 4 người mới đủ ý nghĩa để tính, ít hơn thì để null.
+        let discrimination: number | null = null;
+        if (total >= 4) {
+          const sorted = [...rows].sort((a, b) => b.score - a.score);
+          const half = Math.floor(sorted.length / 2);
+          const top = sorted.slice(0, half);
+          const bottom = sorted.slice(sorted.length - half);
+          const topRate = top.filter((r) => r.isCorrect).length / top.length;
+          const bottomRate =
+            bottom.filter((r) => r.isCorrect).length / bottom.length;
+          discrimination = Math.round((topRate - bottomRate) * 100);
+        }
+
+        return {
+          id: q.id,
+          content: q.content,
+          questionType: q.questionType,
+          quizId: q.quizId,
+          quizTitle: q.quiz?.title ?? null,
+          subjectName: q.subject?.name ?? null,
+          totalAttempts: total,
+          correctCount: correct,
+          correctRate: total > 0 ? Math.round((correct / total) * 100) : null,
+          discrimination,
+        };
+      })
+      .filter((r) => r.totalAttempts > 0)
+      .sort((a, b) => (a.correctRate ?? 100) - (b.correctRate ?? 100));
+  }
+
+  // Chấm đúng/sai tôn trọng thứ tự cho câu ORDERING — cố tình viết riêng (không
+  // tái dùng gradeQuestion của attempts.service.ts) để tránh phụ thuộc chéo vào
+  // file đang được sửa song song; xem PerformanceService.isAnswerCorrect cho
+  // bản tương tự.
+  private isAnswerCorrectForAnalytics(
+    questionType: QuestionType,
+    options: { id: string; isCorrect: boolean; orderIndex: number }[],
+    selectedOptionIds: string[],
+  ): boolean {
+    if (questionType === QuestionType.ORDERING) {
+      const correctOrder = options
+        .slice()
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((o) => o.id);
+      return JSON.stringify(correctOrder) === JSON.stringify(selectedOptionIds);
+    }
+    const correctOptionIds = options
+      .filter((o) => o.isCorrect)
+      .map((o) => o.id)
+      .sort();
+    return (
+      JSON.stringify(correctOptionIds) ===
+      JSON.stringify([...selectedOptionIds].sort())
+    );
   }
 
   // ── Người dùng (Users) ───────────────────────────────────────────────

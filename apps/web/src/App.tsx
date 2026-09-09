@@ -14,6 +14,7 @@ import LeaderboardPage from './pages/LeaderboardPage'
 import QuizPlayerPage from './pages/QuizPlayerPage'
 import QuizResultPage from './pages/QuizResultPage'
 import QuestionsPage from './pages/QuestionsPage'
+import QuestionAnalyticsPage from './pages/QuestionAnalyticsPage'
 import QuizzesPage from './pages/QuizzesPage'
 import AssignmentsPage from './pages/AssignmentsPage'
 import ReportsPage from './pages/ReportsPage'
@@ -182,6 +183,7 @@ export default function App() {
 
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>
                   <Route path="manage/questions" element={<QuestionsPage />} />
+                  <Route path="manage/question-analytics" element={<QuestionAnalyticsPage />} />
                   <Route path="manage/quizzes" element={<QuizzesPage />} />
                   <Route path="manage/assignments" element={<AssignmentsPage />} />
                   <Route path="manage/reports" element={<ReportsPage />} />

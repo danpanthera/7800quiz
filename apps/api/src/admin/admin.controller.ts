@@ -319,6 +319,14 @@ export class AdminController {
     });
   }
 
+  @Get('question-analytics')
+  @Roles(...TRAINING_ROLES)
+  getQuestionAnalytics(
+    @Query() query: { quizId?: string; subjectId?: string },
+  ) {
+    return this.adminService.getQuestionAnalytics(query);
+  }
+
   // ── Users ─────────────────────────────────────────────────────────────
   @Get('users')
   @Roles(...TRAINING_ROLES)

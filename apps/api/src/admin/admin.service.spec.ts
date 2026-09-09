@@ -400,3 +400,126 @@ describe('AdminService.getReportTrends', () => {
     expect(await service.getReportTrends()).toEqual([]);
   });
 });
+
+describe('AdminService.getQuestionAnalytics', () => {
+  const baseQuestion = {
+    id: 'q1',
+    content: 'Câu hỏi 1',
+    questionType: 'SINGLE',
+    quizId: 'quiz-1',
+    quiz: { id: 'quiz-1', title: 'Nghiệp vụ tín dụng' },
+    subject: { name: 'Tín dụng' },
+    options: [
+      { id: 'opt-1', isCorrect: true, orderIndex: 1 },
+      { id: 'opt-2', isCorrect: false, orderIndex: 2 },
+    ],
+  };
+
+  it('tính đúng correctRate, bỏ qua câu không ai làm và bài chưa có điểm', async () => {
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([baseQuestion]) },
+      submissionAnswer: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-1'],
+            submission: { score: 90 },
+          },
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-2'],
+            submission: { score: 40 },
+          },
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-1'],
+            submission: { score: null },
+          }, // chưa chấm → bỏ qua
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getQuestionAnalytics();
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: 'q1',
+      quizTitle: 'Nghiệp vụ tín dụng',
+      subjectName: 'Tín dụng',
+      totalAttempts: 2,
+      correctCount: 1,
+      correctRate: 50,
+      discrimination: null, // < 4 người làm → không đủ tính độ phân biệt
+    });
+  });
+
+  it('câu không ai từng làm bị lọc bỏ khỏi kết quả', async () => {
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([baseQuestion]) },
+      submissionAnswer: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    expect(await service.getQuestionAnalytics()).toEqual([]);
+  });
+
+  it('tính đúng độ phân biệt khi đủ 4 người trở lên (nửa điểm cao vs nửa điểm thấp)', async () => {
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([baseQuestion]) },
+      submissionAnswer: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-1'],
+            submission: { score: 100 },
+          }, // cao, đúng
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-1'],
+            submission: { score: 90 },
+          }, // cao, đúng
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-2'],
+            submission: { score: 20 },
+          }, // thấp, sai
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-2'],
+            submission: { score: 10 },
+          }, // thấp, sai
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getQuestionAnalytics();
+
+    // Nhóm cao 2/2 đúng (100%), nhóm thấp 0/2 đúng (0%) → phân biệt = 100
+    expect(result[0]).toMatchObject({ totalAttempts: 4, discrimination: 100 });
+  });
+
+  it('lọc theo quizId/subjectId truyền xuống query', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      question: { findMany },
+      submissionAnswer: { findMany: jest.fn() },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await service.getQuestionAnalytics({
+      quizId: 'quiz-1',
+      subjectId: 'subj-1',
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { isBank: false, quizId: 'quiz-1', subjectId: 'subj-1' },
+      include: {
+        options: { select: { id: true, isCorrect: true, orderIndex: true } },
+        quiz: { select: { id: true, title: true } },
+        subject: { select: { name: true } },
+      },
+    });
+  });
+});

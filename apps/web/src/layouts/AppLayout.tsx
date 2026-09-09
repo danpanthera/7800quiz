@@ -14,6 +14,7 @@ import {
   LineChartOutlined,
   LogoutOutlined,
   MenuOutlined,
+  PieChartOutlined,
   StarOutlined,
   TeamOutlined,
   TrophyOutlined,
@@ -42,6 +43,7 @@ const staffNavigation: NavigationItem[] = [
 
 const trainingNavigation: NavigationItem[] = [
   { key: '/manage/questions', icon: <BookOutlined />, label: 'Ngân hàng câu hỏi' },
+  { key: '/manage/question-analytics', icon: <PieChartOutlined />, label: 'Phân tích câu hỏi' },
   { key: '/manage/quizzes', icon: <FileTextOutlined />, label: 'Bộ đề' },
   { key: '/manage/assignments', icon: <TeamOutlined />, label: 'Phân công' },
   { key: '/manage/exam-sessions', icon: <CalendarOutlined />, label: 'Kỳ thi' },
