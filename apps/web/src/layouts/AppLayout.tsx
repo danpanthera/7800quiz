@@ -17,6 +17,7 @@ import {
   TeamOutlined,
   TrophyOutlined,
   UserOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/useAuth'
@@ -47,6 +48,7 @@ const trainingNavigation: NavigationItem[] = [
   { key: '/manage/achievements', icon: <StarOutlined />, label: 'Thành tích' },
   { key: '/manage/levels', icon: <TrophyOutlined />, label: 'Cấp độ' },
   { key: '/manage/reports', icon: <BarChartOutlined />, label: 'Báo cáo' },
+  { key: '/manage/attempt-violations', icon: <WarningOutlined />, label: 'Giám sát vi phạm' },
 ]
 
 const adminNavigation: NavigationItem[] = [

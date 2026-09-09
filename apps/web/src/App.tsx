@@ -17,6 +17,7 @@ import QuestionsPage from './pages/QuestionsPage'
 import QuizzesPage from './pages/QuizzesPage'
 import AssignmentsPage from './pages/AssignmentsPage'
 import ReportsPage from './pages/ReportsPage'
+import AttemptViolationsPage from './pages/AttemptViolationsPage'
 import AcademicYearsPage from './pages/AcademicYearsPage'
 import ClassesPage from './pages/ClassesPage'
 import ExamSessionsPage from './pages/ExamSessionsPage'
@@ -183,6 +184,7 @@ export default function App() {
                   <Route path="manage/quizzes" element={<QuizzesPage />} />
                   <Route path="manage/assignments" element={<AssignmentsPage />} />
                   <Route path="manage/reports" element={<ReportsPage />} />
+                  <Route path="manage/attempt-violations" element={<AttemptViolationsPage />} />
                   <Route path="manage/exam-sessions" element={<ExamSessionsPage />} />
                   <Route path="manage/arena" element={<ArenaPage />} />
                   <Route path="manage/achievements" element={<AchievementsPage />} />

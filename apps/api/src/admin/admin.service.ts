@@ -4,7 +4,12 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { AssignmentStatus, Prisma, XpSource } from '@prisma/client';
+import {
+  AssignmentStatus,
+  AttemptViolationType,
+  Prisma,
+  XpSource,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
@@ -1277,6 +1282,55 @@ export class AdminService {
       meta: r.meta,
       ipAddress: r.ipAddress,
       createdAt: r.createdAt,
+    }));
+  }
+
+  // ── Giám sát vi phạm khi làm bài (Attempt Violations) ───────────────────
+  async getAttemptViolations(
+    filters: {
+      type?: AttemptViolationType;
+      userId?: string;
+      quizId?: string;
+      limit?: number;
+    } = {},
+  ) {
+    const { type, userId, quizId, limit = 200 } = filters;
+    const rows = await this.prisma.attemptViolation.findMany({
+      where: {
+        ...(type ? { type } : {}),
+        attempt: {
+          ...(userId ? { userId } : {}),
+          ...(quizId ? { quizId } : {}),
+        },
+      },
+      include: {
+        attempt: {
+          select: {
+            id: true,
+            userId: true,
+            quizId: true,
+            status: true,
+            violationCount: true,
+            user: { select: { fullName: true, username: true } },
+            assignment: { select: { quiz: { select: { title: true } } } },
+          },
+        },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: Math.min(limit, 500),
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      occurredAt: r.occurredAt,
+      attemptId: r.attemptId,
+      userId: r.attempt.userId,
+      userName: r.attempt.user.fullName,
+      username: r.attempt.user.username,
+      quizId: r.attempt.quizId,
+      quizTitle: r.attempt.assignment.quiz.title,
+      attemptStatus: r.attempt.status,
+      totalViolationsInAttempt: r.attempt.violationCount,
     }));
   }
 

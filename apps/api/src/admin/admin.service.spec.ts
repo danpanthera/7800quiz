@@ -237,3 +237,85 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
     });
   });
 });
+
+describe('AdminService.getAttemptViolations', () => {
+  it('ánh xạ đúng tên người dùng/tên bộ đề, lọc theo type/userId/quizId', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'violation-1',
+        type: 'TAB_HIDDEN',
+        occurredAt: new Date('2026-09-08T00:00:00.000Z'),
+        attemptId: 'attempt-1',
+        attempt: {
+          id: 'attempt-1',
+          userId: 'user-1',
+          quizId: 'quiz-1',
+          status: 'IN_PROGRESS',
+          violationCount: 2,
+          user: { fullName: 'Nguyễn Văn A', username: 'nguyenvana' },
+          assignment: { quiz: { title: 'Nghiệp vụ tín dụng' } },
+        },
+      },
+    ]);
+    const prisma = { attemptViolation: { findMany } };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getAttemptViolations({
+      type: 'TAB_HIDDEN' as never,
+      userId: 'user-1',
+      quizId: 'quiz-1',
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        type: 'TAB_HIDDEN',
+        attempt: { userId: 'user-1', quizId: 'quiz-1' },
+      },
+      include: {
+        attempt: {
+          select: {
+            id: true,
+            userId: true,
+            quizId: true,
+            status: true,
+            violationCount: true,
+            user: { select: { fullName: true, username: true } },
+            assignment: { select: { quiz: { select: { title: true } } } },
+          },
+        },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: 200,
+    });
+    expect(result).toEqual([
+      {
+        id: 'violation-1',
+        type: 'TAB_HIDDEN',
+        occurredAt: new Date('2026-09-08T00:00:00.000Z'),
+        attemptId: 'attempt-1',
+        userId: 'user-1',
+        userName: 'Nguyễn Văn A',
+        username: 'nguyenvana',
+        quizId: 'quiz-1',
+        quizTitle: 'Nghiệp vụ tín dụng',
+        attemptStatus: 'IN_PROGRESS',
+        totalViolationsInAttempt: 2,
+      },
+    ]);
+  });
+
+  it('không lọc gì → where rỗng ngoài phần attempt, take mặc định 200', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { attemptViolation: { findMany } };
+    const service = new AdminService(prisma as never, {} as never);
+
+    await service.getAttemptViolations();
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { attempt: {} },
+      include: expect.any(Object),
+      orderBy: { occurredAt: 'desc' },
+      take: 200,
+    });
+  });
+});

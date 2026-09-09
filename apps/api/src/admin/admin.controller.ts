@@ -16,7 +16,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { UserRole } from '@prisma/client';
+import { AttemptViolationType, UserRole } from '@prisma/client';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -291,6 +291,23 @@ export class AdminController {
     },
   ) {
     return this.adminService.getAuditLogs({
+      ...query,
+      limit: query.limit ? Number(query.limit) : undefined,
+    });
+  }
+
+  @Get('attempt-violations')
+  @Roles(...TRAINING_ROLES)
+  getAttemptViolations(
+    @Query()
+    query: {
+      type?: AttemptViolationType;
+      userId?: string;
+      quizId?: string;
+      limit?: string;
+    },
+  ) {
+    return this.adminService.getAttemptViolations({
       ...query,
       limit: query.limit ? Number(query.limit) : undefined,
     });
