@@ -10,6 +10,7 @@ import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import MyQuizzesPage from './pages/MyQuizzesPage'
+import LeaderboardPage from './pages/LeaderboardPage'
 import QuizPlayerPage from './pages/QuizPlayerPage'
 import QuizResultPage from './pages/QuizResultPage'
 import QuestionsPage from './pages/QuestionsPage'
@@ -174,6 +175,7 @@ export default function App() {
                   <Route path="my/quizzes" element={<MyQuizzesPage />} />
                   <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
                   <Route path="my/results/:submissionId" element={<QuizResultPage />} />
+                  <Route path="my/leaderboard" element={<LeaderboardPage />} />
                 </Route>
 
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>

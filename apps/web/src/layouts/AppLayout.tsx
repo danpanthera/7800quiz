@@ -35,6 +35,7 @@ interface NavigationItem {
 
 const staffNavigation: NavigationItem[] = [
   { key: '/my/quizzes', icon: <FileTextOutlined />, label: 'Bài kiểm tra của tôi' },
+  { key: '/my/leaderboard', icon: <TrophyOutlined />, label: 'Bảng xếp hạng' },
 ]
 
 const trainingNavigation: NavigationItem[] = [

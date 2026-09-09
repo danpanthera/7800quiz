@@ -47,6 +47,17 @@ export class GamificationController {
     );
   }
 
+  // Không @Roles() — mở cho mọi vai trò đã đăng nhập, giống các route /me khác
+  // ở trên. Tái dùng nguyên logic đã có ở admin/leaderboard, không sửa gì
+  // trong GamificationService để tránh đụng phần đang sửa song song.
+  @Get('me/leaderboard')
+  getMyLeaderboard(
+    @Query('period') period?: 'all' | 'month' | 'week',
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.svc.getLeaderboard(period ?? 'all', departmentId);
+  }
+
   // ─── /admin routes ────────────────────────────────────────────────────────
 
   @Get('admin/leaderboard')
