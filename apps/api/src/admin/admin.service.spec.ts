@@ -319,3 +319,84 @@ describe('AdminService.getAttemptViolations', () => {
     });
   });
 });
+
+describe('AdminService.getReportTrends', () => {
+  it('gộp theo tuần (mặc định), tính đúng điểm TB và tỷ lệ đạt, sắp theo thời gian tăng dần', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        score: 80,
+        isPassed: true,
+        submittedAt: new Date('2026-09-01T00:00:00.000Z'),
+      }, // tuần 1 (thứ Ba)
+      {
+        score: 40,
+        isPassed: false,
+        submittedAt: new Date('2026-09-02T00:00:00.000Z'),
+      }, // cùng tuần
+      {
+        score: 100,
+        isPassed: true,
+        submittedAt: new Date('2026-09-10T00:00:00.000Z'),
+      }, // tuần khác
+      {
+        score: null,
+        isPassed: null,
+        submittedAt: new Date('2026-09-10T00:00:00.000Z'),
+      }, // score null → bỏ qua
+    ]);
+    const prisma = { submission: { findMany } };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getReportTrends();
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { status: 'GRADED', score: { not: null } },
+      select: { score: true, isPassed: true, submittedAt: true },
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      totalSubmissions: 2,
+      avgScore: 60,
+      passRate: 50,
+    });
+    expect(result[1]).toMatchObject({
+      totalSubmissions: 1,
+      avgScore: 100,
+      passRate: 100,
+    });
+    expect(result[0].period < result[1].period).toBe(true);
+  });
+
+  it('gộp theo tháng khi groupBy="month"', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        score: 50,
+        isPassed: false,
+        submittedAt: new Date('2026-08-15T00:00:00.000Z'),
+      },
+      {
+        score: 90,
+        isPassed: true,
+        submittedAt: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    ]);
+    const prisma = { submission: { findMany } };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getReportTrends('month');
+
+    expect(result).toEqual([
+      { period: '2026-08', totalSubmissions: 1, avgScore: 50, passRate: 0 },
+      { period: '2026-09', totalSubmissions: 1, avgScore: 90, passRate: 100 },
+    ]);
+  });
+
+  it('không có submission nào → mảng rỗng', async () => {
+    const prisma = {
+      submission: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    expect(await service.getReportTrends()).toEqual([]);
+  });
+});

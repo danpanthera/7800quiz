@@ -11,6 +11,7 @@ import {
   FileTextOutlined,
   IdcardOutlined,
   KeyOutlined,
+  LineChartOutlined,
   LogoutOutlined,
   MenuOutlined,
   StarOutlined,
@@ -48,6 +49,7 @@ const trainingNavigation: NavigationItem[] = [
   { key: '/manage/achievements', icon: <StarOutlined />, label: 'Thành tích' },
   { key: '/manage/levels', icon: <TrophyOutlined />, label: 'Cấp độ' },
   { key: '/manage/reports', icon: <BarChartOutlined />, label: 'Báo cáo' },
+  { key: '/manage/report-trends', icon: <LineChartOutlined />, label: 'Xu hướng điểm' },
   { key: '/manage/attempt-violations', icon: <WarningOutlined />, label: 'Giám sát vi phạm' },
 ]
 

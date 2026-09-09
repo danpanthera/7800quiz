@@ -1173,6 +1173,58 @@ export class AdminService {
     }));
   }
 
+  // ── Xu hướng điểm & tỷ lệ đạt theo thời gian (Dashboard) ────────────────
+  // Gộp trong bộ nhớ thay vì group-by SQL theo ngày cắt (Prisma không hỗ trợ
+  // date-trunc sẵn, dùng $queryRaw sẽ phức tạp hơn không cần thiết cho quy mô
+  // dữ liệu 1 tổ chức nội bộ).
+  async getReportTrends(groupBy: 'week' | 'month' = 'week') {
+    const rows = await this.prisma.submission.findMany({
+      where: { status: 'GRADED', score: { not: null } },
+      select: { score: true, isPassed: true, submittedAt: true },
+    });
+
+    const buckets = new Map<
+      string,
+      { total: number; passed: number; sumScore: number }
+    >();
+    for (const r of rows) {
+      if (!r.submittedAt || r.score === null) continue;
+      const key =
+        groupBy === 'month'
+          ? r.submittedAt.toISOString().slice(0, 7)
+          : this.isoWeekKey(r.submittedAt);
+      const b = buckets.get(key) ?? { total: 0, passed: 0, sumScore: 0 };
+      b.total += 1;
+      if (r.isPassed) b.passed += 1;
+      b.sumScore += r.score;
+      buckets.set(key, b);
+    }
+
+    return [...buckets.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([period, b]) => ({
+        period,
+        totalSubmissions: b.total,
+        avgScore: Math.round(b.sumScore / b.total),
+        passRate: Math.round((b.passed / b.total) * 100),
+      }));
+  }
+
+  // Định danh tuần theo chuẩn ISO-8601 (VD "2026-W37") — dùng UTC để tránh lệch
+  // theo múi giờ máy chủ chạy container.
+  private isoWeekKey(date: Date): string {
+    const d = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil(
+      ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+    );
+    return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+  }
+
   async deleteReport(id: string, actorUserId?: string) {
     const result = await this.deleteReportsBulk([id], actorUserId);
     return result;

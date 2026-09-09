@@ -261,6 +261,12 @@ export class AdminController {
     return this.adminService.getReports();
   }
 
+  @Get('reports/trends')
+  @Roles(...TRAINING_ROLES)
+  getReportTrends(@Query('groupBy') groupBy?: 'week' | 'month') {
+    return this.adminService.getReportTrends(groupBy ?? 'week');
+  }
+
   @Delete('reports/bulk')
   @Roles(...TRAINING_ROLES)
   deleteReportsBulk(
