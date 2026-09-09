@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from 'react'
 import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
 import {
+  AlertOutlined,
   ApartmentOutlined,
   AuditOutlined,
   BankOutlined,
   BarChartOutlined,
   BookOutlined,
   CalendarOutlined,
+  ClusterOutlined,
   DownOutlined,
   FileTextOutlined,
   IdcardOutlined,
@@ -52,6 +54,8 @@ const trainingNavigation: NavigationItem[] = [
   { key: '/manage/levels', icon: <TrophyOutlined />, label: 'Cấp độ' },
   { key: '/manage/reports', icon: <BarChartOutlined />, label: 'Báo cáo' },
   { key: '/manage/report-trends', icon: <LineChartOutlined />, label: 'Xu hướng điểm' },
+  { key: '/manage/department-performance', icon: <ClusterOutlined />, label: 'So sánh chi nhánh' },
+  { key: '/manage/at-risk-staff', icon: <AlertOutlined />, label: 'Cảnh báo nguy cơ' },
   { key: '/manage/attempt-violations', icon: <WarningOutlined />, label: 'Giám sát vi phạm' },
 ]
 

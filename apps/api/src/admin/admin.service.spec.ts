@@ -642,3 +642,116 @@ describe('AdminService.importAssignmentsFromExcel', () => {
     expect(prisma.assignment.createMany).not.toHaveBeenCalled();
   });
 });
+
+describe('AdminService.getDepartmentPerformance', () => {
+  it('gộp đúng theo phòng ban của người làm bài, sắp điểm TB thấp nhất lên đầu', async () => {
+    const prisma = {
+      department: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'dept-a', name: 'Phòng A', parentId: null },
+          { id: 'dept-b', name: 'Phòng B', parentId: null },
+          { id: 'dept-c', name: 'Phòng C (chưa ai làm bài)', parentId: null },
+        ]),
+      },
+      submission: {
+        findMany: jest.fn().mockResolvedValue([
+          { score: 90, isPassed: true, user: { departmentId: 'dept-a' } },
+          { score: 40, isPassed: false, user: { departmentId: 'dept-b' } },
+          { score: 60, isPassed: true, user: { departmentId: 'dept-b' } },
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getDepartmentPerformance();
+
+    expect(result).toEqual([
+      {
+        id: 'dept-b',
+        name: 'Phòng B',
+        parentId: null,
+        totalSubmissions: 2,
+        avgScore: 50,
+        passRate: 50,
+      },
+      {
+        id: 'dept-a',
+        name: 'Phòng A',
+        parentId: null,
+        totalSubmissions: 1,
+        avgScore: 90,
+        passRate: 100,
+      },
+    ]);
+  });
+});
+
+describe('AdminService.getAtRiskStaff', () => {
+  it('trả về đủ 3 nhóm rủi ro, mỗi nhóm ánh xạ đúng field', async () => {
+    const prisma = {
+      assignment: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'a1',
+            userId: 'user-1',
+            endAt: new Date('2026-09-10T00:00:00.000Z'),
+            user: { fullName: 'Nguyễn Văn A' },
+            quiz: { title: 'Nghiệp vụ tín dụng' },
+          },
+        ]),
+      },
+      submission: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            userId: 'user-2',
+            score: 40,
+            submittedAt: new Date('2026-09-01T00:00:00.000Z'),
+            user: { fullName: 'Trần Thị B' },
+            quizVersion: { quiz: { title: 'Kế toán' } },
+          },
+        ]),
+      },
+      quizAttempt: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            userId: 'user-3',
+            violationCount: 5,
+            user: { fullName: 'Lê Văn C' },
+            assignment: { quiz: { title: 'CNTT' } },
+          },
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getAtRiskStaff();
+
+    expect(result).toEqual({
+      nearDeadlineNoSubmission: [
+        {
+          userId: 'user-1',
+          userName: 'Nguyễn Văn A',
+          quizTitle: 'Nghiệp vụ tín dụng',
+          endAt: new Date('2026-09-10T00:00:00.000Z'),
+        },
+      ],
+      recentFails: [
+        {
+          userId: 'user-2',
+          userName: 'Trần Thị B',
+          quizTitle: 'Kế toán',
+          score: 40,
+          submittedAt: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      ],
+      highViolations: [
+        {
+          userId: 'user-3',
+          userName: 'Lê Văn C',
+          quizTitle: 'CNTT',
+          violationCount: 5,
+        },
+      ],
+    });
+  });
+});

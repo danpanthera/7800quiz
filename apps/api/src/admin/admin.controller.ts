@@ -362,6 +362,18 @@ export class AdminController {
     return this.adminService.getQuestionAnalytics(query);
   }
 
+  @Get('department-performance')
+  @Roles(...TRAINING_ROLES)
+  getDepartmentPerformance() {
+    return this.adminService.getDepartmentPerformance();
+  }
+
+  @Get('at-risk-staff')
+  @Roles(...TRAINING_ROLES)
+  getAtRiskStaff() {
+    return this.adminService.getAtRiskStaff();
+  }
+
   // ── Users ─────────────────────────────────────────────────────────────
   @Get('users')
   @Roles(...TRAINING_ROLES)

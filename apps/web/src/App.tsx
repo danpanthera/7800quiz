@@ -19,6 +19,8 @@ import QuizzesPage from './pages/QuizzesPage'
 import AssignmentsPage from './pages/AssignmentsPage'
 import ReportsPage from './pages/ReportsPage'
 import ReportTrendsPage from './pages/ReportTrendsPage'
+import DepartmentPerformancePage from './pages/DepartmentPerformancePage'
+import AtRiskStaffPage from './pages/AtRiskStaffPage'
 import AttemptViolationsPage from './pages/AttemptViolationsPage'
 import AcademicYearsPage from './pages/AcademicYearsPage'
 import ClassesPage from './pages/ClassesPage'
@@ -188,6 +190,8 @@ export default function App() {
                   <Route path="manage/assignments" element={<AssignmentsPage />} />
                   <Route path="manage/reports" element={<ReportsPage />} />
                   <Route path="manage/report-trends" element={<ReportTrendsPage />} />
+                  <Route path="manage/department-performance" element={<DepartmentPerformancePage />} />
+                  <Route path="manage/at-risk-staff" element={<AtRiskStaffPage />} />
                   <Route path="manage/attempt-violations" element={<AttemptViolationsPage />} />
                   <Route path="manage/exam-sessions" element={<ExamSessionsPage />} />
                   <Route path="manage/arena" element={<ArenaPage />} />

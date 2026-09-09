@@ -1548,6 +1548,135 @@ export class AdminService {
     );
   }
 
+  // ── So sánh hiệu suất theo chi nhánh/phòng ban (Department Performance) ──
+  // Gộp theo Department của USER làm bài (không phải department trên Assignment —
+  // 1 assignment có thể giao cho cả phòng ban, còn ở đây cần biết TỪNG người thuộc
+  // phòng ban nào để cộng dồn đúng điểm của họ).
+  async getDepartmentPerformance() {
+    const [departments, submissions] = await Promise.all([
+      this.prisma.department.findMany({
+        select: { id: true, name: true, parentId: true },
+      }),
+      this.prisma.submission.findMany({
+        where: { status: 'GRADED', score: { not: null } },
+        select: {
+          score: true,
+          isPassed: true,
+          user: { select: { departmentId: true } },
+        },
+      }),
+    ]);
+
+    const stats = new Map<
+      string,
+      { total: number; passed: number; sumScore: number }
+    >();
+    for (const s of submissions) {
+      const deptId = s.user?.departmentId;
+      if (!deptId || s.score === null) continue;
+      const entry = stats.get(deptId) ?? { total: 0, passed: 0, sumScore: 0 };
+      entry.total += 1;
+      if (s.isPassed) entry.passed += 1;
+      entry.sumScore += s.score;
+      stats.set(deptId, entry);
+    }
+
+    return departments
+      .map((d) => {
+        const s = stats.get(d.id);
+        return {
+          id: d.id,
+          name: d.name,
+          parentId: d.parentId,
+          totalSubmissions: s?.total ?? 0,
+          avgScore: s && s.total > 0 ? Math.round(s.sumScore / s.total) : null,
+          passRate:
+            s && s.total > 0 ? Math.round((s.passed / s.total) * 100) : null,
+        };
+      })
+      .filter((d) => d.totalSubmissions > 0)
+      .sort((a, b) => (a.avgScore ?? 100) - (b.avgScore ?? 100));
+  }
+
+  // ── Cảnh báo sớm cán bộ có nguy cơ trượt/bỏ thi (At-Risk Staff) ──────────
+  // 3 nhóm quy tắc độc lập, không cộng dồn thành 1 "điểm rủi ro" duy nhất — mỗi
+  // nhóm phản ánh 1 kiểu rủi ro khác nhau, admin tự đọc và quyết định can thiệp.
+  async getAtRiskStaff() {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const [nearDeadlineNoSubmission, recentFails, highViolations] =
+      await Promise.all([
+        // Được giao trực tiếp (không phải giao theo phòng ban) và sắp hết hạn
+        // trong 3 ngày tới nhưng chưa có bài nào được chấm.
+        this.prisma.assignment.findMany({
+          where: {
+            status: 'ACTIVE',
+            userId: { not: null },
+            endAt: { gte: now, lte: soon },
+            attempts: { none: { status: 'GRADED' } },
+          },
+          select: {
+            id: true,
+            userId: true,
+            endAt: true,
+            user: { select: { fullName: true } },
+            quiz: { select: { title: true } },
+          },
+        }),
+        // Trượt bài trong 30 ngày gần nhất
+        this.prisma.submission.findMany({
+          where: {
+            status: 'GRADED',
+            isPassed: false,
+            submittedAt: { gte: last30Days },
+          },
+          select: {
+            userId: true,
+            score: true,
+            submittedAt: true,
+            user: { select: { fullName: true } },
+            quizVersion: { select: { quiz: { select: { title: true } } } },
+          },
+          orderBy: { submittedAt: 'desc' },
+        }),
+        // Bị ghi nhận từ 3 vi phạm trở lên trong 1 lần làm bài
+        this.prisma.quizAttempt.findMany({
+          where: { violationCount: { gte: 3 } },
+          select: {
+            userId: true,
+            violationCount: true,
+            user: { select: { fullName: true } },
+            assignment: { select: { quiz: { select: { title: true } } } },
+          },
+          orderBy: { violationCount: 'desc' },
+        }),
+      ]);
+
+    return {
+      nearDeadlineNoSubmission: nearDeadlineNoSubmission.map((a) => ({
+        userId: a.userId,
+        userName: a.user?.fullName ?? null,
+        quizTitle: a.quiz.title,
+        endAt: a.endAt,
+      })),
+      recentFails: recentFails.map((s) => ({
+        userId: s.userId,
+        userName: s.user?.fullName ?? null,
+        quizTitle: s.quizVersion?.quiz?.title ?? null,
+        score: s.score,
+        submittedAt: s.submittedAt,
+      })),
+      highViolations: highViolations.map((a) => ({
+        userId: a.userId,
+        userName: a.user?.fullName ?? null,
+        quizTitle: a.assignment?.quiz?.title ?? null,
+        violationCount: a.violationCount,
+      })),
+    };
+  }
+
   // ── Người dùng (Users) ───────────────────────────────────────────────
   getUsers() {
     return this.prisma.user.findMany({
