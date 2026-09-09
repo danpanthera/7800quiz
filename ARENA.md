@@ -161,6 +161,17 @@ hình (MC lẫn người chơi) chỉ đếm ngược theo mốc server phát ra
 
 ### 3.6 `arena.service.ts` — các điểm mấu chốt về tính đúng đắn/công bằng
 
+- **`createSession`**: ngoài chọn `quizId` (bộ đề có sẵn), MC có thể gửi
+  `mixSlots: {subjectId?, count}[]` (+ `mixName` tuỳ chọn) để **trộn câu hỏi
+  theo tỷ lệ lĩnh vực** — web quy đổi % → số câu bằng thuật toán số dư lớn
+  nhất (giống hệt trang Quản lý bộ đề), server gọi `buildMixedQuiz()`: chọn
+  ngẫu nhiên (Fisher-Yates) đúng số câu mỗi lĩnh vực từ ngân hàng, **sao
+  chép** thành Question mới gắn vào 1 Quiz "vật chứa" tự tạo (giữ nguyên bản
+  gốc trong ngân hàng), xáo trộn lần cuối toàn bộ danh sách đã gộp rồi mới
+  tạo `ArenaRound`. Chỉ được chọn đúng 1 trong 2 cách (`quizId` hoặc
+  `mixSlots`), không cả hai cũng không thiếu cả hai.
+- Số đội tối đa mỗi phiên (đặt trước lẫn tự tham gia): **10** — `TEAM_COLORS`
+  có đúng 10 màu tương ứng.
 - **`recordAnswer`**: `receivedAtMs = Date.now()` được chốt ở **dòng đầu
   tiên** của `handleAnswer` bên `arena.gateway.ts` (trước cả verify JWT) —
   không để độ trễ xử lý (JWT, DB) làm sai lệch thời gian đo. `teamId` được
@@ -250,6 +261,11 @@ Không còn `setInterval` phía trình duyệt — mọi đếm ngược bám th
 reconnect). Nút "Công bố" hoạt động ở **cả 2 chế độ** MANUAL và AUTO (label
 đổi theo ngữ cảnh: "Reveal đáp án" / "Công bố sớm"); nút "Câu tiếp theo" chỉ
 hiện ở MANUAL vì AUTO tự chuyển câu qua server.
+
+**Form tạo phiên**: công tắc "Trộn câu hỏi theo tỷ lệ lĩnh vực" thay Select
+"Bộ đề" bằng: tổng số câu + danh sách lĩnh vực kèm % (validate tổng = 100%,
+xem trước số câu quy đổi/cảnh báo thiếu câu trong ngân hàng) — tái dùng đúng
+thuật toán số dư lớn nhất từ `QuizzesPage.tsx`. "Đội đặt trước" tối đa 10.
 
 ### 5.3 `ArenaPlayerPage.tsx` (người chơi, `/arena/join/:joinCode`)
 
