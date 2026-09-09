@@ -8,9 +8,12 @@
 # qua cửa sổ Connect của Hyper-V sau khi script chạy xong.
 #
 # Nếu đã tải sẵn ISO Ubuntu Server 24.04 (VD ubuntu-24.04.4-live-server-amd64.iso):
-# đặt file đó trực tiếp vào $VmPath (mặc định C:\7800quiz-vm) TRƯỚC khi chạy —
+# đặt file đó trực tiếp vào $VmPath (mặc định D:\7800quiz) TRƯỚC khi chạy —
 # script tự tìm thấy và dùng luôn, không cần Internet cho bước này. Không có sẵn
 # thì script tự tải bản LTS mới nhất về (cần Internet).
+#
+# $VmPath mặc định nằm ở ổ D: — đổi qua tham số -VmPath nếu máy chủ chỉ có ổ C:
+# hoặc muốn dùng ổ/thư mục khác.
 #
 # Chạy với quyền Administrator:
 #   .\prod-setup-vm.ps1 -NetAdapterName "Ethernet"
@@ -21,7 +24,7 @@
 [CmdletBinding()]
 param(
     [string]$VmName         = 'quiz7800-host',
-    [string]$VmPath         = 'C:\7800quiz-vm',
+    [string]$VmPath         = 'D:\7800quiz',
     [Parameter(Mandatory = $true)]
     [string]$NetAdapterName,                  # tên card mạng đang cắm Internet tạm thời — xem Get-NetAdapter
     [string]$SwitchName     = 'LAN-Tam',
@@ -29,7 +32,7 @@ param(
     [int]   $vCPU           = 4,
     [int]   $DiskGB         = 80,
     # Để trống thì script tự tìm file .iso có sẵn ngay trong $VmPath (VD đã tải
-    # tay ubuntu-24.04.4-live-server-amd64.iso vào C:\7800quiz-vm) — chỉ tự tải về
+    # tay ubuntu-24.04.4-live-server-amd64.iso vào D:\7800quiz) — chỉ tự tải về
     # nếu không tìm thấy file nào. Muốn chỉ định đích danh thì truyền tham số này.
     [string]$IsoPath        = ''
 )
