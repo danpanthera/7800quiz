@@ -257,18 +257,24 @@ async function main() {
   console.log('  📝 Quiz: Kiểm tra nghiệp vụ tín dụng cơ bản');
   console.log('  📋 Assignment: nhanvien01 → quiz demo (7 ngày)');
 
-  // ── Sprint 9: Khởi tạo dữ liệu LevelDefinition ────────────────────────────
+  // ── Gamification 2.0: đường cong 12 cấp, tăng dần đều hơn (không còn bước
+  //    nhảy >2x đột ngột giữa 2 cấp liền kề như bảng 10 cấp cũ) — giữ trần
+  //    10.000 XP ở cấp 10 để không đổi tổng công sức "max cấp cũ", thêm cấp
+  //    11-12 làm mục tiêu dài hạn cho người đã đạt trần (tương đương "prestige"
+  //    trong RPG, dịch sang bối cảnh phi giải trí — không reset, chỉ mở thêm).
   const levels = [
-    { level: 1,  name: 'Tân binh',            minXp: 0,     color: '#9E9E9E' },
-    { level: 2,  name: 'Học viên',             minXp: 100,   color: '#4CAF50' },
-    { level: 3,  name: 'Học viên khá',         minXp: 300,   color: '#8BC34A' },
-    { level: 4,  name: 'Học viên giỏi',        minXp: 600,   color: '#03A9F4' },
-    { level: 5,  name: 'Chuyên viên',          minXp: 1000,  color: '#2196F3' },
-    { level: 6,  name: 'Chuyên viên cấp cao',  minXp: 1500,  color: '#3F51B5' },
-    { level: 7,  name: 'Chuyên gia',           minXp: 2500,  color: '#9C27B0' },
-    { level: 8,  name: 'Chuyên gia xuất sắc',  minXp: 4000,  color: '#E91E63' },
-    { level: 9,  name: 'Bậc thầy',             minXp: 6000,  color: '#FF5722' },
-    { level: 10, name: 'Huyền thoại',          minXp: 10000, color: '#FFB300' },
+    { level: 1,  name: 'Tân binh',              minXp: 0,     color: '#9E9E9E' },
+    { level: 2,  name: 'Học viên',               minXp: 150,   color: '#4CAF50' },
+    { level: 3,  name: 'Học viên khá',           minXp: 420,   color: '#8BC34A' },
+    { level: 4,  name: 'Học viên giỏi',          minXp: 850,   color: '#03A9F4' },
+    { level: 5,  name: 'Chuyên viên',            minXp: 1500,  color: '#2196F3' },
+    { level: 6,  name: 'Chuyên viên cấp cao',    minXp: 2400,  color: '#3F51B5' },
+    { level: 7,  name: 'Chuyên gia',             minXp: 3600,  color: '#9C27B0' },
+    { level: 8,  name: 'Chuyên gia xuất sắc',    minXp: 5200,  color: '#E91E63' },
+    { level: 9,  name: 'Bậc thầy',               minXp: 7300,  color: '#FF5722' },
+    { level: 10, name: 'Huyền thoại',            minXp: 10000, color: '#FFB300' },
+    { level: 11, name: 'Cố vấn nghiệp vụ',       minXp: 13500, color: '#00897B' },
+    { level: 12, name: 'Huyền thoại chi nhánh',  minXp: 18000, color: '#5D4037' },
   ];
   for (const l of levels) {
     await prisma.levelDefinition.upsert({
@@ -277,34 +283,106 @@ async function main() {
       create: l,
     });
   }
-  console.log('  🏆 10 LevelDefinition seeded');
+  console.log(`  🏆 ${levels.length} LevelDefinition seeded`);
 
-  // ── Sprint 9: Khởi tạo dữ liệu BadgeDefinition ────────────────────────────
+  // ── Gamification 2.0: BadgeDefinition ──────────────────────────────────
+  // 4 mã cũ (arena_first, speed_demon, department_top, early_bird) được SỬA
+  // LẠI điều kiện — trước đây gắn nhầm sang arena_win_count/pass_count/
+  // submission_count nên trao huy hiệu sai ý nghĩa tên gọi. Giữ nguyên `code`
+  // để không phát sinh huy hiệu trùng lặp cho user đã lỡ được cấp trước đó.
   const badges = [
-    { code: 'first_exam',    name: 'Bước đầu tiên',      description: 'Hoàn thành bài thi đầu tiên',          iconSlug: 'badge_first_exam',    category: 'EXAM'     as const, conditionJson: { type: 'submission_count', value: 1  }, xpBonus: 0   },
-    { code: 'exam_10',       name: 'Siêng năng',          description: 'Hoàn thành 10 bài thi',                iconSlug: 'badge_exam_10',       category: 'EXAM'     as const, conditionJson: { type: 'submission_count', value: 10 }, xpBonus: 50  },
-    { code: 'exam_50',       name: 'Chăm chỉ',            description: 'Hoàn thành 50 bài thi',                iconSlug: 'badge_exam_50',       category: 'EXAM'     as const, conditionJson: { type: 'submission_count', value: 50 }, xpBonus: 200 },
-    { code: 'perfect_score', name: 'Hoàn hảo',            description: 'Đạt điểm tuyệt đối 100%',             iconSlug: 'badge_perfect',       category: 'EXAM'     as const, conditionJson: { type: 'perfect_score',    value: 1  }, xpBonus: 100 },
-    { code: 'pass_streak_5', name: 'Chuỗi thắng',         description: 'Đạt 5 bài liên tiếp',                 iconSlug: 'badge_pass_streak',   category: 'EXAM'     as const, conditionJson: { type: 'consecutive_pass', value: 5  }, xpBonus: 50  },
-    { code: 'streak_7',      name: 'Chuyên cần 7 ngày',   description: 'Học liên tiếp 7 ngày',                 iconSlug: 'badge_streak_7',      category: 'STREAK'   as const, conditionJson: { type: 'streak_days',      value: 7  }, xpBonus: 0   },
-    { code: 'streak_30',     name: 'Kiên trì 30 ngày',    description: 'Học liên tiếp 30 ngày',                iconSlug: 'badge_streak_30',     category: 'STREAK'   as const, conditionJson: { type: 'streak_days',      value: 30 }, xpBonus: 200 },
-    { code: 'arena_first',   name: 'Chiến binh',          description: 'Tham gia đấu trường lần đầu',          iconSlug: 'badge_arena_first',   category: 'ARENA'    as const, conditionJson: { type: 'arena_win_count',  value: 0  }, xpBonus: 0   },
-    { code: 'arena_winner',  name: 'Vô địch',             description: 'Thắng đấu trường lần đầu',             iconSlug: 'badge_arena_winner',  category: 'ARENA'    as const, conditionJson: { type: 'arena_win_count',  value: 1  }, xpBonus: 100 },
-    { code: 'arena_5wins',   name: 'Đấu sĩ',              description: 'Thắng 5 lần đấu trường',               iconSlug: 'badge_arena_5wins',   category: 'ARENA'    as const, conditionJson: { type: 'arena_win_count',  value: 5  }, xpBonus: 300 },
-    { code: 'speed_demon',   name: 'Thần tốc',            description: 'Trả lời đúng nhanh nhất 3 lần',        iconSlug: 'badge_speed',         category: 'ARENA'    as const, conditionJson: { type: 'arena_win_count',  value: 3  }, xpBonus: 50  },
-    { code: 'level_5',       name: 'Chuyên viên',         description: 'Đạt cấp độ 5',                        iconSlug: 'badge_level_5',       category: 'LEVEL'    as const, conditionJson: { type: 'level_reached',    value: 5  }, xpBonus: 0   },
-    { code: 'level_10',      name: 'Huyền thoại',         description: 'Đạt cấp độ 10 — đỉnh cao',            iconSlug: 'badge_level_10',      category: 'LEVEL'    as const, conditionJson: { type: 'level_reached',    value: 10 }, xpBonus: 500 },
-    { code: 'department_top',name: 'Ngôi sao phòng ban',  description: 'Đứng đầu bảng xếp hạng phòng ban',    iconSlug: 'badge_dept_top',      category: 'PROGRESS' as const, conditionJson: { type: 'pass_count',       value: 20 }, xpBonus: 0   },
-    { code: 'early_bird',    name: 'Người tiên phong',    description: 'Là 1 trong 10 người đầu hoàn thành bài', iconSlug: 'badge_early_bird',  category: 'PROGRESS' as const, conditionJson: { type: 'submission_count', value: 5  }, xpBonus: 0   },
+    // EXAM — giữ nguyên, đã đúng từ đầu
+    { code: 'first_exam',    name: 'Bước đầu tiên',    description: 'Hoàn thành bài thi đầu tiên',              iconSlug: 'badge_first_exam',    category: 'EXAM'  as const, conditionJson: { type: 'submission_count', value: 1  }, xpBonus: 0   },
+    { code: 'exam_10',       name: 'Siêng năng',        description: 'Hoàn thành 10 bài thi',                    iconSlug: 'badge_exam_10',       category: 'EXAM'  as const, conditionJson: { type: 'submission_count', value: 10 }, xpBonus: 50  },
+    { code: 'exam_50',       name: 'Chăm chỉ',          description: 'Hoàn thành 50 bài thi',                    iconSlug: 'badge_exam_50',       category: 'EXAM'  as const, conditionJson: { type: 'submission_count', value: 50 }, xpBonus: 200 },
+    { code: 'perfect_score', name: 'Hoàn hảo',          description: 'Đạt điểm tuyệt đối 100%',                  iconSlug: 'badge_perfect',       category: 'EXAM'  as const, conditionJson: { type: 'perfect_score',    value: 1  }, xpBonus: 100 },
+    { code: 'pass_streak_5', name: 'Chuỗi thắng',       description: 'Đạt 5 bài liên tiếp',                      iconSlug: 'badge_pass_streak',   category: 'EXAM'  as const, conditionJson: { type: 'consecutive_pass', value: 5  }, xpBonus: 50  },
+
+    // STREAK — mở rộng thêm mốc, cộng "Trở lại sau gián đoạn"
+    { code: 'streak_3',      name: 'Khởi động',             description: 'Hoạt động liên tiếp 3 ngày',               iconSlug: 'badge_streak_3',   category: 'STREAK' as const, conditionJson: { type: 'streak_days',    value: 3  }, xpBonus: 0   },
+    { code: 'streak_7',      name: 'Chuyên cần 7 ngày',     description: 'Hoạt động liên tiếp 7 ngày',               iconSlug: 'badge_streak_7',   category: 'STREAK' as const, conditionJson: { type: 'streak_days',    value: 7  }, xpBonus: 0   },
+    { code: 'streak_30',     name: 'Kiên trì 30 ngày',      description: 'Hoạt động liên tiếp 30 ngày',              iconSlug: 'badge_streak_30',  category: 'STREAK' as const, conditionJson: { type: 'streak_days',    value: 30 }, xpBonus: 200 },
+    { code: 'streak_90',     name: 'Bền bỉ 90 ngày',        description: 'Hoạt động liên tiếp 90 ngày',              iconSlug: 'badge_streak_90',  category: 'STREAK' as const, conditionJson: { type: 'streak_days',    value: 90 }, xpBonus: 800 },
+    { code: 'activity_return', name: 'Trở lại sau gián đoạn', description: 'Quay lại hoạt động sau ≥14 ngày vắng mặt', iconSlug: 'badge_return',  category: 'STREAK' as const, conditionJson: { type: 'activity_return', value: 14 }, xpBonus: 20 },
+
+    // ARENA — sửa arena_first, thêm 2 huy hiệu mới
+    { code: 'arena_first',   name: 'Chiến binh',        description: 'Tham gia Đấu trường lần đầu',                  iconSlug: 'badge_arena_first',  category: 'ARENA' as const, conditionJson: { type: 'arena_participate_count', value: 1 }, xpBonus: 0   },
+    { code: 'arena_winner',  name: 'Vô địch',           description: 'Thắng Đấu trường lần đầu',                     iconSlug: 'badge_arena_winner', category: 'ARENA' as const, conditionJson: { type: 'arena_win_count', value: 1 }, xpBonus: 100 },
+    { code: 'arena_5wins',   name: 'Đấu sĩ',            description: 'Thắng 5 lần Đấu trường',                       iconSlug: 'badge_arena_5wins',  category: 'ARENA' as const, conditionJson: { type: 'arena_win_count', value: 5 }, xpBonus: 300 },
+    { code: 'arena_win_streak_5', name: 'Bất bại Đấu trường', description: 'Thắng 5 trận liên tiếp, không thua giữa chừng', iconSlug: 'badge_win_streak', category: 'ARENA' as const, conditionJson: { type: 'arena_win_streak', value: 5 }, xpBonus: 400 },
+    { code: 'arena_early_joiner', name: 'Người mở đường', description: 'Thuộc 10 người đầu tham gia 1 phiên Đấu trường mới', iconSlug: 'badge_pathfinder', category: 'ARENA' as const, conditionJson: { type: 'arena_early_joiner', value: 1, topN: 10 }, xpBonus: 40 },
+
+    // SPEED — mới, "speed_demon" giữ code cũ nhưng đổi hẳn sang điều kiện tốc độ thật
+    { code: 'speed_reflex',  name: 'Phản xạ nhanh',     description: 'Trả lời đúng dưới 5 giây, 10 lần',             iconSlug: 'badge_reflex',    category: 'SPEED' as const, conditionJson: { type: 'fast_answer_count', value: 10, maxMs: 5000, scope: 'both' }, xpBonus: 30  },
+    { code: 'speed_demon',   name: 'Tia chớp',          description: 'Trả lời đúng dưới 3 giây, 15 lần',             iconSlug: 'badge_speed',     category: 'SPEED' as const, conditionJson: { type: 'fast_answer_count', value: 15, maxMs: 3000, scope: 'both' }, xpBonus: 80  },
+    { code: 'speed_light',   name: 'Tốc độ ánh sáng',   description: 'Trả lời đúng dưới 1 giây trong Đấu trường, 5 lần (độ chính xác cả phiên ≥70%)', iconSlug: 'badge_lightning', category: 'SPEED' as const, conditionJson: { type: 'fast_answer_count', value: 5, maxMs: 1000, scope: 'arena', minAccuracy: 70 }, xpBonus: 200 },
+    { code: 'flawless_speed', name: 'Song toàn',        description: '1 phiên Đấu trường: tốc độ trung bình dưới 6 giây VÀ không sai câu nào', iconSlug: 'badge_flawless_speed', category: 'SPEED' as const, conditionJson: { type: 'flawless_session_speed', value: 1, maxMs: 6000 }, xpBonus: 150 },
+
+    // LEVEL — giữ nguyên
+    { code: 'level_5',       name: 'Chuyên viên',       description: 'Đạt cấp độ 5',                                 iconSlug: 'badge_level_5',  category: 'LEVEL' as const, conditionJson: { type: 'level_reached', value: 5 },  xpBonus: 0   },
+    { code: 'level_10',      name: 'Huyền thoại',       description: 'Đạt cấp độ 10',                                iconSlug: 'badge_level_10', category: 'LEVEL' as const, conditionJson: { type: 'level_reached', value: 10 }, xpBonus: 500 },
+
+    // MASTERY — cột mốc XP trọn đời (per-subject mastery seed động ở dưới)
+    { code: 'lifetime_xp_1000',  name: 'Học không ngừng I',   description: 'Tổng XP đạt 1.000',   iconSlug: 'badge_lifetime_1', category: 'MASTERY' as const, conditionJson: { type: 'lifetime_xp', value: 1000  }, xpBonus: 0    },
+    { code: 'lifetime_xp_5000',  name: 'Học không ngừng II',  description: 'Tổng XP đạt 5.000',   iconSlug: 'badge_lifetime_2', category: 'MASTERY' as const, conditionJson: { type: 'lifetime_xp', value: 5000  }, xpBonus: 200  },
+    { code: 'lifetime_xp_20000', name: 'Học không ngừng III', description: 'Tổng XP đạt 20.000',  iconSlug: 'badge_lifetime_3', category: 'MASTERY' as const, conditionJson: { type: 'lifetime_xp', value: 20000 }, xpBonus: 1000 },
+
+    // PROGRESS — sửa department_top/early_bird, thêm tiến bộ cá nhân + "Toàn diện"
+    { code: 'department_top', name: 'Ngôi sao phòng ban', description: 'Thuộc top 3 XP cao nhất phòng ban',            iconSlug: 'badge_dept_top',   category: 'PROGRESS' as const, conditionJson: { type: 'department_rank', value: 3 }, xpBonus: 100 },
+    { code: 'early_bird',     name: 'Người tiên phong',   description: 'Thuộc 10 người đầu hoàn thành 1 bộ đề mới',   iconSlug: 'badge_early_bird', category: 'PROGRESS' as const, conditionJson: { type: 'first_n_to_complete_quiz', value: 1, topN: 10 }, xpBonus: 30 },
+    { code: 'first_time_pass', name: 'Đạt ngay lần đầu', description: 'Pass ngay ở lần làm đầu tiên, 3 lần',          iconSlug: 'badge_first_try',  category: 'PROGRESS' as const, conditionJson: { type: 'first_time_pass', value: 3 }, xpBonus: 60 },
+    { code: 'improved_retake', name: 'Tiến bộ vượt bậc', description: 'Điểm làm lại cao hơn lần đầu ít nhất 20 điểm %', iconSlug: 'badge_improve',  category: 'PROGRESS' as const, conditionJson: { type: 'improved_retake', value: 1, minDeltaPoints: 20 }, xpBonus: 60 },
+    { code: 'all_badges',    name: 'Toàn diện',         description: 'Đã đạt mọi huy hiệu công khai khác',           iconSlug: 'badge_platinum',  category: 'PROGRESS' as const, conditionJson: { type: 'all_badges_except', value: 1 }, xpBonus: 1000 },
+
+    // SPECIAL — ẩn (???), chỉ mang tính bất ngờ tích cực
+    { code: 'flawless_program', name: '??? Không một câu sai', description: 'Mọi bộ đề đang mở đều đạt 100% điểm', iconSlug: 'badge_secret_flawless', category: 'SPECIAL' as const, conditionJson: { type: 'flawless_program', value: 1 }, xpBonus: 1500 },
+    { code: 'night_owl',        name: '??? Ca đêm',           description: 'Hoàn thành bài thi ngoài giờ hành chính, 5 lần', iconSlug: 'badge_secret_night', category: 'SPECIAL' as const, conditionJson: { type: 'night_owl', value: 5 }, xpBonus: 50 },
   ];
   for (const b of badges) {
     await prisma.badgeDefinition.upsert({
       where: { code: b.code },
-      update: { name: b.name, description: b.description, iconSlug: b.iconSlug, conditionJson: b.conditionJson, xpBonus: b.xpBonus },
+      update: { name: b.name, description: b.description, iconSlug: b.iconSlug, category: b.category, conditionJson: b.conditionJson, xpBonus: b.xpBonus },
       create: b,
     });
   }
-  console.log('  🏅 15 BadgeDefinition seeded');
+  console.log(`  🏅 ${badges.length} BadgeDefinition seeded`);
+
+  // ── MASTERY theo từng lĩnh vực (Subject) — sinh động theo dữ liệu thật,
+  //    không hard-code tên lĩnh vực. Chạy lại seed sau khi thêm Subject mới
+  //    sẽ tự bổ sung huy hiệu tương ứng (upsert, không tạo trùng).
+  const subjects = await prisma.subject.findMany({ select: { id: true, name: true } });
+  const slugify = (s: string) =>
+    s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/đ/gi, 'd')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  for (const subject of subjects) {
+    const code = `subject_mastery_${slugify(subject.name)}`;
+    await prisma.badgeDefinition.upsert({
+      where: { code },
+      update: {
+        name: `Chuyên gia ${subject.name}`,
+        description: `Đạt trung bình ≥90% các bài thuộc lĩnh vực "${subject.name}" (tối thiểu 3 bài, dùng bộ đề mới nhất)`,
+        iconSlug: 'badge_subject_mastery',
+        category: 'MASTERY',
+        conditionJson: { type: 'subject_mastery', subjectId: subject.id, minAvgScore: 90, minCount: 3, value: 1 },
+        xpBonus: 150,
+      },
+      create: {
+        code,
+        name: `Chuyên gia ${subject.name}`,
+        description: `Đạt trung bình ≥90% các bài thuộc lĩnh vực "${subject.name}" (tối thiểu 3 bài, dùng bộ đề mới nhất)`,
+        iconSlug: 'badge_subject_mastery',
+        category: 'MASTERY',
+        conditionJson: { type: 'subject_mastery', subjectId: subject.id, minAvgScore: 90, minCount: 3, value: 1 },
+        xpBonus: 150,
+      },
+    });
+  }
+  console.log(`  🎓 ${subjects.length} huy hiệu "Chuyên gia lĩnh vực" seeded theo Subject hiện có`);
 }
 
 main()

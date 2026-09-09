@@ -42,6 +42,9 @@ const CATEGORY_COLOR: Record<string, string> = {
   ARENA: 'red',
   PROGRESS: 'green',
   LEVEL: 'purple',
+  SPEED: 'gold',
+  MASTERY: 'cyan',
+  SPECIAL: 'magenta',
 }
 
 const PERIOD_OPTIONS = [

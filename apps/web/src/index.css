@@ -1126,10 +1126,66 @@ select {
 .quiz-review-question {
   border-radius: 8px !important;
   border: 1px solid #dfe5ec !important;
+  scroll-margin-top: calc(var(--header-height) + var(--quiz-review-nav-h, 140px) + 36px);
 }
 
 .quiz-review-question.is-wrong {
   border-color: #ffccc7 !important;
+}
+
+.quiz-review-nav {
+  max-width: 720px;
+  margin: 0 auto 20px;
+  padding: 16px;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+  background: #fff;
+  position: sticky;
+  top: calc(var(--header-height) + 20px);
+  z-index: 5;
+}
+
+.quiz-review-nav-title.ant-typography {
+  display: block;
+  font-size: 12px;
+  color: #596b7d;
+  margin-bottom: 10px;
+}
+
+.quiz-review-nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quiz-review-nav-item.ant-btn {
+  width: 36px;
+  height: 36px;
+  padding-inline: 0;
+  font-weight: 700;
+  border: none;
+  box-shadow: none;
+  color: #fff;
+}
+
+.quiz-review-nav-item.ant-btn.is-correct {
+  background: #27AE60;
+}
+
+.quiz-review-nav-item.ant-btn.is-correct:hover,
+.quiz-review-nav-item.ant-btn.is-correct:focus {
+  background: #219150;
+  color: #fff;
+}
+
+.quiz-review-nav-item.ant-btn.is-wrong {
+  background: #E53935;
+}
+
+.quiz-review-nav-item.ant-btn.is-wrong:hover,
+.quiz-review-nav-item.ant-btn.is-wrong:focus {
+  background: #c62828;
+  color: #fff;
 }
 
 .quiz-review-heading {

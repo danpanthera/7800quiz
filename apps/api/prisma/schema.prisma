@@ -310,6 +310,12 @@ model QuizAttemptAnswer {
   // này. Đã chốt thì không cho sửa nữa. Null = chưa chốt (chế độ thi thường).
   lockedAt          DateTime? @map("locked_at") @db.Timestamptz(3)
   isCorrect         Boolean?  @map("is_correct")
+  // Thời gian (ms) từ mốc lưu tự động GẦN NHẤT trước đó (hoặc lúc bắt đầu làm
+  // bài nếu là câu đầu tiên) tới lúc câu này LẦN ĐẦU có đáp án khác rỗng — do
+  // SERVER tính tại thời điểm gọi saveAnswers(), không tin đồng hồ client. Chỉ
+  // ghi 1 lần, không cập nhật lại khi người dùng đổi ý — dùng cho huy hiệu tốc
+  // độ ở chế độ thi thường (xem gamification.service.ts, condition fast_answer_count).
+  answeredMs        Int?      @map("answered_ms")
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
@@ -651,17 +657,22 @@ model CanBo {
 // ─── Sprint 9: Game hoá ────────────────────────────────────────────────────
 
 model UserProgress {
-  id               String    @id @default(uuid())
-  userId           String    @unique @map("user_id")
-  xp               Int       @default(0)
-  level            Int       @default(1)
-  currentStreak    Int       @default(0) @map("current_streak")
-  maxStreak        Int       @default(0) @map("max_streak")
-  totalSubmissions Int       @default(0) @map("total_submissions")
-  totalPassed      Int       @default(0) @map("total_passed")
-  totalArenaWins   Int       @default(0) @map("total_arena_wins")
-  lastActivityDate DateTime? @map("last_activity_date") @db.Date
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                      String    @id @default(uuid())
+  userId                  String    @unique @map("user_id")
+  xp                      Int       @default(0)
+  level                   Int       @default(1)
+  currentStreak           Int       @default(0) @map("current_streak")
+  maxStreak               Int       @default(0) @map("max_streak")
+  totalSubmissions        Int       @default(0) @map("total_submissions")
+  totalPassed             Int       @default(0) @map("total_passed")
+  totalArenaWins          Int       @default(0) @map("total_arena_wins")
+  lastActivityDate        DateTime? @map("last_activity_date") @db.Date
+  // Phao cứu chuỗi ngày (kiểu Duolingo streak freeze) — tự động dùng 1 phao khi
+  // nghỉ ĐÚNG 1 ngày để giữ nguyên currentStreak thay vì reset về 1. Cấp lại 1
+  // phao mỗi 30 ngày, dự trữ tối đa 2. Xem updateActivity() trong gamification.service.ts.
+  streakFreezeCount       Int       @default(2) @map("streak_freeze_count")
+  lastStreakFreezeGrantAt DateTime? @map("last_streak_freeze_grant_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   xpTransactions XpTransaction[]
@@ -733,6 +744,9 @@ enum BadgeCategory {
   ARENA
   PROGRESS
   LEVEL
+  SPEED // tốc độ trả lời — Đấu trường và/hoặc bài thi thường
+  MASTERY // thành thạo theo lĩnh vực (subjectId) + cột mốc XP trọn đời
+  SPECIAL // huy hiệu ẩn (???), mang tính bất ngờ tích cực
 
   @@map("badge_category")
 }

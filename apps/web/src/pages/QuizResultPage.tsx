@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Card, Result, Skeleton, Space, Tag, Typography } from 'antd'
 import { CheckCircleOutlined, CloseCircleOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons'
@@ -58,6 +58,21 @@ export default function QuizResultPage() {
     if (resultQuery.data?.isPassed === true) void fireConfetti()
   }, [resultQuery.data?.id, resultQuery.data?.isPassed])
 
+  // Bảng điều hướng có chiều cao thay đổi theo số câu hỏi (wrap nhiều dòng) — đo động
+  // để .quiz-review-question tính đúng scroll-margin-top, không bị chính bảng nav (sticky) che khi cuộn tới.
+  const navRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = navRef.current
+    if (!el) return undefined
+    const updateNavHeight = () => {
+      document.documentElement.style.setProperty('--quiz-review-nav-h', `${el.offsetHeight}px`)
+    }
+    updateNavHeight()
+    const observer = new ResizeObserver(updateNavHeight)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [resultQuery.data])
+
   if (resultQuery.isLoading) return <Skeleton active paragraph={{ rows: 6 }} />
   if (resultQuery.isError || !resultQuery.data) {
     return <Result status="error" title="Không thể tải kết quả" extra={<Button onClick={() => resultQuery.refetch()}>Thử lại</Button>} />
@@ -68,6 +83,10 @@ export default function QuizResultPage() {
   const isPassed = result.isPassed === true
   const correctCount = result.questions.filter((q) => q.isCorrect).length
   const totalCount = result.questions.length
+
+  const scrollToQuestion = (questionId: string) => {
+    document.getElementById(`quiz-review-q-${questionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <div className="quiz-result">
@@ -109,9 +128,26 @@ export default function QuizResultPage() {
       {totalCount > 0 && (
         <div className="quiz-review-list">
           <Title level={4} style={{ maxWidth: 720, margin: '0 auto 16px' }}>Xem lại bài làm</Title>
+
+          <div className="quiz-review-nav" ref={navRef} aria-label="Điều hướng nhanh câu hỏi">
+            <Text className="quiz-review-nav-title">Điều hướng nhanh — xanh: đúng, đỏ: sai</Text>
+            <div className="quiz-review-nav-list">
+              {result.questions.map((q, index) => (
+                <Button
+                  key={q.id}
+                  className={`quiz-review-nav-item ${q.isCorrect ? 'is-correct' : 'is-wrong'}`}
+                  aria-label={`Đến câu ${index + 1}, ${q.isCorrect ? 'đúng' : 'sai'}`}
+                  onClick={() => scrollToQuestion(q.id)}
+                >
+                  {index + 1}
+                </Button>
+              ))}
+            </div>
+          </div>
+
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             {result.questions.map((q, index) => (
-              <Card key={q.id} className={`quiz-review-question ${q.isCorrect ? 'is-correct' : 'is-wrong'}`}>
+              <Card key={q.id} id={`quiz-review-q-${q.id}`} className={`quiz-review-question ${q.isCorrect ? 'is-correct' : 'is-wrong'}`}>
                 <div className="quiz-review-heading">
                   <Text strong>Câu {index + 1}</Text>
                   <Tag color={q.isCorrect ? 'success' : 'error'} icon={q.isCorrect ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>

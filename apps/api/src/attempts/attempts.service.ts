@@ -341,7 +341,19 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       (answer) => !lockedQuestionIds.has(answer.questionId),
     );
 
+    // Mốc "checkpoint" để tính answeredMs — thời điểm lưu tự động GẦN NHẤT
+    // trước lượt này, hoặc lúc bắt đầu làm bài nếu đây là lượt lưu đầu tiên.
+    // Dùng đúng đồng hồ SERVER, không tin lastSavedAt/thời gian phía client.
+    const previousCheckpoint = attempt.lastSavedAt ?? attempt.startedAt;
+    const existingAnswerByQuestionId = new Map(
+      attempt.answers.map((answer) => [answer.questionId, answer]),
+    );
+
     const lastSavedAt = new Date();
+    const elapsedSincePrevious = Math.max(
+      0,
+      lastSavedAt.getTime() - previousCheckpoint.getTime(),
+    );
     const saveResult = await this.prisma.$transaction(async (transaction) => {
       const updated = await transaction.quizAttempt.updateMany({
         where: {
@@ -366,8 +378,14 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       }
 
       await Promise.all(
-        answersToWrite.map((answer) =>
-          transaction.quizAttemptAnswer.upsert({
+        answersToWrite.map((answer) => {
+          const existing = existingAnswerByQuestionId.get(answer.questionId);
+          const wasEmpty =
+            !existing ||
+            this.toSelectedOptionIds(existing.selectedOptionIds).length === 0;
+          const isFirstAnswer = wasEmpty && answer.selectedOptionIds.length > 0;
+
+          return transaction.quizAttemptAnswer.upsert({
             where: {
               attemptId_questionId: {
                 attemptId: attempt.id,
@@ -378,12 +396,14 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
               attemptId: attempt.id,
               questionId: answer.questionId,
               selectedOptionIds: answer.selectedOptionIds,
+              ...(isFirstAnswer ? { answeredMs: elapsedSincePrevious } : {}),
             },
             update: {
               selectedOptionIds: answer.selectedOptionIds,
+              ...(isFirstAnswer ? { answeredMs: elapsedSincePrevious } : {}),
             },
-          }),
-        ),
+          });
+        }),
       );
 
       const savedAttempt = await transaction.quizAttempt.findUniqueOrThrow({

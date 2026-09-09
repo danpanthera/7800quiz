@@ -327,6 +327,8 @@ describe('AttemptsService', () => {
         findFirst: jest.fn().mockResolvedValue({
           id: attemptId,
           status: AttemptStatus.IN_PROGRESS,
+          startedAt: new Date('2026-09-03T08:00:00.000Z'),
+          lastSavedAt: new Date('2026-09-03T08:02:00.000Z'),
           deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
           answerRevision: 1,
           quizVersion: { snapshot, quiz: { instantFeedback: true } },
