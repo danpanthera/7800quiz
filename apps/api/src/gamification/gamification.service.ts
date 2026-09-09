@@ -868,20 +868,27 @@ export class GamificationService {
   ) {
     if (period === 'all' && !departmentId) {
       // Dùng UserProgress trực tiếp
-      const rows = await this.prisma.userProgress.findMany({
-        orderBy: { xp: 'desc' },
-        take: 100,
-        include: {
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              departmentId: true,
-              department: { select: { name: true } },
+      const [rows, levelDefs] = await Promise.all([
+        this.prisma.userProgress.findMany({
+          orderBy: { xp: 'desc' },
+          take: 100,
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                departmentId: true,
+                department: { select: { name: true } },
+              },
             },
           },
-        },
-      });
+        }),
+        this.prisma.levelDefinition.findMany({
+          select: { level: true, name: true },
+        }),
+      ]);
+      // Map cấp độ (số) sang tên cấp để hiển thị, vd 2 -> "Học viên"
+      const levelNameByLevel = new Map(levelDefs.map((l) => [l.level, l.name]));
       return rows
         .filter((r) => !departmentId || r.user.departmentId === departmentId)
         .map((r, i) => ({
@@ -891,6 +898,7 @@ export class GamificationService {
           department: r.user.department?.name,
           xp: r.xp,
           level: r.level,
+          levelName: levelNameByLevel.get(r.level) ?? null,
         }));
     }
 

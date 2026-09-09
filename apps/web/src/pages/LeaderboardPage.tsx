@@ -15,6 +15,7 @@ interface LeaderboardRow {
   department?: string
   xp: number
   level: number
+  levelName?: string | null
 }
 
 const MEDAL_COLOR: Record<number, string> = { 1: '#FFD700', 2: '#C0C0C0', 3: '#CD7F32' }
@@ -46,7 +47,12 @@ export default function LeaderboardPage() {
         r.userId === user?.id ? <Text strong>{v} <Tag color="green">Bạn</Tag></Text> : v,
     },
     { title: 'Phòng ban', dataIndex: 'department', render: (v?: string) => v ?? '—' },
-    { title: 'Cấp độ', dataIndex: 'level', width: 100 },
+    {
+      title: 'Cấp độ',
+      dataIndex: 'levelName',
+      width: 140,
+      render: (levelName: string | null | undefined, r: LeaderboardRow) => levelName ?? `Cấp ${r.level}`,
+    },
     { title: 'XP', dataIndex: 'xp', width: 100, sorter: (a: LeaderboardRow, b: LeaderboardRow) => a.xp - b.xp },
   ]
 
@@ -85,7 +91,7 @@ export default function LeaderboardPage() {
         cardBadge={(r) => (r.userId === user?.id ? <Tag color="green">Bạn</Tag> : null)}
         cardMeta={[
           { label: 'Phòng ban', render: (r) => r.department ?? '—' },
-          { label: 'Cấp độ', render: (r) => r.level },
+          { label: 'Cấp độ', render: (r) => r.levelName ?? `Cấp ${r.level}` },
           { label: 'XP', render: (r) => r.xp },
         ]}
         emptyText="Chưa có dữ liệu xếp hạng"

@@ -14,6 +14,7 @@ type LeaderboardRow = {
   department?: string
   xp: number
   level?: number
+  levelName?: string | null
 }
 
 type BadgeStat = {
@@ -102,8 +103,9 @@ export default function AchievementsPage() {
     },
     {
       title: 'Cấp',
-      dataIndex: 'level',
-      render: (level?: number) => level ? <Tag color="blue">Cấp {level}</Tag> : '—',
+      dataIndex: 'levelName',
+      render: (levelName: string | null | undefined, row: LeaderboardRow) =>
+        row.level ? <Tag color="blue">{levelName ?? `Cấp ${row.level}`}</Tag> : '—',
     },
   ]
 
@@ -170,7 +172,7 @@ export default function AchievementsPage() {
             cardMeta={[
               { label: 'Đơn vị', render: (row) => row.department ?? '—' },
               { label: 'XP', render: (row) => <Tag color="gold">⭐ {row.xp.toLocaleString()} XP</Tag> },
-              { label: 'Cấp', render: (row) => row.level ? <Tag color="blue">Cấp {row.level}</Tag> : '—' },
+              { label: 'Cấp', render: (row) => row.level ? <Tag color="blue">{row.levelName ?? `Cấp ${row.level}`}</Tag> : '—' },
             ]}
           />
         </Card>
