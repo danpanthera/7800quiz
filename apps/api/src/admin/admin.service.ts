@@ -869,12 +869,21 @@ export class AdminService {
     const quiz = await this.prisma.quiz.findUniqueOrThrow({
       where: { id },
       include: {
-        _count: { select: { assignments: true, examSessions: true } },
+        _count: {
+          select: { assignments: true, examSessions: true, tournaments: true },
+        },
       },
     });
     if (quiz._count.assignments > 0 || quiz._count.examSessions > 0)
       throw new BadRequestException(
         'Không thể xóa bộ đề đã được phân công hoặc có đợt thi. Hãy xóa phân công trước.',
+      );
+    // tournaments_quiz_id_fkey là RESTRICT (không cascade) — không kiểm tra trước
+    // thì lệnh xóa bên dưới ném lỗi ràng buộc khóa ngoại (P2003) không được bắt,
+    // NestJS trả 500 chung chung khiến giao diện tưởng như "không có phản hồi gì".
+    if (quiz._count.tournaments > 0)
+      throw new BadRequestException(
+        'Không thể xóa bộ đề đang được dùng cho giải đấu loại trực tiếp. Hãy xóa giải đấu đó trước.',
       );
 
     // Xóa lan truyền (cascade) các phiên Arena (ArenaTeam/ArenaRound/ArenaBuzz đã được DB cascade)
@@ -900,6 +909,13 @@ export class AdminService {
           where: { id: { in: submissionIds } },
         });
       }
+      // quiz_attempts_quiz_version_id_fkey là RESTRICT — xóa trước khi xóa
+      // quiz_versions, không thì vỡ ràng buộc khóa ngoại. Đồng bộ với cách xử
+      // lý submissions ở trên: xóa bộ đề là xóa luôn lịch sử làm bài liên
+      // quan (DB tự cascade quiz_attempt_answers/attempt_violations).
+      await this.prisma.quizAttempt.deleteMany({
+        where: { quizVersionId: { in: versionIds } },
+      });
       await this.prisma.quizVersion.deleteMany({ where: { quizId: id } });
     }
     return this.prisma.quiz.delete({ where: { id } });
