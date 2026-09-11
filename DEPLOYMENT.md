@@ -660,6 +660,7 @@ curl -s http://127.0.0.1:8080/api/health   # kiểm tra bỏ qua HTTPS/chứng c
 | `scripts/prod-setup-vm.ps1` | `D:\quiz\scripts\` (Windows) | Dựng máy ảo Ubuntu tự động (Giai đoạn 2.2) |
 | `scripts/prod-setup-app.sh` | Mã nguồn (trong VM) | Cài Docker + build + khởi tạo ứng dụng tự động (Giai đoạn 2.3) |
 | `scripts/prod-set-static-ip.sh` | Mã nguồn (trong VM) | Đặt IP tĩnh qua netplan tự động (Giai đoạn 3.2) |
+| `scripts/migrate-docker-dataroot.sh` | Mã nguồn (trong VM) | Chuyển dữ liệu Docker (Postgres...) sang ổ SCSI mới — chạy 1 lần khi ổ hệ điều hành đang gắn IDE |
 | `docker-compose.prod.yml` | `/opt/7800quiz` (trong VM) | Cấu hình toàn bộ hệ thống production |
 | `Caddyfile` | `/opt/7800quiz` (trong VM) | Cấu hình reverse proxy + HTTPS nội bộ (`tls internal`) |
 | `.env.prod` | `/opt/7800quiz` (trong VM) | **Bí mật** — mật khẩu DB, khoá JWT (không commit, không chia sẻ qua kênh không an toàn) |
