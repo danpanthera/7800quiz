@@ -273,26 +273,19 @@ Rename-VMSwitch -Name "LAN-Tam" -NewName "LAN-NoiBo"
 
 ### 3.2. Đặt IP tĩnh trong Ubuntu
 
-Trong console VM (Hyper-V Connect, hoặc SSH nếu mạng nội bộ đã thông), sửa file netplan (tên file có thể khác, xem `ls /etc/netplan/`):
-
-```yaml
-# /etc/netplan/50-cloud-init.yaml (ví dụ)
-network:
-  version: 2
-  ethernets:
-    eth0:
-      addresses: [10.20.1.50/24]     # đổi theo dải IP ngân hàng cấp
-      routes:
-        - to: default
-          via: 10.20.1.1
-      nameservers:
-        addresses: [10.20.1.2]
-```
+Trong console VM (Hyper-V Connect, hoặc SSH nếu mạng nội bộ đã thông), chạy script có sẵn — tự viết đúng file netplan, tự sao lưu bản cũ, tự áp dụng. Không sửa tay file YAML nhiều dòng nhiều ký tự đặc biệt (`#`, `:`, `[`, thụt lề) — rất dễ gõ sai qua console Hyper-V Connect (không dán clipboard được):
 
 ```bash
-sudo netplan apply
-ip addr show eth0    # xác nhận IP đã áp dụng
+cd /opt/7800quiz
+sudo bash scripts/prod-set-static-ip.sh <IP/CIDR> <gateway> <dns>
 ```
+
+Ví dụ — 3 giá trị này lấy từ `ipconfig /all` trên Windows (đúng card đang có IP thật của máy chủ), **không đoán**:
+```bash
+sudo bash scripts/prod-set-static-ip.sh 10.20.1.50/24 10.20.1.1 10.20.1.2
+```
+
+Script mặc định dùng card `eth0` — nếu `ip addr` cho thấy tên khác thì thêm tham số thứ 4. Chạy xong script tự in lại `ip addr show` để xác nhận ngay; chạy lại (VD gõ nhầm) vẫn an toàn, file cũ tự được sao lưu kèm thời gian trước khi ghi đè.
 
 Ghi lại IP này — dùng để đăng ký DNS ở bước 3.6.
 
@@ -636,6 +629,7 @@ curl -s http://127.0.0.1:8080/api/health   # kiểm tra bỏ qua HTTPS/chứng c
 |---|---|---|
 | `scripts/prod-setup-vm.ps1` | `D:\quiz\scripts\` (Windows) | Dựng máy ảo Ubuntu tự động (Giai đoạn 2.2) |
 | `scripts/prod-setup-app.sh` | Mã nguồn (trong VM) | Cài Docker + build + khởi tạo ứng dụng tự động (Giai đoạn 2.3) |
+| `scripts/prod-set-static-ip.sh` | Mã nguồn (trong VM) | Đặt IP tĩnh qua netplan tự động (Giai đoạn 3.2) |
 | `docker-compose.prod.yml` | `/opt/7800quiz` (trong VM) | Cấu hình toàn bộ hệ thống production |
 | `Caddyfile` | `/opt/7800quiz` (trong VM) | Cấu hình reverse proxy + HTTPS nội bộ (`tls internal`) |
 | `.env.prod` | `/opt/7800quiz` (trong VM) | **Bí mật** — mật khẩu DB, khoá JWT (không commit, không chia sẻ qua kênh không an toàn) |
