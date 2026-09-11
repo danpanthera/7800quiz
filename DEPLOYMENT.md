@@ -81,7 +81,7 @@ Checklist bổ sung cần làm khi go-live:
 - [ ] Dải IP tĩnh nội bộ dành cho máy ảo (hỏi bộ phận mạng), và biết được máy chủ nằm ở subnet/VLAN nào
 - [ ] Quyền tạo bản ghi DNS `quiz.vbalaichau.com` trên DC ghi được (không phải RODC) — xem Giai đoạn 3.6
 - [ ] Danh sách máy client (đặc biệt máy trong domain AD, nếu có) để biết cách cài chứng chỉ gốc nội bộ hàng loạt qua GPO (Giai đoạn 5)
-- [ ] Địa chỉ repo mã nguồn (Git) của 7800quiz
+- [ ] Địa chỉ repo mã nguồn (Git) của 7800quiz — nếu repo **private trên GitHub**, chuẩn bị sẵn **Personal Access Token** (xem cảnh báo ở Giai đoạn 2.3) vì GitHub không cho đăng nhập bằng mật khẩu tài khoản qua Git nữa
 
 ### 0.6. Tóm tắt toàn bộ quy trình
 
@@ -214,6 +214,13 @@ Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, ch�
    git clone <đường-dẫn-repo-thật>/7800quiz.git /tmp/7800quiz-scripts
    bash /tmp/7800quiz-scripts/scripts/prod-setup-app.sh <đường-dẫn-repo-thật>/7800quiz.git
    ```
+
+> ⚠️ **Nếu repo là private trên GitHub**: `git clone` sẽ hỏi Username/Password — GitHub đã bỏ đăng nhập bằng **mật khẩu tài khoản** cho Git qua HTTPS từ 2021, gõ mật khẩu thật vào sẽ báo lỗi `Invalid username or token. Password authentication is not supported`. Phải dùng **Personal Access Token (PAT)** thay cho mật khẩu: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → tạo token chỉ cho đúng repo này, quyền Contents: Read-only, hạn dùng ngắn (VD 7 ngày). Cách nhanh nhất là nhúng thẳng token vào URL để khỏi bị hỏi lại — thay cả 2 lệnh `git clone`/`prod-setup-app.sh` ở trên bằng:
+> ```bash
+> git clone https://<TOKEN>@github.com/<đường-dẫn-repo-thật>/7800quiz.git /tmp/7800quiz-scripts
+> bash /tmp/7800quiz-scripts/scripts/prod-setup-app.sh https://<TOKEN>@github.com/<đường-dẫn-repo-thật>/7800quiz.git
+> ```
+> Lưu ý: URL có token sẽ được lưu lại làm `origin` trong `/opt/7800quiz/.git/config` — sau khi cài xong nên coi token đó là **đã dùng xong, huỷ trên GitHub** (mục "Danger zone" của token) để tránh nằm sẵn dạng chữ thường trên máy chủ; lần cập nhật sau (Phụ lục A) cần token mới, sửa lại `git remote set-url origin ...` lúc đó.
 
 Script `prod-setup-app.sh` sẽ: cài Docker Engine, clone mã nguồn vào `/opt/7800quiz`, tạo `.env.prod` với `JWT_SECRET`/`POSTGRES_PASSWORD` sinh ngẫu nhiên (và `SITE_ADDRESS=quiz.vbalaichau.com` sẵn), build ảnh Docker (`npm ci` cần Internet — đúng lúc này đang có), khởi động 4 container, chạy `prisma migrate deploy` và `npm run seed` (9 chi nhánh + phòng ban, cấp độ/huy hiệu, 2 tài khoản mẫu). Cuối cùng in ra `JWT_SECRET`/`POSTGRES_PASSWORD` — **lưu ngay vào kho mật khẩu ngân hàng**, đây là bước dễ quên nhất và khó khôi phục nhất nếu mất.
 
