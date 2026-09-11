@@ -267,21 +267,27 @@ Get-VM quiz7800-host | Select-Object AutomaticStartAction
 
 **Trước khi rút dây Internet**: máy ảo cần có sẵn `scripts/prod-set-static-ip.sh` cho bước 3.2 — nếu mã nguồn được clone từ trước khi có script này, chạy `cd /opt/7800quiz && git pull` ngay lúc còn Internet. Rút dây rồi thì máy ảo không lấy thêm được gì từ GitHub.
 
-Switch `LAN-Tam` gắn cố định vào đúng card mạng đã chỉ định ở Giai đoạn 2.1 — Hyper-V không quan tâm đầu kia của dây cắm gì, nên việc cần làm tuỳ máy chủ dùng mấy card:
+Switch `LAN-Tam` gắn cố định vào card mạng đã chỉ định ở Giai đoạn 2.1 (`-NetAdapterName`) — Hyper-V không quan tâm đầu kia dây cắm gì, nên chỉ cần đổi lại dây ở đúng card đó, không đụng gì thêm bên Hyper-V. Máy chủ này dùng **2 card riêng**:
 
-- **1 card** (đã rút dây nội bộ ra để cắm Internet): rút dây Internet, cắm lại dây mạng nội bộ vào đúng card đó. Không cần sửa gì bên Hyper-V.
-- **Card thứ 2 riêng cho Internet** (0.3): switch `LAN-Tam` đang gắn vào card thứ 2 — **chỉ rút dây Internet ra thì máy ảo mất mạng hoàn toàn**. Cắm vào card thứ 2 một dây mạng nội bộ khác (thêm 1 cổng switch LAN, cùng VLAN với card chính); từ nay card này dành riêng cho máy ảo. Windows đã có IP trên card chính nên gỡ luôn card ảo phía Windows khỏi switch, tránh đặt nhầm IP của máy ảo lên đó:
-  ```powershell
-  Set-VMSwitch -Name "LAN-Tam" -AllowManagementOS $false
-  Get-NetAdapter | Format-Table Name, Status    # card đã chỉ định ở 2.1 phải là Up
-  ```
-  ⚠️ Chỉ chạy `Set-VMSwitch` này với máy chủ **2 card** — máy chủ 1 card thì IP của chính Windows nằm trên card ảo đó, gỡ đi là Windows mất mạng.
+| Card | Vai trò | IP |
+|---|---|---|
+| `SLOT 2 Port 1` | Cố định, luôn cắm mạng nội bộ — IP của chính Windows | `10.58.0.19` (tĩnh) |
+| `SLOT 2 Port 2` | Gắn switch `LAN-Tam`, dành cho **máy ảo** — lúc cài đặt cắm Internet tạm, giờ đổi sang mạng nội bộ | `10.58.0.20` (đặt ở 3.2, **trong Ubuntu**) |
+
+Rút dây Internet khỏi Port 2, cắm dây mạng nội bộ khác vào (thêm 1 cổng switch LAN, cùng VLAN với Port 1) — từ nay Port 2 luôn dành riêng cho máy ảo, không đụng tới nữa trừ lúc cập nhật (Phụ lục A).
+
+Windows cũng tự có 1 card ảo "Lan-Tam" trên switch này (`Get-NetIPAddress` sẽ thấy) — **đó là của Windows, không phải của máy ảo**, không đặt `10.58.0.20` lên đó. Gỡ hẳn để khỏi nhầm lẫn lần sau:
+```powershell
+Set-VMSwitch -Name "LAN-Tam" -AllowManagementOS $false
+Get-NetAdapter | Format-Table Name, Status    # SLOT 2 Port 2 phải là Up
+```
 
 Đổi tên switch cho gọn (tuỳ chọn, không bắt buộc):
-
 ```powershell
 Rename-VMSwitch -Name "LAN-Tam" -NewName "LAN-NoiBo"
 ```
+
+> Máy chủ chỉ có **1 card mạng** (không phải trường hợp của máy PROD này): bỏ qua bảng trên và lệnh `Set-VMSwitch` — chỉ cần rút dây Internet, cắm lại dây mạng nội bộ vào đúng card duy nhất đó. **Không** chạy `Set-VMSwitch -AllowManagementOS $false` trong trường hợp này, vì chính IP của Windows cũng nằm trên card ảo đó, gỡ đi là Windows mất mạng.
 
 ### 3.2. Đặt IP tĩnh trong Ubuntu
 
@@ -299,7 +305,7 @@ Giá trị thật dùng cho máy chủ này — máy chủ vật lý đang có I
 sudo bash scripts/prod-set-static-ip.sh 10.58.0.20/24 10.58.0.1 10.58.0.11,10.0.58.11
 ```
 
-Script mặc định dùng card `eth0` — nếu `ip addr` cho thấy tên khác thì thêm tham số thứ 4. Chạy xong script tự in lại `ip addr show` để xác nhận ngay; chạy lại (VD gõ nhầm) vẫn an toàn, file cũ tự được sao lưu kèm thời gian trước khi ghi đè.
+Script mặc định dùng card `eth0` — nếu `ip addr` cho thấy tên khác thì thêm tham số thứ 4. Chạy xong script tự kiểm tra (IP, bảng định tuyến, ping gateway) và **ghi nhớ** cấu hình này — lần sau chỉ cần chạy `sudo bash scripts/prod-set-static-ip.sh` (không tham số) là quay lại đúng IP tĩnh này, dùng ở Phụ lục A khi cập nhật. Chạy lại (VD gõ nhầm) vẫn an toàn, file cũ tự được sao lưu kèm thời gian trước khi ghi đè.
 
 Ghi lại IP này (`10.58.0.20`) — dùng để đăng ký DNS ở bước 3.6.
 
@@ -514,7 +520,10 @@ Chỉ chuyển sang dùng thật khi **toàn bộ checklist Giai đoạn 1–8 �
 
 Đúng theo mô hình đã chọn (Giai đoạn 0.3): mỗi lần cập nhật, **nối Internet tạm thời lại vào máy chủ**, làm việc, xong thì ngắt — không cần máy trung gian, không cần `docker save`/`docker load`.
 
-**1. Nối Internet tạm thời** (như Giai đoạn 2.1).
+**1. Nối Internet tạm thời**: đổi dây ở Port 2 từ mạng nội bộ sang Internet (như Giai đoạn 2.1), rồi trong máy ảo chuyển card mạng sang nhận IP tạm — script tự gỡ IP tĩnh, chờ có mạng, kiểm tra vào được GitHub chưa:
+```bash
+sudo bash scripts/prod-set-static-ip.sh dhcp
+```
 
 **2. Trong máy ảo Ubuntu, tại `/opt/7800quiz`:**
 ```bash
@@ -540,7 +549,10 @@ sudo docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api
 sudo docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
-**3. Ngắt Internet, cắm lại mạng nội bộ** (như Giai đoạn 3.1) — xong việc là ngắt ngay, không để treo qua đêm.
+**3. Ngắt Internet, cắm lại mạng nội bộ**: đổi dây ở Port 2 về lại mạng nội bộ (như Giai đoạn 3.1) — xong việc là ngắt ngay, không để treo qua đêm. Trong máy ảo, quay lại đúng IP tĩnh đã ghi nhớ ở Giai đoạn 3.2 (không cần gõ lại IP/gateway/DNS):
+```bash
+sudo bash scripts/prod-set-static-ip.sh
+```
 
 > ⚠️ Bắt buộc có `--build` ở bước 3 — `docker compose restart` sẽ không lấy mã nguồn mới vì image được build sẵn từ trước.
 > ⚠️ **Tuyệt đối không cập nhật khi đang có kỳ thi diễn ra.**
@@ -560,14 +572,14 @@ curl -s https://quiz.vbalaichau.com/api/health
 > 💡 **Lưu ý cache của web (PWA)**: người dùng đang mở sẵn tab từ trước có thể vẫn thấy giao diện/bản cũ một lúc — web dùng chế độ nhắc cập nhật (`registerType: 'prompt'`), họ cần bấm "Cập nhật" khi hộp thoại hiện lên hoặc tự tải lại trang. Nếu tính năng mới cần dùng ngay, nhắc các chi nhánh F5 lại trang.
 
 ### ✅ Checklist Phụ lục A — Cập nhật lên bản mới
-- [ ] Đã nối Internet tạm thời
+- [ ] Đã nối Internet tạm thời, đã chạy `prod-set-static-ip.sh dhcp` trong máy ảo
 - [ ] Đã sao lưu trước khi cập nhật (`scripts/backup-db.sh`)
 - [ ] Đã gắn nhãn `:prev` cho image `api` và `web` hiện tại
 - [ ] `git pull` + `docker compose build` chạy xong không lỗi
 - [ ] `prisma migrate deploy` báo thành công — **không lỗi thì mới đi tiếp** (nếu lỗi → Rollback ngay)
 - [ ] Cả 4 container `Up (healthy)` sau `up -d`
 - [ ] Đã làm xong mục "Nghiệm thu sau khi cập nhật" ở trên
-- [ ] Đã ngắt Internet, cắm lại mạng nội bộ
+- [ ] Đã ngắt Internet, cắm lại mạng nội bộ, đã chạy lại `prod-set-static-ip.sh` (không tham số) trong máy ảo
 - [ ] Đã thông báo cho các chi nhánh nếu có thay đổi giao diện đáng chú ý (kèm nhắc F5 nếu cần)
 
 ### Rollback
