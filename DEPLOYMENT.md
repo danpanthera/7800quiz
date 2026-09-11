@@ -662,7 +662,7 @@ bash scripts/backup-db.sh
 
 **Chỉ dùng khi** Internet tạm thời trên PROD quá chậm/chập chờn khiến bước build Docker ở Giai đoạn 2.3 kéo dài bất thường (hàng chục phút trở lên cho `npm ci`, hoặc bị treo giữa chừng do rớt gói). Đây **không phải cách mặc định** — tài liệu chính (Giai đoạn 2) cố tình chọn build trực tiếp trên PROD để tránh đúng việc quét virus USB + chuyển ảnh cồng kềnh này (xem mục 0.3). Chỉ chuyển sang Phụ lục D khi cách chính gặp khó khăn thật sự.
 
-**Máy dùng để build**: máy Windows hay **macOS đều được** — chỉ cần có Docker Desktop cài sẵn và Internet nhanh (VD máy dev đang có sẵn mã nguồn mới nhất). Không nhất thiết phải là máy Windows.
+**Máy dùng để build**: máy Windows hay **macOS đều được** — chỉ cần có Docker Desktop (hoặc **OrbStack trên macOS**, dùng chung `docker`/`docker buildx` CLI, hỗ trợ đầy đủ build đa kiến trúc y hệt Docker Desktop — dự án này vốn đã dùng OrbStack cho môi trường dev nên máy dev Mac đang có sẵn, không cần cài thêm gì) và Internet nhanh (VD máy dev đang có sẵn mã nguồn mới nhất). Không nhất thiết phải là máy Windows.
 
 > ⚠️ **Nếu build trên Mac Apple Silicon (M1/M2/M3/M4, chip ARM)**: máy PROD chạy kiến trúc `linux/amd64` (Windows Server + Hyper-V + Ubuntu, không phải ARM), khác hẳn kiến trúc gốc `arm64` của Mac — **bắt buộc** chỉ định `--platform linux/amd64` khi build, thiếu tham số này sẽ ra ảnh ARM không chạy được trên PROD. Máy Windows hoặc Mac Intel vốn đã là `amd64` nên không bắt buộc, nhưng nên chỉ định rõ cho chắc chắn.
 
