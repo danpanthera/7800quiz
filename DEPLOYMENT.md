@@ -201,6 +201,8 @@ Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, ch�
 
 > Muốn dùng ổ/thư mục khác thay vì `D:\quiz\`: thêm tham số `-VmPath "<đường-dẫn>"` vào lệnh `prod-setup-vm.ps1` ở trên, rồi thay `D:\quiz\` bằng đường dẫn đó ở các bước còn lại của tài liệu.
 
+> ⚠️ **Nếu thao tác qua RDP (VD "Windows App" từ macOS, hoặc bất kỳ remote desktop nào)**: đúng lúc script tạo Virtual Switch, Hyper-V gỡ card mạng vật lý ra khỏi ngăn xếp mạng bình thường rồi gắn lại qua switch — nếu phiên RDP đang đi qua đúng card đó, **RDP sẽ bị rớt vài giây đến vài chục giây**, đây là hành vi bình thường chứ không phải lỗi. Sau khi kết nối lại, đừng vội kết luận là script đã dừng chỉ vì không thấy cửa sổ PowerShell cũ (Windows có thể mở phiên đăng nhập mới thay vì nối lại đúng phiên cũ) — kiểm tra trạng thái thật bằng `Get-VM quiz7800-host` (`Running` = đã xong hết, `Off` = mới tạo xong VM chưa kịp khởi động). Script được viết idempotent nên **chạy lại y hệt lệnh cũ luôn an toàn** trong mọi trường hợp — bước nào đã xong sẽ tự bỏ qua, không tạo trùng hay tải lại.
+
 ### 2.3. Cài Ubuntu (làm tay) rồi chạy script ứng dụng
 
 1. Hyper-V Manager → chuột phải `quiz7800-host` → **Connect...** → cài Ubuntu Server như bình thường: đặt tên máy `quiz7800-host`, tạo user quản trị (nhớ kỹ mật khẩu). Ở màn hình chọn gói cài đặt, **tick sẵn "Install OpenSSH Server"**.
