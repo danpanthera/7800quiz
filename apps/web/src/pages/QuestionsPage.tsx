@@ -174,11 +174,13 @@ export default function QuestionsPage() {
     mutationFn: ({ id, ...data }: { id: string } & SubjectFormValues) =>
       api.put(`/admin/subjects/${id}`, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); setSubjectModalOpen(false); setEditSubject(null); subjectForm.resetFields() },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi sửa lĩnh vực')),
   })
 
   const deleteSubjectMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/subjects/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }) },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi xóa lĩnh vực')),
   })
 
   // ── Ngân hàng câu hỏi ────────────────────────────────────────────────

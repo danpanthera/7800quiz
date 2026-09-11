@@ -407,10 +407,18 @@ export class AdminService {
       }[];
     }[]
   > {
-    const existing = await this.prisma.question.findMany({
+    const existingRaw = await this.prisma.question.findMany({
       where: { isBank: true },
       select: { id: true, content: true },
     });
+    // Tiền xử lý normalize/tokenize cho từng câu hỏi có sẵn ĐÚNG 1 LẦN — import
+    // cả trăm dòng cùng lúc mà tính lại cho existing ở mỗi dòng (texts.length
+    // lần) từng khiến bước kiểm tra trùng lặp rất chậm với ngân hàng câu hỏi lớn.
+    const existing = existingRaw.map((q) => ({
+      ...q,
+      norm: normalizeText(q.content),
+      tokens: tokenize(q.content),
+    }));
 
     return texts.map((text, index) => {
       const queryTokens = tokenize(text);
@@ -423,8 +431,7 @@ export class AdminService {
       }[] = [];
 
       for (const q of existing) {
-        const existNorm = normalizeText(q.content);
-        if (queryNorm === existNorm) {
+        if (queryNorm === q.norm) {
           matches.push({
             id: q.id,
             content: q.content,
@@ -433,7 +440,7 @@ export class AdminService {
           });
           continue;
         }
-        const score = jaccardSimilarity(queryTokens, tokenize(q.content));
+        const score = jaccardSimilarity(queryTokens, q.tokens);
         if (score >= 0.85)
           matches.push({ id: q.id, content: q.content, score, level: 'high' });
         else if (score >= 0.65)
