@@ -224,9 +224,17 @@ Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, ch�
 > ```
 > Lưu ý: URL có token sẽ được lưu lại làm `origin` trong `/opt/7800quiz/.git/config` — sau khi cài xong nên coi token đó là **đã dùng xong, huỷ trên GitHub** (mục "Danger zone" của token) để tránh nằm sẵn dạng chữ thường trên máy chủ; lần cập nhật sau (Phụ lục A) cần token mới, sửa lại `git remote set-url origin ...` lúc đó.
 
-Script `prod-setup-app.sh` sẽ: cài Docker Engine, clone mã nguồn vào `/opt/7800quiz`, tạo `.env.prod` với `JWT_SECRET`/`POSTGRES_PASSWORD` sinh ngẫu nhiên (và `SITE_ADDRESS=quiz.vbalaichau.com` sẵn), build ảnh Docker (`npm ci` cần Internet — đúng lúc này đang có), khởi động 4 container, chạy `prisma migrate deploy` và `npm run seed` (9 chi nhánh + phòng ban, cấp độ/huy hiệu, 2 tài khoản mẫu). Cuối cùng in ra `JWT_SECRET`/`POSTGRES_PASSWORD` — **lưu ngay vào kho mật khẩu ngân hàng**, đây là bước dễ quên nhất và khó khôi phục nhất nếu mất.
+Script `prod-setup-app.sh` sẽ: cài Docker Engine, clone mã nguồn vào `/opt/7800quiz`, tạo `.env.prod` với `JWT_SECRET`/`POSTGRES_PASSWORD` sinh ngẫu nhiên (và `SITE_ADDRESS=quiz.vbalaichau.com` sẵn), build ảnh Docker (`npm ci` cần Internet — đúng lúc này đang có), khởi động Postgres, chạy `prisma migrate deploy` và `npm run seed` (9 chi nhánh + phòng ban, cấp độ/huy hiệu, 2 tài khoản mẫu), rồi mới bật API/Web/Caddy và chờ cả 4 container `healthy`. Cuối cùng in ra `JWT_SECRET`/`POSTGRES_PASSWORD` — **lưu ngay vào kho mật khẩu ngân hàng**, đây là bước dễ quên nhất và khó khôi phục nhất nếu mất.
 
-> ⚠️ Đổi `POSTGRES_PASSWORD` trong `.env.prod` **sau khi** script đã chạy xong sẽ không có tác dụng (Postgres chỉ đặt mật khẩu lúc khởi tạo lần đầu).
+> 🔁 **Script chạy lại bao nhiêu lần cũng an toàn.** Báo lỗi, bị ngắt giữa chừng hay rớt mạng thì cứ chạy lại — bí mật đã sinh được giữ nguyên, `.env.prod` còn sót chữ mẫu `THAY_BANG_...` sẽ tự được sinh lại, bước nào dở dang tự làm lại. Lần chạy lại không cần URL, và nếu ảnh Docker đã build xong thì thêm `SKIP_BUILD=1` để khỏi build lại:
+> ```bash
+> cd /opt/7800quiz
+> git pull
+> SKIP_BUILD=1 bash scripts/prod-setup-app.sh
+> ```
+> Container nào không lên được, script tự in 40 dòng log cuối của container đó rồi dừng — chụp phần log đó để chẩn đoán.
+
+> ⚠️ Postgres chỉ đặt mật khẩu lúc khởi tạo volume **lần đầu** — sửa `POSTGRES_PASSWORD` trong `.env.prod` rồi chỉ khởi động lại container thì không có tác dụng. Muốn đổi: sửa `.env.prod` rồi chạy lại `prod-setup-app.sh` — script tự đồng bộ mật khẩu mới vào Postgres (qua socket nội bộ của container, không mất dữ liệu).
 
 ### 2.4. Kiểm tra trước khi ngắt Internet
 
@@ -469,7 +477,7 @@ tail -n 10 /var/backups/7800quiz/backup.log
 
 > ⚠️ **Bản sao lưu nằm cùng máy ảo chưa phải là bản sao lưu thật sự.** Mở file `scripts/backup-db.sh`, tìm phần "Sao chép ra kho ngoài" ở cuối file, bỏ dấu `#` và điền đường dẫn ổ mạng nội bộ của ngân hàng (mount sẵn qua `fstab`/`autofs` — máy này không có Internet nên không dùng được kho lưu trữ đám mây).
 
-> ⚠️ Cũng nên sao lưu định kỳ volume `caddy_data` (chứa CA nội bộ — xem cảnh báo ở Giai đoạn 5), ví dụ: `docker run --rm -v 7800quiz_caddy_data:/data -v /var/backups/7800quiz:/backup alpine tar czf /backup/caddy_data_$(date +%F).tar.gz -C / data`.
+> ⚠️ Cũng nên sao lưu định kỳ volume `caddy_data` (chứa CA nội bộ — xem cảnh báo ở Giai đoạn 5), ví dụ: `docker run --rm -v quiz7800_caddy_data:/data -v /var/backups/7800quiz:/backup alpine tar czf /backup/caddy_data_$(date +%F).tar.gz -C / data` (tên volume có tiền tố `quiz7800_` theo `name:` trong `docker-compose.prod.yml` — gõ sai tên thì Docker âm thầm tạo volume rỗng mới và sao lưu không có gì, kiểm tra bằng `docker volume ls`).
 
 ### ✅ Checklist Giai đoạn 8
 - [ ] Cron job đã đăng ký thành công (`crontab -l` thấy dòng gọi `backup-db.sh`)
@@ -588,7 +596,8 @@ Bản sao lưu chưa từng được phục hồi thử thì chưa phải là b�
 | Triệu chứng | Nguyên nhân | Cách xử lý |
 |---|---|---|
 | `prisma migrate deploy` báo lỗi **P3005** | Chạy nhầm trên DB đã có dữ liệu/cấu trúc cũ | Xác nhận đang thao tác đúng máy ảo/volume PROD, không phải một bản dev còn sót lại |
-| Container `api` khởi động rồi tắt liên tục, log báo thiếu `JWT_SECRET` | `.env.prod` bị sửa/xoá sai giá trị | Kiểm tra lại `.env.prod` trong `/opt/7800quiz` — đây là hành vi cố ý: thà dừng ngay còn hơn chạy với khoá mặc định không an toàn |
+| Container `api` khởi động rồi tắt liên tục (`Restarting`), log báo `Thiếu JWT_SECRET hợp lệ` | `.env.prod` còn chữ mẫu `THAY_BANG_...`, để trống hoặc khoá quá ngắn | Chạy lại `prod-setup-app.sh` (xem ghi chú 🔁 ở Giai đoạn 2.3) — script tự sinh lại bí mật còn chữ mẫu và đồng bộ mật khẩu vào Postgres. API cố ý từ chối chạy với khoá không an toàn |
+| `prod-setup-app.sh` dừng ngay sau dòng "Đang tạo .env.prod...", trở về dấu nhắc lệnh mà không báo lỗi | Bản script cũ (trước 11/09/2026) bị lỗi SIGPIPE ở dòng sinh mật khẩu | `cd /opt/7800quiz && git pull` để lấy bản đã sửa, rồi chạy lại script — không cần xoá gì |
 | Trình duyệt báo "Not secure"/chứng chỉ không đáng tin | Máy đó chưa cài chứng chỉ gốc `7800quiz-root-ca.crt` | Xem Giai đoạn 5.2 — cài qua GPO (máy trong domain) hoặc cài tay |
 | Đấu trường không kết nối được, mọi thứ khác vẫn bình thường | Thiết bị bảo mật mạng nội bộ chặn nâng cấp WebSocket | Mở DevTools trên trình duyệt (F12) → tab Network → lọc "WS" → phải thấy trạng thái **101**. Nếu chi nhánh này không được mà chi nhánh khác được, báo bộ phận mạng kiểm tra thiết bị của riêng chi nhánh đó |
 | Import file báo lỗi **413** | File vượt quá 25MB | Chia nhỏ file trước khi import |
@@ -691,16 +700,15 @@ docker inspect --format '{{.Os}}/{{.Architecture}}' quiz7800/api:latest quiz7800
 mkdir -p ~/Desktop/quiz7800-deploy
 docker save quiz7800/api:latest quiz7800/web:latest -o ~/Desktop/quiz7800-deploy/quiz7800-images.tar
 
-# Xem dung lượng thật (vài trăm MB tới hơn 1GB) để biết USB cần trống bao nhiêu
+# Xem dung lượng thật (thử thực tế: khoảng 200MB) để biết USB cần trống bao nhiêu
 ls -lh ~/Desktop/quiz7800-deploy/quiz7800-images.tar
-
-# Tuỳ chọn: nén lại cho nhẹ USB hơn (thường giảm 30-50%, đổi lại tốn thêm vài phút nén/giải nén)
-gzip -k ~/Desktop/quiz7800-deploy/quiz7800-images.tar   # ra thêm file .tar.gz, giữ nguyên file .tar gốc
 ```
+
+> Không cần nén gzip thêm: Docker bản mới đã nén sẵn từng lớp bên trong file `.tar`, thử thực tế gzip chỉ giảm từ 203MB xuống 201MB. (Script vẫn nhận file `.tar.gz` nếu lỡ nén.)
 
 ### D.2. Chuyển file qua USB vào PROD
 
-1. Copy `quiz7800-images.tar` (hoặc `.tar.gz` nếu đã nén) từ `~/Desktop/quiz7800-deploy/` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.4).
+1. Copy `quiz7800-images.tar` từ `~/Desktop/quiz7800-deploy/` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.4).
 2. Cắm USB vào máy chủ Windows Server, copy file vào `D:\quiz\quiz7800-images.tar`.
 3. Hyper-V không có sẵn cách gắn USB thẳng vào máy ảo — chuyển tiếp file từ Windows sang Ubuntu qua mạng nội bộ (SSH đã cài ở Giai đoạn 2.3), dùng OpenSSH client có sẵn trên Windows:
    ```powershell
@@ -710,52 +718,19 @@ gzip -k ~/Desktop/quiz7800-deploy/quiz7800-images.tar   # ra thêm file .tar.gz,
    scp D:\quiz\quiz7800-images.tar <username-đã-tạo-ở-2.3>@<IP-máy-ảo>:/tmp/
    ```
 
-### D.3. Nạp ảnh và chạy trong Ubuntu (thay cho việc chạy nguyên `prod-setup-app.sh`)
+### D.3. Nạp ảnh và chạy trong Ubuntu
 
-⚠️ **Không chạy `prod-setup-app.sh` nguyên bản ở đây** — script đó luôn tự `docker compose build` lại từ đầu, sẽ xoá hết lợi ích vừa làm ở D.1. Làm tay từng bước tương đương, thay bước build bằng `docker load`:
+Dùng đúng script của Giai đoạn 2.3, chỉ thêm `IMAGES_TAR=` trước lệnh — script tự cài Docker, **nạp 2 ảnh từ file thay cho bước build**, rồi làm tiếp y hệt (sinh bí mật, khởi tạo DB, bật 4 container, in bí mật cần lưu):
 
 ```bash
-# 1. Cài Docker Engine trước tiên (bắt buộc — docker load ở bước 3 cần lệnh docker đã có sẵn)
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker "$USER"   # tiện cho các lần sau khỏi cần sudo — cần đăng xuất/vào lại mới có hiệu lực
-# Dùng "sudo docker" xuyên suốt bên dưới cho chắc chắn ngay trong phiên hiện tại, không đợi quyền nhóm áp dụng
-
-# 2. Kiểm tra dung lượng ổ đĩa còn đủ trước khi nạp (ảnh + lớp tạm lúc load có thể cần gấp đôi dung lượng file)
-df -h /
-
-# 3. Nạp 2 ảnh đã build sẵn — nếu chuyển file .tar.gz thì giải nén trước: gunzip /tmp/quiz7800-images.tar.gz
-sudo docker load -i /tmp/quiz7800-images.tar
-
-# 4. Xác nhận nạp đúng cả 2 ảnh, ĐÚNG tag (thiếu/lệch tag thì docker compose ở bước 8 sẽ không nhận ra, tự build lại)
-sudo docker images | grep quiz7800
-# Kỳ vọng thấy đúng: quiz7800/api   latest   ...   và   quiz7800/web   latest   ...
-
-# 5. Dọn file tạm đã nạp xong, đỡ chiếm ổ đĩa
-rm /tmp/quiz7800-images.tar
-
-# 6. Lấy mã nguồn (repo nhỏ, không có node_modules — clone qua Internet chậm vẫn nhanh)
+df -h /    # ổ đĩa cần trống ít nhất gấp đôi dung lượng file ảnh
 sudo apt-get update && sudo apt-get install -y git
-git clone <đường-dẫn-repo-thật>/7800quiz.git /opt/7800quiz
-sudo chown -R "$USER":"$USER" /opt/7800quiz
-cd /opt/7800quiz
-
-# 7. Tạo .env.prod với bí mật sinh ngẫu nhiên (giống hệt logic prod-setup-app.sh)
-cp .env.prod.example .env.prod
-sed -i "s#^SITE_ADDRESS=.*#SITE_ADDRESS=quiz.vbalaichau.com#" .env.prod
-sed -i "s#^CORS_ORIGIN=.*#CORS_ORIGIN=https://quiz.vbalaichau.com#" .env.prod
-sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)#" .env.prod
-sed -i "s#^JWT_SECRET=.*#JWT_SECRET=$(openssl rand -hex 32)#" .env.prod
-
-# 8. Khởi động — KHÔNG có --build, dùng thẳng 2 ảnh vừa docker load
-sudo docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
-
-# 9. Phần còn lại giống hệt Giai đoạn 2.3/2.4: chờ healthy, khởi tạo DB
-sudo docker compose -f docker-compose.prod.yml --env-file .env.prod ps    # chờ tới khi cả 4 dòng (healthy)
-sudo docker exec quiz7800_api npx prisma migrate deploy
-sudo docker exec quiz7800_api npm run seed
-
-grep -E '^(JWT_SECRET|POSTGRES_PASSWORD)=' .env.prod    # LƯU NGAY vào kho mật khẩu ngân hàng
-curl -s http://127.0.0.1:8080/api/health                # Kỳ vọng: {"status":"ok",...}
+git clone <đường-dẫn-repo-thật>/7800quiz.git /tmp/7800quiz-scripts
+IMAGES_TAR=/tmp/quiz7800-images.tar bash /tmp/7800quiz-scripts/scripts/prod-setup-app.sh <đường-dẫn-repo-thật>/7800quiz.git
 ```
+
+- Vẫn cần Internet tạm thời để cài Docker Engine và tải 2 ảnh nhỏ `postgres:16-alpine`/`caddy:2-alpine` — nhưng không còn `npm ci`, nên chỉ mất vài phút.
+- Lỗi giữa chừng thì chạy lại theo ghi chú 🔁 ở Giai đoạn 2.3 (ảnh đã nạp rồi nên dùng `SKIP_BUILD=1`, không cần `IMAGES_TAR` nữa).
+- Chạy xong có thể xoá file tạm: `rm /tmp/quiz7800-images.tar`.
 
 Sau bước D.3, quay lại đúng Giai đoạn 2.4 trở đi của tài liệu chính (kiểm tra, ngắt Internet, chuyển sang mạng nội bộ...) — không có gì khác biệt nữa.
