@@ -173,19 +173,32 @@ Test-NetConnection 8.8.8.8
 
 ### 2.2. Dựng máy ảo (tự động qua script)
 
-Thư mục gốc phía Windows dùng xuyên suốt tài liệu này là `D:\quiz\` — clone/copy toàn bộ mã nguồn 7800quiz thẳng vào đó (tức là `scripts\prod-setup-vm.ps1` nằm tại `D:\quiz\scripts\prod-setup-vm.ps1`). ISO và máy ảo cũng được lưu chung trong `D:\quiz\` (script tự tạo thư mục nếu chưa có) — không cần tách thư mục riêng.
+Thư mục gốc phía Windows dùng xuyên suốt tài liệu này là `D:\quiz\` — chứa cả mã nguồn, ISO và máy ảo, không cần tách thư mục riêng (script tự tạo nếu chưa có).
+
+**Lấy `prod-setup-vm.ps1` về `D:\quiz\` trước khi chạy** — chọn 1 trong 2 cách, không cần cài Git nếu không muốn:
+
+- **Không cần cài gì thêm** — tải thẳng file bằng PowerShell (đang có Internet tạm thời):
+  ```powershell
+  New-Item -ItemType Directory -Force -Path D:\quiz | Out-Null
+  Invoke-WebRequest -Uri "<đường-dẫn-repo-thật>/raw/main/scripts/prod-setup-vm.ps1" -OutFile "D:\quiz\prod-setup-vm.ps1"
+  ```
+  File nằm phẳng ngay trong `D:\quiz\` (không có thư mục con `scripts\`) — bỏ `\scripts` ở lệnh `Set-Location` bên dưới.
+- **Nếu tiện dùng Git for Windows** — clone thẳng toàn bộ repo (khớp đúng cấu trúc mã nguồn, có luôn thư mục `scripts\`):
+  ```powershell
+  git clone <đường-dẫn-repo-thật>.git D:\quiz
+  ```
+
+> Việc `git clone` **bắt buộc** để ứng dụng chạy được (Docker, database...) không nằm ở bước này — nó diễn ra tự động bên trong máy ảo Ubuntu ở Giai đoạn 2.3, script ở đó tự cài Git và tự clone. Hai cách ở trên chỉ để có đúng 1 file `prod-setup-vm.ps1` chạy được ngay trên Windows.
 
 Nếu đã tải sẵn ISO Ubuntu (VD `ubuntu-24.04.4-live-server-amd64.iso`): đặt file đó **trực tiếp vào `D:\quiz\`** trước khi chạy script — script tự tìm thấy và dùng luôn, không cần tải lại. Không có sẵn thì script tự tải bản LTS mới nhất (cần Internet, đúng lúc này đang có).
 
 ```powershell
-Set-Location D:\quiz\scripts    # hoặc đường dẫn scripts/ trong mã nguồn đã có sẵn trên máy
+Set-Location D:\quiz\scripts    # bỏ "\scripts" nếu chỉ tải lẻ 1 file ở cách đầu tiên
 .\prod-setup-vm.ps1 -NetAdapterName "Ethernet"    # đổi "Ethernet" thành đúng tên ở bước 2.1
 ```
 
 Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, chạy lại đúng lệnh sau khi lên lại), dùng ISO đã có sẵn trong `D:\quiz\` (hoặc tự tải về nếu chưa có), tạo Virtual Switch tạm `LAN-Tam` gắn với card mạng vừa chỉ định, tạo máy ảo `quiz7800-host` tại `D:\quiz\quiz7800-host` (8GB RAM/4 vCPU/80GB — đổi qua tham số `-MemoryGB`/`-vCPU`/`-DiskGB` nếu cần), rồi khởi động máy ảo.
 
-> Nếu chưa có sẵn mã nguồn (nên script chưa nằm sẵn trên máy): tải trực tiếp 2 file `prod-setup-vm.ps1` và `prod-setup-app.sh` từ repo về `D:\quiz\` bằng trình duyệt hoặc `Invoke-WebRequest`, chạy y hệt như trên (khi đó bỏ qua `\scripts` ở lệnh `Set-Location` vì 2 file nằm phẳng ngay trong `D:\quiz\`).
->
 > Muốn dùng ổ/thư mục khác thay vì `D:\quiz\`: thêm tham số `-VmPath "<đường-dẫn>"` vào lệnh `prod-setup-vm.ps1` ở trên, rồi thay `D:\quiz\` bằng đường dẫn đó ở các bước còn lại của tài liệu.
 
 ### 2.3. Cài Ubuntu (làm tay) rồi chạy script ứng dụng
