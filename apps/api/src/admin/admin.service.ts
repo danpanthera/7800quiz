@@ -37,6 +37,26 @@ async function getSpellChecker(): Promise<NSpellChecker> {
   return _spellChecker;
 }
 
+// nspell.suggest() rất chậm (~40ms/từ): import 240 câu từng mất hơn 20 giây chỉ
+// ở bước kiểm tra chính tả. Nhớ kết quả theo từng từ trong suốt vòng đời tiến
+// trình — cùng một từ lạ (tên riêng, viết tắt nghiệp vụ như CNTT, IPCAS...) lặp
+// lại ở hàng trăm dòng thì chỉ tính đúng 1 lần. null = từ đúng chính tả.
+const SPELL_CACHE_MAX = 50_000;
+const spellCache = new Map<string, string[] | null>();
+function lookupSpelling(
+  checker: NSpellChecker,
+  word: string,
+): string[] | null {
+  const cached = spellCache.get(word);
+  if (cached !== undefined) return cached;
+  const result = checker.correct(word)
+    ? null
+    : checker.suggest(word).slice(0, 3);
+  if (spellCache.size >= SPELL_CACHE_MAX) spellCache.clear();
+  spellCache.set(word, result);
+  return result;
+}
+
 // ── Các hàm hỗ trợ phát hiện trùng lặp ───────────────────────────────────
 function normalizeText(text: string): string {
   return text
@@ -473,14 +493,12 @@ export class AdminService {
       const warnings: { word: string; suggestions: string[] }[] = [];
       const seen = new Set<string>();
       for (const word of words) {
-        if (seen.has(word)) continue;
+        // Bỏ qua token có chữ số (số hiệu văn bản, năm, mã...) — không bao giờ
+        // có trong từ điển, chỉ sinh cảnh báo vô nghĩa và tốn suggest() rất chậm.
+        if (seen.has(word) || /\d/.test(word)) continue;
         seen.add(word);
-        if (!checker.correct(word)) {
-          warnings.push({
-            word,
-            suggestions: checker.suggest(word).slice(0, 3),
-          });
-        }
+        const suggestions = lookupSpelling(checker, word);
+        if (suggestions) warnings.push({ word, suggestions });
       }
       return { rowIndex, warnings };
     });
