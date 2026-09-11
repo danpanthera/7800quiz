@@ -7,9 +7,11 @@
 # qua console đó (không dán clipboard được).
 #
 # Dùng (chạy bằng sudo):
-#   sudo bash prod-set-static-ip.sh <IP/CIDR> <gateway> <dns> [card-mạng]
-# Ví dụ:
+#   sudo bash prod-set-static-ip.sh <IP/CIDR> <gateway> <dns[,dns-phụ]> [card-mạng]
+# Ví dụ (1 DNS):
 #   sudo bash prod-set-static-ip.sh 10.58.0.20/24 10.58.0.1 10.58.0.1
+# Ví dụ (DNS chính + phụ — cách nhau bằng dấu phẩy, KHÔNG dấu cách):
+#   sudo bash prod-set-static-ip.sh 10.58.0.20/24 10.58.0.1 10.58.0.11,10.0.58.11
 #
 # Lấy đúng gateway/DNS THẬT (đừng đoán): trên Windows chạy `ipconfig /all`,
 # tìm đúng card đang có IP thật của máy chủ, đọc "Default Gateway"/"DNS Servers".
@@ -27,7 +29,7 @@ fi
 
 ADDR="${1:?Thiếu địa chỉ IP/CIDR, VD 10.58.0.20/24}"
 GATEWAY="${2:?Thiếu gateway, VD 10.58.0.1 — lấy từ ipconfig /all trên Windows}"
-DNS="${3:?Thiếu DNS, VD 10.58.0.1 — lấy từ ipconfig /all trên Windows}"
+DNS="${3:?Thiếu DNS, VD 10.58.0.1 (nhiều DNS thì cách nhau bằng dấu phẩy: 10.58.0.11,10.0.58.11) — lấy từ ipconfig /all trên Windows}"
 IFACE="${4:-eth0}"
 
 case "$ADDR" in
