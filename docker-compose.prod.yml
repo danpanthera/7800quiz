@@ -183,9 +183,15 @@ services:
       #   này cùng lịch sao lưu database.
       - caddy_data:/data
       - caddy_config:/config
+    # condition: service_healthy — healthcheck của Caddy gọi xuyên qua api (xem
+    # dưới), nếu Caddy khởi động song song lúc api còn đang boot thì các lần
+    # kiểm tra đầu của CHÍNH Caddy sẽ trượt oan, tốn hết lượt thử healthcheck.
+    # Đợi web/api "healthy" trước rồi mới bật Caddy như api đã đợi postgres.
     depends_on:
-      - web
-      - api
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     healthcheck:
       # Kiểm tra xuyên suốt chuỗi caddy → api qua cổng nội bộ 8080
       test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/api/health']

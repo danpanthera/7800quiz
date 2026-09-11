@@ -136,8 +136,10 @@ log 'Đang seed dữ liệu nền (9 chi nhánh + phòng ban, cấp độ/huy hi
 "${COMPOSE[@]}" run --rm -T api npm run seed
 
 # ── 6. Bật toàn bộ hệ thống ──────────────────────────────────────────────────
-log 'Đang khởi động toàn bộ container, chờ "healthy" (tối đa 3 phút)...'
-if ! "${COMPOSE[@]}" up -d --wait --wait-timeout 180; then
+# 240s vì Caddy giờ đợi api "healthy" rồi mới bật (xem docker-compose.prod.yml)
+# — cộng dồn thời gian start_period của cả hai thay vì chạy song song.
+log 'Đang khởi động toàn bộ container, chờ "healthy" (tối đa 4 phút)...'
+if ! "${COMPOSE[@]}" up -d --wait --wait-timeout 240; then
   "${COMPOSE[@]}" ps -a
   for svc in $("${COMPOSE[@]}" ps -a --format '{{.Service}} {{.Health}}' | awk '$2 != "healthy" {print $1}'); do
     echo "──── 40 dòng log cuối của $svc ────"
