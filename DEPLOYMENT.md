@@ -205,6 +205,8 @@ Script sẽ: bật Hyper-V (nếu chưa bật — máy khởi động lại, ch�
 
 ### 2.3. Cài Ubuntu (làm tay) rồi chạy script ứng dụng
 
+> ⚠️ **Gõ qua nhiều lớp remote (VD macOS "Windows App" → RDP vào Windows Server → cửa sổ Connect của Hyper-V vào máy ảo) dễ bị rớt/lẫn ký tự** — gõ nhanh có khi chỉ còn lại vài ký tự ngẫu nhiên trong ô. Ở mọi ô nhập liệu bên dưới (tên máy, username, password): gõ **chậm**, nhìn lại đúng chữ hiện trên màn hình trước khi qua ô tiếp theo; **không dùng copy-paste** (cửa sổ Connect cơ bản của Hyper-V không hỗ trợ dán clipboard vào máy ảo). Nếu ô đang có sẵn ký tự lạ do gõ hụt, xoá trắng hẳn (`Ctrl+A` rồi `Backspace`) trước khi gõ lại, đừng gõ đè lên.
+
 1. Hyper-V Manager → chuột phải `quiz7800-host` → **Connect...** → cài Ubuntu Server như bình thường: đặt tên máy `quiz7800-host`, tạo user quản trị (nhớ kỹ mật khẩu). Ở màn hình chọn gói cài đặt, **tick sẵn "Install OpenSSH Server"**.
 2. Sau khi cài xong và đăng nhập, tải mã nguồn về ngay trong Ubuntu (đang có Internet) rồi chạy script:
    ```bash
