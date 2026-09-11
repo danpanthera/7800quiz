@@ -198,6 +198,7 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['subjects'] })
       setQuestionDrawerOpen(false); questionForm.resetFields()
     },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi tạo câu hỏi')),
   })
 
   const updateQuestionMutation = useMutation({
@@ -206,6 +207,7 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['bank-questions'] })
       setQuestionDrawerOpen(false); setEditQuestion(null); questionForm.resetFields()
     },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi sửa câu hỏi')),
   })
 
   const deleteQuestionMutation = useMutation({
@@ -215,6 +217,7 @@ export default function QuestionsPage() {
       qc.invalidateQueries({ queryKey: ['subjects'] })
       message.success('Đã xóa')
     },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi xóa câu hỏi')),
   })
 
   const deleteAllQuestionsMutation = useMutation({
