@@ -2,9 +2,7 @@
 
 Tài liệu này mô tả đầy đủ tính năng, kiến trúc và các cơ chế đảm bảo tính
 **đúng đắn — công bằng — trực quan** của module Đấu trường (buzzer-round thi
-đấu real-time theo đội). Xem thêm tổng quan ngắn gọn trong
-[.github/agents/7800quiz.agent.md](.github/agents/7800quiz.agent.md) (mục "Cơ
-chế Đấu trường").
+đấu real-time theo đội).
 
 ## 1. Đấu trường là gì
 
@@ -224,17 +222,17 @@ hình (MC lẫn người chơi) chỉ đếm ngược theo mốc server phát ra
 - `handleTime()`: trả `{serverNowMs: Date.now()}` — dùng cho đồng bộ đồng hồ
   kiểu Cristian's algorithm phía client.
 
-## 4. Idempotency (bắt buộc theo CLAUDE.md)
+## 4. Idempotency (bắt buộc)
 
 Hai điểm ghi dữ liệu quan trọng nhất của Đấu trường — **chấm điểm một câu**
 (`revealRound`) và **cộng XP cuối trận** (`endSession`) — đều dùng chung một
 mẫu: **CAS qua `prisma.<model>.updateMany({where: {..., status: <trạng thái
 cũ>}, data: {status: <trạng thái mới>}})`**. Nếu `count === 0` nghĩa là một
 lời gọi khác đã thắng trong lúc đua — hàm trả về kết quả đã có sẵn thay vì
-ghi đè/ghi trùng. Đây chính là cơ chế idempotency mà CLAUDE.md yêu cầu cho
-mọi endpoint ghi dữ liệu, áp dụng cho ngữ cảnh real-time nhiều nguồn kích
-hoạt cùng lúc (MC bấm tay + server tự động) thay vì UUID client-gen (không
-phù hợp ở đây vì hành động không đến từ 1 client duy nhất).
+ghi đè/ghi trùng. Đây là cơ chế idempotency bắt buộc cho mọi endpoint ghi dữ
+liệu trong dự án, áp dụng cho ngữ cảnh real-time nhiều nguồn kích hoạt cùng
+lúc (MC bấm tay + server tự động) thay vì UUID client-gen (không phù hợp ở
+đây vì hành động không đến từ 1 client duy nhất).
 
 ## 5. Kiến trúc frontend (`apps/web/src/`)
 
@@ -361,7 +359,7 @@ qua throttle, tự khoá + tự công bố, vào lại giữa trận, restart AP
 trận, idempotency khi đua giữa MC và server, câu ORDERING, phá hoà, giảm
 chuyển động, bố cục điện thoại...) trong lịch sử trao đổi lúc lập kế hoạch
 tính năng này — chưa chạy tự động hoá được vì cần nhiều trình duyệt thật.
-Tài khoản seed dev: xem [CLAUDE.md](CLAUDE.md) mục "Tài khoản seed (dev)".
+Tài khoản seed dev: xem `apps/api/prisma/seed.ts`.
 
 ## 10. Ràng buộc đã tôn trọng khi xây tính năng
 
