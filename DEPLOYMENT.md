@@ -51,6 +51,8 @@ So với cách dùng một máy chuẩn bị riêng rồi mang file qua USB, cá
 - Không cần chuẩn bị/quét virus USB, không cần `docker save`/`docker load` ảnh cồng kềnh.
 - Đơn giản hơn cho lần đầu **và** cho mỗi lần cập nhật phiên bản sau này (Phụ lục A) — luôn lặp lại đúng một thao tác quen thuộc: nối mạng tạm → làm việc → ngắt mạng.
 
+> Nếu Internet tạm thời quá chậm/chập chờn khiến bước build Docker (Giai đoạn 2.3) kéo dài bất thường: có phương án thay thế — build sẵn 2 ảnh Docker ở máy khác có mạng nhanh rồi chuyển qua USB, xem **Phụ lục D**.
+
 Đánh đổi cần biết: máy chủ **có tiếp xúc trực tiếp với Internet** trong khoảng thời gian ngắn đó (thường 1 buổi). Để an toàn:
 - **Giữ Windows Firewall bật** (mặc định đã chặn toàn bộ kết nối đến từ ngoài) — không tắt vì "cho nhanh".
 - Nếu máy chủ có **2 card mạng vật lý**: dùng card thứ 2 riêng cho Internet tạm thời, không đụng tới card đang nối mạng nội bộ — tránh hẳn việc phải rút/cắm dây.
@@ -653,3 +655,80 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f api
 # Sao lưu ngay lập tức (ngoài lịch tự động)
 bash scripts/backup-db.sh
 ```
+
+---
+
+## Phụ lục D — Phương án thay thế: build ảnh Docker ở máy khác, chuyển qua USB
+
+**Chỉ dùng khi** Internet tạm thời trên PROD quá chậm/chập chờn khiến bước build Docker ở Giai đoạn 2.3 kéo dài bất thường (hàng chục phút trở lên cho `npm ci`, hoặc bị treo giữa chừng do rớt gói). Đây **không phải cách mặc định** — tài liệu chính (Giai đoạn 2) cố tình chọn build trực tiếp trên PROD để tránh đúng việc quét virus USB + chuyển ảnh cồng kềnh này (xem mục 0.3). Chỉ chuyển sang Phụ lục D khi cách chính gặp khó khăn thật sự.
+
+**Máy dùng để build**: máy Windows hay **macOS đều được** — chỉ cần có Docker Desktop cài sẵn và Internet nhanh (VD máy dev đang có sẵn mã nguồn mới nhất). Không nhất thiết phải là máy Windows.
+
+> ⚠️ **Nếu build trên Mac Apple Silicon (M1/M2/M3/M4, chip ARM)**: máy PROD chạy kiến trúc `linux/amd64` (Windows Server + Hyper-V + Ubuntu, không phải ARM), khác hẳn kiến trúc gốc `arm64` của Mac — **bắt buộc** chỉ định `--platform linux/amd64` khi build, thiếu tham số này sẽ ra ảnh ARM không chạy được trên PROD. Máy Windows hoặc Mac Intel vốn đã là `amd64` nên không bắt buộc, nhưng nên chỉ định rõ cho chắc chắn.
+
+### D.1. Build + đóng gói ở máy khác (có Internet nhanh)
+
+```bash
+cd <thư-mục-mã-nguồn-7800quiz>   # dùng đúng bản mã nguồn mới nhất, khớp commit đã push
+
+# Build trực tiếp bằng docker buildx (không qua docker compose để khỏi cần .env.prod ở máy này)
+docker buildx build --platform linux/amd64 -t quiz7800/api:latest -f apps/api/Dockerfile apps/api --load
+docker buildx build --platform linux/amd64 -t quiz7800/web:latest -f apps/web/Dockerfile apps/web --load
+
+# Xác nhận đã có đúng 2 ảnh (tên/tag phải khớp CHÍNH XÁC docker-compose.prod.yml)
+docker images | grep quiz7800
+
+# Đóng gói cả 2 ảnh vào 1 file (vài trăm MB tới hơn 1GB — kiểm tra USB đủ chỗ trống)
+docker save quiz7800/api:latest quiz7800/web:latest -o quiz7800-images.tar
+```
+
+### D.2. Chuyển file qua USB vào PROD
+
+1. Copy `quiz7800-images.tar` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.4).
+2. Cắm USB vào máy chủ Windows Server, copy file vào `D:\quiz\quiz7800-images.tar`.
+3. Hyper-V không có sẵn cách gắn USB thẳng vào máy ảo — chuyển tiếp file từ Windows sang Ubuntu qua mạng nội bộ (SSH đã cài ở Giai đoạn 2.3), dùng OpenSSH client có sẵn trên Windows:
+   ```powershell
+   # Không biết IP máy ảo thì lấy qua Hyper-V, không cần vào console:
+   Get-VM quiz7800-host | Select-Object -ExpandProperty NetworkAdapters | Select-Object IPAddresses
+
+   scp D:\quiz\quiz7800-images.tar <username-đã-tạo-ở-2.3>@<IP-máy-ảo>:/tmp/
+   ```
+
+### D.3. Nạp ảnh và chạy trong Ubuntu (thay cho việc chạy nguyên `prod-setup-app.sh`)
+
+⚠️ **Không chạy `prod-setup-app.sh` nguyên bản ở đây** — script đó luôn tự `docker compose build` lại từ đầu, sẽ xoá hết lợi ích vừa làm ở D.1. Làm tay từng bước tương đương, thay bước build bằng `docker load`:
+
+```bash
+# 1. Nạp 2 ảnh đã build sẵn
+docker load -i /tmp/quiz7800-images.tar
+
+# 2. Lấy mã nguồn (repo nhỏ, không có node_modules — clone qua Internet chậm vẫn nhanh)
+sudo apt-get update && sudo apt-get install -y git
+git clone <đường-dẫn-repo-thật>/7800quiz.git /opt/7800quiz
+sudo chown -R "$USER":"$USER" /opt/7800quiz
+cd /opt/7800quiz
+
+# 3. Tạo .env.prod với bí mật sinh ngẫu nhiên (giống hệt logic prod-setup-app.sh)
+cp .env.prod.example .env.prod
+sed -i "s#^SITE_ADDRESS=.*#SITE_ADDRESS=quiz.vbalaichau.com#" .env.prod
+sed -i "s#^CORS_ORIGIN=.*#CORS_ORIGIN=https://quiz.vbalaichau.com#" .env.prod
+sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)#" .env.prod
+sed -i "s#^JWT_SECRET=.*#JWT_SECRET=$(openssl rand -hex 32)#" .env.prod
+
+# 4. Cài Docker Engine nếu máy ảo chưa có (prod-setup-app.sh dòng cài Docker, xem scripts/prod-setup-app.sh)
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
+
+# 5. Khởi động — KHÔNG có --build, dùng thẳng 2 ảnh vừa docker load
+sudo docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+# 6. Phần còn lại giống hệt Giai đoạn 2.3/2.4: chờ healthy, khởi tạo DB
+sudo docker compose -f docker-compose.prod.yml --env-file .env.prod ps    # chờ tới khi cả 4 dòng (healthy)
+sudo docker exec quiz7800_api npx prisma migrate deploy
+sudo docker exec quiz7800_api npm run seed
+
+grep -E '^(JWT_SECRET|POSTGRES_PASSWORD)=' .env.prod    # LƯU NGAY vào kho mật khẩu ngân hàng
+curl -s http://127.0.0.1:8080/api/health                # Kỳ vọng: {"status":"ok",...}
+```
+
+Sau bước D.3, quay lại đúng Giai đoạn 2.4 trở đi của tài liệu chính (kiểm tra, ngắt Internet, chuyển sang mạng nội bộ...) — không có gì khác biệt nữa.
