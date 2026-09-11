@@ -44,7 +44,7 @@ Hyper-V có từ Windows Server 2012, là hypervisor gốc (không phải ảo h
 
 ### 0.3. Vì sao cài trực tiếp trên PROD bằng cách nối Internet tạm thời
 
-Cách làm: **cắm Internet tạm thời thẳng vào máy chủ PROD** trong buổi cài đặt (rút dây mạng nội bộ, cắm dây Internet vào đúng card mạng đó — hoặc dùng card mạng thứ 2 nếu máy chủ có sẵn), dựng máy ảo + cài Docker + build ứng dụng **ngay trên máy chủ thật**, xong thì **ngắt Internet, cắm lại mạng nội bộ**. Không cần máy trung gian nào khác.
+Cách làm: **cắm Internet tạm thời thẳng vào máy chủ PROD** trong buổi cài đặt (rút dây mạng nội bộ, cắm dây Internet vào đúng card mạng đó — hoặc dùng card mạng thứ 2 nếu máy chủ có sẵn; khi đó card thứ 2 trở thành card riêng của máy ảo, cần thêm 1 cổng switch mạng nội bộ cho nó ở Giai đoạn 3.1), dựng máy ảo + cài Docker + build ứng dụng **ngay trên máy chủ thật**, xong thì **ngắt Internet, cắm lại mạng nội bộ**. Không cần máy trung gian nào khác.
 
 So với cách dùng một máy chuẩn bị riêng rồi mang file qua USB, cách này:
 - Không phải lo tương thích "VM Configuration Version" giữa 2 máy Hyper-V khác nhau (máy ảo dựng thẳng trên Server thật thì chạy thẳng trên máy đó, không có bước export/import xuyên máy).
@@ -265,7 +265,19 @@ Get-VM quiz7800-host | Select-Object AutomaticStartAction
 
 ### 3.1. Ngắt Internet, cắm lại dây mạng nội bộ
 
-Rút dây Internet tạm thời, cắm lại dây mạng nội bộ vào đúng card mạng đã dùng ở Giai đoạn 2.1 (nếu dùng card mạng thứ 2 riêng cho Internet ở 0.3 thì chỉ cần rút dây Internet ra, không cần đụng gì thêm). Virtual Switch `LAN-Tam` đã tạo vẫn dùng được nguyên vẹn — Hyper-V không quan tâm đầu kia của dây cắm gì, chỉ cần đổi tên cho gọn (tuỳ chọn, không bắt buộc):
+**Trước khi rút dây Internet**: máy ảo cần có sẵn `scripts/prod-set-static-ip.sh` cho bước 3.2 — nếu mã nguồn được clone từ trước khi có script này, chạy `cd /opt/7800quiz && git pull` ngay lúc còn Internet. Rút dây rồi thì máy ảo không lấy thêm được gì từ GitHub.
+
+Switch `LAN-Tam` gắn cố định vào đúng card mạng đã chỉ định ở Giai đoạn 2.1 — Hyper-V không quan tâm đầu kia của dây cắm gì, nên việc cần làm tuỳ máy chủ dùng mấy card:
+
+- **1 card** (đã rút dây nội bộ ra để cắm Internet): rút dây Internet, cắm lại dây mạng nội bộ vào đúng card đó. Không cần sửa gì bên Hyper-V.
+- **Card thứ 2 riêng cho Internet** (0.3): switch `LAN-Tam` đang gắn vào card thứ 2 — **chỉ rút dây Internet ra thì máy ảo mất mạng hoàn toàn**. Cắm vào card thứ 2 một dây mạng nội bộ khác (thêm 1 cổng switch LAN, cùng VLAN với card chính); từ nay card này dành riêng cho máy ảo. Windows đã có IP trên card chính nên gỡ luôn card ảo phía Windows khỏi switch, tránh đặt nhầm IP của máy ảo lên đó:
+  ```powershell
+  Set-VMSwitch -Name "LAN-Tam" -AllowManagementOS $false
+  Get-NetAdapter | Format-Table Name, Status    # card đã chỉ định ở 2.1 phải là Up
+  ```
+  ⚠️ Chỉ chạy `Set-VMSwitch` này với máy chủ **2 card** — máy chủ 1 card thì IP của chính Windows nằm trên card ảo đó, gỡ đi là Windows mất mạng.
+
+Đổi tên switch cho gọn (tuỳ chọn, không bắt buộc):
 
 ```powershell
 Rename-VMSwitch -Name "LAN-Tam" -NewName "LAN-NoiBo"
@@ -273,7 +285,9 @@ Rename-VMSwitch -Name "LAN-Tam" -NewName "LAN-NoiBo"
 
 ### 3.2. Đặt IP tĩnh trong Ubuntu
 
-Trong console VM (Hyper-V Connect, hoặc SSH nếu mạng nội bộ đã thông), chạy script có sẵn — tự viết đúng file netplan, tự sao lưu bản cũ, tự áp dụng. Không sửa tay file YAML nhiều dòng nhiều ký tự đặc biệt (`#`, `:`, `[`, thụt lề) — rất dễ gõ sai qua console Hyper-V Connect (không dán clipboard được):
+Trong console VM (Hyper-V Connect, hoặc SSH nếu mạng nội bộ đã thông), chạy script có sẵn — tự viết đúng file netplan, tắt cấu hình mạng cũ (DHCP của Internet tạm, cloud-init), tự áp dụng rồi tự kiểm tra IP, bảng định tuyến và ping gateway. Không sửa tay file YAML nhiều dòng nhiều ký tự đặc biệt (`#`, `:`, `[`, thụt lề) — rất dễ gõ sai qua console Hyper-V Connect (không dán clipboard được).
+
+> ⚠️ IP của máy ảo đặt **bên trong Ubuntu** bằng script dưới đây — **không** đặt IP đó cho card `vEthernet (LAN-Tam)` trên Windows: Windows sẽ tự trả lời ping IP đó (tưởng máy ảo đã thông trong khi máy ảo chưa có IP), rồi trùng IP khi máy ảo nhận IP thật.
 
 ```bash
 cd /opt/7800quiz
@@ -596,6 +610,8 @@ Bản sao lưu chưa từng được phục hồi thử thì chưa phải là b�
 | `prisma migrate deploy` báo lỗi **P3005** | Chạy nhầm trên DB đã có dữ liệu/cấu trúc cũ | Xác nhận đang thao tác đúng máy ảo/volume PROD, không phải một bản dev còn sót lại |
 | Container `api` khởi động rồi tắt liên tục (`Restarting`), log báo `Thiếu JWT_SECRET hợp lệ` | `.env.prod` còn chữ mẫu `THAY_BANG_...`, để trống hoặc khoá quá ngắn | Chạy lại `prod-setup-app.sh` (xem ghi chú 🔁 ở Giai đoạn 2.3) — script tự sinh lại bí mật còn chữ mẫu và đồng bộ mật khẩu vào Postgres. API cố ý từ chối chạy với khoá không an toàn |
 | `prod-setup-app.sh` dừng ngay sau dòng "Đang tạo .env.prod...", trở về dấu nhắc lệnh mà không báo lỗi | Bản script cũ (trước 11/09/2026) bị lỗi SIGPIPE ở dòng sinh mật khẩu | `cd /opt/7800quiz && git pull` để lấy bản đã sửa, rồi chạy lại script — không cần xoá gì |
+| Máy ảo ping gateway báo `From 192.168.1.x ... Destination Host Unreachable`; `ip route` vẫn còn `default via 192.168.1.1 ... proto dhcp` | IP tĩnh chưa được áp dụng — máy ảo vẫn giữ IP DHCP của Internet tạm. Switch ảo không mất kết nối khi đổi dây ở máy chủ thật nên máy ảo không tự bỏ IP cũ | Chạy `prod-set-static-ip.sh` (Giai đoạn 3.2) — script tắt DHCP, xoá IP cũ còn bám, tự ping gateway để xác nhận |
+| Windows ping được IP máy ảo nhưng máy khác trong LAN thì không | IP đó bị đặt nhầm cho card `vEthernet (LAN-Tam)` của Windows — Windows đang tự trả lời chính nó (kiểm tra: `Get-NetIPAddress -AddressFamily IPv4`) | Gỡ IP khỏi Windows: máy chủ 2 card → `Set-VMSwitch -Name "LAN-Tam" -AllowManagementOS $false` (xem 3.1); máy chủ 1 card → chỉ gỡ đúng IP đó: `Remove-NetIPAddress -IPAddress <IP> -Confirm:$false`. IP máy ảo chỉ đặt bên trong Ubuntu (3.2) |
 | Trình duyệt báo "Not secure"/chứng chỉ không đáng tin | Máy đó chưa cài chứng chỉ gốc `7800quiz-root-ca.crt` | Xem Giai đoạn 5.2 — cài qua GPO (máy trong domain) hoặc cài tay |
 | Đấu trường không kết nối được, mọi thứ khác vẫn bình thường | Thiết bị bảo mật mạng nội bộ chặn nâng cấp WebSocket | Mở DevTools trên trình duyệt (F12) → tab Network → lọc "WS" → phải thấy trạng thái **101**. Nếu chi nhánh này không được mà chi nhánh khác được, báo bộ phận mạng kiểm tra thiết bị của riêng chi nhánh đó |
 | Import file báo lỗi **413** | File vượt quá 25MB | Chia nhỏ file trước khi import |
