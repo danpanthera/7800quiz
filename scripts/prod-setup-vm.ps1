@@ -87,6 +87,11 @@ if (-not (Test-Path $IsoPath)) {
 # ── 4. Tạo Virtual Switch tạm cho Internet ──────────────────────────────────
 $sw = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
 if (-not $sw) {
+    $adapter = Get-NetAdapter -Name $NetAdapterName -ErrorAction SilentlyContinue
+    if (-not $adapter) {
+        $available = (Get-NetAdapter | Select-Object -ExpandProperty Name) -join "', '"
+        throw "Không tìm thấy card mạng '$NetAdapterName' — kiểm tra lại đúng tên (phân biệt hoa/thường, giữ nguyên khoảng trắng nếu có). Card mạng hiện có trên máy: '$available'"
+    }
     Ghi "Đang tạo Virtual Switch '$SwitchName' gắn với card mạng '$NetAdapterName'..."
     New-VMSwitch -Name $SwitchName -NetAdapterName $NetAdapterName -AllowManagementOS $true | Out-Null
 } else {
