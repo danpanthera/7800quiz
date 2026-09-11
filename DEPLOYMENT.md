@@ -80,7 +80,7 @@ Checklist bổ sung cần làm khi go-live:
 - [ ] Ổ `D:` còn ít nhất **80GB trống** — toàn bộ tài liệu này dùng `D:\quiz\` làm thư mục gốc phía Windows (mã nguồn, ISO, máy ảo). Nếu máy chủ chỉ có ổ `C:` hoặc muốn dùng đường dẫn khác, đổi qua tham số `-VmPath` khi chạy `prod-setup-vm.ps1` (Giai đoạn 2.2) và thay `D:\quiz\` bằng đường dẫn đó ở mọi bước còn lại
 - [ ] Một nguồn Internet tạm thời có thể cắm được vào máy chủ (dây mạng công ty nối tạm ra ngoài, router/modem/hotspot có cổng Ethernet) — đã xác nhận với bộ phận an ninh thông tin về việc tạm thời kết nối máy chủ này ra Internet
 - [ ] Biết máy chủ có mấy card mạng vật lý — nếu có từ 2 trở lên, dùng riêng 1 card cho Internet tạm thời để khỏi phải rút/cắm dây mạng nội bộ
-- [ ] Dải IP tĩnh nội bộ dành cho máy ảo (hỏi bộ phận mạng), và biết được máy chủ nằm ở subnet/VLAN nào
+- [ ] Dải IP tĩnh nội bộ dành cho máy ảo — đã xác định: máy chủ vật lý đang có IP thật **10.58.0.19** (subnet mask `255.255.255.0`, gateway `10.58.0.1`), máy ảo sẽ đặt **10.58.0.20** cùng dải (xem Giai đoạn 3.2)
 - [ ] Quyền tạo bản ghi DNS `quiz.vbalaichau.com` trên DC ghi được (không phải RODC) — xem Giai đoạn 3.6
 - [ ] Danh sách máy client (đặc biệt máy trong domain AD, nếu có) để biết cách cài chứng chỉ gốc nội bộ hàng loạt qua GPO (Giai đoạn 5)
 - [ ] Địa chỉ repo mã nguồn (Git) của 7800quiz — nếu repo **private trên GitHub**, chuẩn bị sẵn **Personal Access Token** (xem cảnh báo ở Giai đoạn 2.3) vì GitHub không cho đăng nhập bằng mật khẩu tài khoản qua Git nữa
@@ -294,19 +294,14 @@ cd /opt/7800quiz
 sudo bash scripts/prod-set-static-ip.sh <IP/CIDR> <gateway> <dns>
 ```
 
-Ví dụ — 3 giá trị này lấy từ `ipconfig /all` trên Windows (đúng card đang có IP thật của máy chủ), **không đoán**:
+Giá trị thật dùng cho máy chủ này — máy chủ vật lý đang có IP `10.58.0.19` (subnet mask `255.255.255.0` = `/24`, gateway `10.58.0.1`, lấy qua `ipconfig /all` trên Windows), máy ảo đặt IP kế tiếp cùng dải là `10.58.0.20`, 2 DNS nội bộ nối bằng dấu phẩy (**không dấu cách**):
 ```bash
-sudo bash scripts/prod-set-static-ip.sh 10.20.1.50/24 10.20.1.1 10.20.1.2
-```
-
-Có DNS phụ (dự phòng) thì nối vào DNS chính bằng dấu phẩy, **không dấu cách**:
-```bash
-sudo bash scripts/prod-set-static-ip.sh 10.20.1.50/24 10.20.1.1 10.20.1.2,10.20.1.3
+sudo bash scripts/prod-set-static-ip.sh 10.58.0.20/24 10.58.0.1 10.58.0.11,10.0.58.11
 ```
 
 Script mặc định dùng card `eth0` — nếu `ip addr` cho thấy tên khác thì thêm tham số thứ 4. Chạy xong script tự in lại `ip addr show` để xác nhận ngay; chạy lại (VD gõ nhầm) vẫn an toàn, file cũ tự được sao lưu kèm thời gian trước khi ghi đè.
 
-Ghi lại IP này — dùng để đăng ký DNS ở bước 3.6.
+Ghi lại IP này (`10.58.0.20`) — dùng để đăng ký DNS ở bước 3.6.
 
 ### 3.3. Mở tường lửa trong Ubuntu
 
@@ -334,7 +329,7 @@ Vẫn cần lưu ý 3 điểm sau khi triển khai chung:
 
 Dùng tên nội bộ thay vì gõ thẳng IP — người dùng dễ nhớ, và IP máy ảo có đổi sau này cũng chỉ cần sửa 1 bản ghi DNS thay vì báo lại toàn bộ chi nhánh. Máy chủ đang dùng **RODC** (Read-Only Domain Controller) làm DNS, nên cần đúng thứ tự sau — **không tạo được bản ghi trực tiếp trên RODC**, RODC chỉ giữ **bản sao chỉ-đọc** của zone.
 
-1. Trên **một Domain Controller ghi được** (writable DC, không phải RODC): mở **DNS Manager** → Forward Lookup Zones → zone `vbalaichau.com` → chuột phải → **New Host (A or AAAA)...** → Name: `quiz` → IP address: đúng IP tĩnh của máy ảo đã đặt ở bước 3.2 → Add Host.
+1. Trên **một Domain Controller ghi được** (writable DC, không phải RODC): mở **DNS Manager** → Forward Lookup Zones → zone `vbalaichau.com` → chuột phải → **New Host (A or AAAA)...** → Name: `quiz` → IP address: `10.58.0.20` (IP tĩnh của máy ảo đã đặt ở bước 3.2) → Add Host.
 2. Chờ bản ghi replicate về RODC theo lịch AD replication bình thường, hoặc ép ngay cho gấp:
    ```powershell
    repadmin /syncall /AdeP
@@ -342,7 +337,7 @@ Dùng tên nội bộ thay vì gõ thẳng IP — người dùng dễ nhớ, và
 3. Kiểm tra từ một máy client đang dùng RODC đó làm DNS server (thường là máy trong cùng chi nhánh với RODC):
    ```powershell
    nslookup quiz.vbalaichau.com
-   # Kỳ vọng: trả đúng IP tĩnh của máy ảo
+   # Kỳ vọng: trả đúng IP tĩnh của máy ảo (10.58.0.20)
    ```
 
 > **Lưu ý**: nếu `vbalaichau.com` cũng là domain public thật (website/email ra Internet), bản ghi `quiz` này **chỉ tồn tại trong DNS nội bộ** của ngân hàng — không đăng ký ra ngoài, không ảnh hưởng gì tới domain public. Bên ngoài mạng nội bộ (kể cả dùng đúng URL) sẽ không phân giải được, đây là hành vi đúng của DNS nội bộ (split-horizon), không phải lỗi.
@@ -351,7 +346,7 @@ Từ bước này về sau, mọi chỗ trong tài liệu dùng `quiz.vbalaichau
 
 ### ✅ Checklist Giai đoạn 3
 - [ ] Đã ngắt Internet, cắm lại mạng nội bộ, máy ảo vẫn lên mạng bình thường qua switch cũ
-- [ ] Máy ảo có IP tĩnh đúng dải mạng ngân hàng
+- [ ] Máy ảo có IP tĩnh `10.58.0.20` đúng dải mạng ngân hàng
 - [ ] `ufw allow 80,443/tcp` đã chạy (nếu ufw đang bật)
 - [ ] Đã xác nhận với bộ phận mạng: các chi nhánh truy cập được cổng 80/443 tới IP máy ảo
 - [ ] Nếu máy chủ đã có Apache/webserver khác: đã đặt IP/tên riêng cho 7800quiz và đã báo bộ phận mạng về IP mới trên cùng cổng switch (mục 3.5)
