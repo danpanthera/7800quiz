@@ -324,6 +324,8 @@ Nếu các chi nhánh khác nằm ở VLAN/subnet riêng, nhờ bộ phận qu�
 
 ### 3.5. Nếu máy chủ đã có sẵn Apache (hoặc webserver khác) chạy trên Windows
 
+> Máy chủ PROD 7800quiz hiện tại **không cài Apache** — mục này không áp dụng, có thể bỏ qua thẳng tới 3.6. Giữ lại làm tài liệu tham khảo chung (mục này áp dụng thật cho 3800quiz — máy chủ đó có sẵn Apache).
+
 Cài chung được, **không xung đột port 80/443** — đúng nhờ kiến trúc External switch ở trên: Apache bind vào IP của chính Windows Server, còn Caddy trong máy ảo bind vào IP riêng của máy ảo (bước 3.2), hai địa chỉ IP khác nhau nên hai bên không hề "giành" cổng của nhau dù cùng chạy trên một máy chủ vật lý. (Điều này chỉ đúng khi làm theo đúng Giai đoạn 3 — nếu port-forward 80/443 từ Windows vào máy ảo thay vì dùng External switch, lúc đó Windows mới thực sự phải bind 2 cổng đó và sẽ xung đột thật với Apache.)
 
 Vẫn cần lưu ý 3 điểm sau khi triển khai chung:
