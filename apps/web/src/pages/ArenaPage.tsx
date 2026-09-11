@@ -499,37 +499,59 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
               <Form.Item name="totalQuestionCount" label="Tổng số câu hỏi" rules={[{ required: true, message: 'Nhập tổng số câu hỏi' }]}>
                 <InputNumber min={1} max={500} style={{ width: 160 }} />
               </Form.Item>
-              <Form.Item label="Tỷ lệ theo lĩnh vực (tổng phải đúng 100%)">
-                <Form.List name="subjectRatios" rules={[{
-                  validator: async (_, ratios: SubjectRatio[]) => {
-                    if (!ratios || ratios.length === 0) return Promise.reject(new Error('Thêm ít nhất 1 lĩnh vực'))
-                    const total = ratios.reduce((s, r) => s + (r?.percent || 0), 0)
-                    if (Math.round(total) !== 100) return Promise.reject(new Error(`Tổng tỷ lệ đang là ${total}% — phải đúng 100%`))
-                  },
-                }]}>
-                  {(fields, { add, remove }, { errors }) => (
-                    <>
-                      {fields.map(({ key, name }) => (
-                        <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
-                          <Form.Item name={[name, 'subjectId']} noStyle rules={[{ required: true, message: 'Chọn lĩnh vực' }]}>
-                            <Select showSearch optionFilterProp="label" placeholder="Chọn lĩnh vực" style={{ width: 260 }}
-                              options={subjects.map((s) => ({ value: s.id, label: `${s.name} (${s._count?.questions ?? 0} câu)` }))} />
-                          </Form.Item>
-                          <Form.Item name={[name, 'percent']} noStyle rules={[{ required: true, message: 'Nhập %' }]}>
-                            <InputNumber min={0} max={100} addonAfter="%" placeholder="Tỷ lệ" style={{ width: 110 }} />
-                          </Form.Item>
-                          {fields.length > 1 && (
-                            <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f', cursor: 'pointer' }} />
-                          )}
-                        </Space>
-                      ))}
-                      <Form.ErrorList errors={errors} />
-                      <Button type="dashed" onClick={() => add({ percent: 0 })} icon={<PlusOutlined />} size="small">
-                        Thêm lĩnh vực
-                      </Button>
-                    </>
-                  )}
-                </Form.List>
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.subjectRatios?.length !== cur.subjectRatios?.length}>
+                {() => {
+                  const soLuongDong = (form.getFieldValue('subjectRatios') as SubjectRatio[] | undefined)?.length ?? 1
+                  const chiMot = soLuongDong <= 1
+                  return (
+                    <Form.Item label={chiMot ? 'Lĩnh vực' : 'Tỷ lệ theo lĩnh vực (tổng phải đúng 100%)'}>
+                      <Form.List name="subjectRatios" rules={[{
+                        validator: async (_, ratios: SubjectRatio[]) => {
+                          if (!ratios || ratios.length === 0) return Promise.reject(new Error('Thêm ít nhất 1 lĩnh vực'))
+                          const total = ratios.reduce((s, r) => s + (r?.percent || 0), 0)
+                          if (Math.round(total) !== 100) return Promise.reject(new Error(`Tổng tỷ lệ đang là ${total}% — phải đúng 100%`))
+                        },
+                      }]}>
+                        {(fields, { add, remove }, { errors }) => (
+                          <>
+                            {fields.map(({ key, name }) => (
+                              <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                                <Form.Item name={[name, 'subjectId']} noStyle rules={[{ required: true, message: 'Chọn lĩnh vực' }]}>
+                                  <Select showSearch optionFilterProp="label" placeholder="Chọn lĩnh vực" style={{ width: 260 }}
+                                    options={subjects.map((s) => ({ value: s.id, label: `${s.name} (${s._count?.questions ?? 0} câu)` }))} />
+                                </Form.Item>
+                                {/* Chỉ 1 lĩnh vực thì hiển nhiên là 100% — ẩn ô % đỡ rườm rà, giá trị
+                                    vẫn giữ 100 trong form (từ initialValues hoặc do remove() ép lại bên
+                                    dưới) nên không cần đụng gì tới logic phân bổ/validate phía trên. */}
+                                {fields.length > 1 && (
+                                  <Form.Item name={[name, 'percent']} noStyle rules={[{ required: true, message: 'Nhập %' }]}>
+                                    <InputNumber min={0} max={100} addonAfter="%" placeholder="Tỷ lệ" style={{ width: 110 }} />
+                                  </Form.Item>
+                                )}
+                                {fields.length > 1 && (
+                                  <MinusCircleOutlined
+                                    onClick={() => {
+                                      const conLai = fields.filter((f) => f.name !== name)
+                                      remove(name)
+                                      if (conLai.length === 1) {
+                                        form.setFieldValue(['subjectRatios', conLai[0].name, 'percent'], 100)
+                                      }
+                                    }}
+                                    style={{ color: '#ff4d4f', cursor: 'pointer' }}
+                                  />
+                                )}
+                              </Space>
+                            ))}
+                            <Form.ErrorList errors={errors} />
+                            <Button type="dashed" onClick={() => add({ percent: 0 })} icon={<PlusOutlined />} size="small">
+                              Thêm lĩnh vực
+                            </Button>
+                          </>
+                        )}
+                      </Form.List>
+                    </Form.Item>
+                  )
+                }}
               </Form.Item>
               <Form.Item shouldUpdate noStyle>
                 {() => {
@@ -540,9 +562,11 @@ function CreateForm({ onCreated, onBack }: { onCreated: (s: ArenaSession) => voi
                   const counts = phanBoTheoTyLe(total, ratios)
                   return (
                     <div style={{ marginTop: -8, marginBottom: 12 }}>
-                      <Text type={tongTyLe === 100 ? 'secondary' : 'danger'} style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
-                        Tổng tỷ lệ: {tongTyLe}%{tongTyLe !== 100 && ' — phải đúng 100%'}
-                      </Text>
+                      {ratios.length > 1 && (
+                        <Text type={tongTyLe === 100 ? 'secondary' : 'danger'} style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                          Tổng tỷ lệ: {tongTyLe}%{tongTyLe !== 100 && ' — phải đúng 100%'}
+                        </Text>
+                      )}
                       {ratios.map((r, i) => {
                         if (!r.subjectId) return null
                         const subj = subjects.find((s) => s.id === r.subjectId)
