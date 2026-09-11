@@ -6,6 +6,7 @@ import { AuthProvider } from './lib/auth'
 import RequireAuth from './components/RequireAuth'
 import RoleGuard from './components/RoleGuard'
 import HomeRedirect from './components/HomeRedirect'
+import ReloadPrompt from './components/ReloadPrompt'
 import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
@@ -155,6 +156,7 @@ export default function App() {
         }}
       >
         <AntApp>
+        <ReloadPrompt />
         <AuthProvider>
           <BrowserRouter>
             <Routes>
@@ -196,7 +198,7 @@ export default function App() {
 
                 <Route element={<RoleGuard allowedRoles={USER_ROLES} />}>
                   <Route path="my/quizzes" element={<MyQuizzesPage />} />
-        <Route path="my/arena" element={<ArenaLobbyPage />} />
+                  <Route path="my/arena" element={<ArenaLobbyPage />} />
                   <Route path="my/attempts/:attemptId" element={<QuizPlayerPage />} />
                   <Route path="my/results/:submissionId" element={<QuizResultPage />} />
                   <Route path="my/leaderboard" element={<LeaderboardPage />} />
