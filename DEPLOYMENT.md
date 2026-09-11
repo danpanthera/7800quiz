@@ -732,7 +732,7 @@ ls -lh ~/Desktop/quiz7800-deploy/quiz7800-images.tar
 
 ### D.2. Chuyển file qua USB vào PROD
 
-1. Copy `quiz7800-images.tar` từ `~/Desktop/quiz7800-deploy/` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.4).
+1. Copy `quiz7800-images.tar` từ `~/Desktop/quiz7800-deploy/` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.3).
 2. Cắm USB vào máy chủ Windows Server, copy file vào `D:\quiz\quiz7800-images.tar`.
 3. Hyper-V không có sẵn cách gắn USB thẳng vào máy ảo — chuyển tiếp file từ Windows sang Ubuntu qua mạng nội bộ (SSH đã cài ở Giai đoạn 2.3), dùng OpenSSH client có sẵn trên Windows:
    ```powershell
