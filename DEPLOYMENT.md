@@ -666,25 +666,41 @@ bash scripts/backup-db.sh
 
 > ⚠️ **Nếu build trên Mac Apple Silicon (M1/M2/M3/M4, chip ARM)**: máy PROD chạy kiến trúc `linux/amd64` (Windows Server + Hyper-V + Ubuntu, không phải ARM), khác hẳn kiến trúc gốc `arm64` của Mac — **bắt buộc** chỉ định `--platform linux/amd64` khi build, thiếu tham số này sẽ ra ảnh ARM không chạy được trên PROD. Máy Windows hoặc Mac Intel vốn đã là `amd64` nên không bắt buộc, nhưng nên chỉ định rõ cho chắc chắn.
 
-### D.1. Build + đóng gói ở máy khác (có Internet nhanh)
+### D.1. Build + đóng gói trên máy dev (OrbStack)
 
 ```bash
-cd <thư-mục-mã-nguồn-7800quiz>   # dùng đúng bản mã nguồn mới nhất, khớp commit đã push
+cd /opt/Projects/7800quiz          # đúng thư mục mã nguồn trên máy dev
+git status                         # đảm bảo working tree sạch, không thiếu commit chưa push
+git pull --ff-only                 # dùng đúng bản mới nhất, khớp commit đã push lên PROD sẽ clone
+
+# Xác nhận Docker CLI đang trỏ vào OrbStack, không phải Docker Desktop (nếu có cài cả 2)
+docker context ls                  # dòng đang active (dấu *) phải là "orbstack"
+docker context use orbstack        # chỉ cần chạy nếu dòng active KHÔNG phải orbstack
 
 # Build trực tiếp bằng docker buildx (không qua docker compose để khỏi cần .env.prod ở máy này)
+# --platform linux/amd64 bắt buộc trên Mac Apple Silicon — xem cảnh báo phía trên
 docker buildx build --platform linux/amd64 -t quiz7800/api:latest -f apps/api/Dockerfile apps/api --load
 docker buildx build --platform linux/amd64 -t quiz7800/web:latest -f apps/web/Dockerfile apps/web --load
 
-# Xác nhận đã có đúng 2 ảnh (tên/tag phải khớp CHÍNH XÁC docker-compose.prod.yml)
+# Xác nhận đã có đúng 2 ảnh, ĐÚNG kiến trúc amd64 (tên/tag phải khớp CHÍNH XÁC docker-compose.prod.yml)
 docker images | grep quiz7800
+docker inspect --format '{{.Os}}/{{.Architecture}}' quiz7800/api:latest quiz7800/web:latest
+# Kỳ vọng cả 2 dòng: linux/amd64
 
-# Đóng gói cả 2 ảnh vào 1 file (vài trăm MB tới hơn 1GB — kiểm tra USB đủ chỗ trống)
-docker save quiz7800/api:latest quiz7800/web:latest -o quiz7800-images.tar
+# Đóng gói cả 2 ảnh vào 1 file, lưu ra thư mục dễ tìm để copy vào USB
+mkdir -p ~/Desktop/quiz7800-deploy
+docker save quiz7800/api:latest quiz7800/web:latest -o ~/Desktop/quiz7800-deploy/quiz7800-images.tar
+
+# Xem dung lượng thật (vài trăm MB tới hơn 1GB) để biết USB cần trống bao nhiêu
+ls -lh ~/Desktop/quiz7800-deploy/quiz7800-images.tar
+
+# Tuỳ chọn: nén lại cho nhẹ USB hơn (thường giảm 30-50%, đổi lại tốn thêm vài phút nén/giải nén)
+gzip -k ~/Desktop/quiz7800-deploy/quiz7800-images.tar   # ra thêm file .tar.gz, giữ nguyên file .tar gốc
 ```
 
 ### D.2. Chuyển file qua USB vào PROD
 
-1. Copy `quiz7800-images.tar` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.4).
+1. Copy `quiz7800-images.tar` (hoặc `.tar.gz` nếu đã nén) từ `~/Desktop/quiz7800-deploy/` vào USB — làm đúng quy trình quét virus USB nội bộ của ngân hàng trước khi cắm vào máy chủ PROD (xem mục 0.4).
 2. Cắm USB vào máy chủ Windows Server, copy file vào `D:\quiz\quiz7800-images.tar`.
 3. Hyper-V không có sẵn cách gắn USB thẳng vào máy ảo — chuyển tiếp file từ Windows sang Ubuntu qua mạng nội bộ (SSH đã cài ở Giai đoạn 2.3), dùng OpenSSH client có sẵn trên Windows:
    ```powershell
@@ -699,30 +715,41 @@ docker save quiz7800/api:latest quiz7800/web:latest -o quiz7800-images.tar
 ⚠️ **Không chạy `prod-setup-app.sh` nguyên bản ở đây** — script đó luôn tự `docker compose build` lại từ đầu, sẽ xoá hết lợi ích vừa làm ở D.1. Làm tay từng bước tương đương, thay bước build bằng `docker load`:
 
 ```bash
-# 1. Nạp 2 ảnh đã build sẵn
-docker load -i /tmp/quiz7800-images.tar
+# 1. Cài Docker Engine trước tiên (bắt buộc — docker load ở bước 3 cần lệnh docker đã có sẵn)
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"   # tiện cho các lần sau khỏi cần sudo — cần đăng xuất/vào lại mới có hiệu lực
+# Dùng "sudo docker" xuyên suốt bên dưới cho chắc chắn ngay trong phiên hiện tại, không đợi quyền nhóm áp dụng
 
-# 2. Lấy mã nguồn (repo nhỏ, không có node_modules — clone qua Internet chậm vẫn nhanh)
+# 2. Kiểm tra dung lượng ổ đĩa còn đủ trước khi nạp (ảnh + lớp tạm lúc load có thể cần gấp đôi dung lượng file)
+df -h /
+
+# 3. Nạp 2 ảnh đã build sẵn — nếu chuyển file .tar.gz thì giải nén trước: gunzip /tmp/quiz7800-images.tar.gz
+sudo docker load -i /tmp/quiz7800-images.tar
+
+# 4. Xác nhận nạp đúng cả 2 ảnh, ĐÚNG tag (thiếu/lệch tag thì docker compose ở bước 8 sẽ không nhận ra, tự build lại)
+sudo docker images | grep quiz7800
+# Kỳ vọng thấy đúng: quiz7800/api   latest   ...   và   quiz7800/web   latest   ...
+
+# 5. Dọn file tạm đã nạp xong, đỡ chiếm ổ đĩa
+rm /tmp/quiz7800-images.tar
+
+# 6. Lấy mã nguồn (repo nhỏ, không có node_modules — clone qua Internet chậm vẫn nhanh)
 sudo apt-get update && sudo apt-get install -y git
 git clone <đường-dẫn-repo-thật>/7800quiz.git /opt/7800quiz
 sudo chown -R "$USER":"$USER" /opt/7800quiz
 cd /opt/7800quiz
 
-# 3. Tạo .env.prod với bí mật sinh ngẫu nhiên (giống hệt logic prod-setup-app.sh)
+# 7. Tạo .env.prod với bí mật sinh ngẫu nhiên (giống hệt logic prod-setup-app.sh)
 cp .env.prod.example .env.prod
 sed -i "s#^SITE_ADDRESS=.*#SITE_ADDRESS=quiz.vbalaichau.com#" .env.prod
 sed -i "s#^CORS_ORIGIN=.*#CORS_ORIGIN=https://quiz.vbalaichau.com#" .env.prod
 sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)#" .env.prod
 sed -i "s#^JWT_SECRET=.*#JWT_SECRET=$(openssl rand -hex 32)#" .env.prod
 
-# 4. Cài Docker Engine nếu máy ảo chưa có (prod-setup-app.sh dòng cài Docker, xem scripts/prod-setup-app.sh)
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker "$USER"
-
-# 5. Khởi động — KHÔNG có --build, dùng thẳng 2 ảnh vừa docker load
+# 8. Khởi động — KHÔNG có --build, dùng thẳng 2 ảnh vừa docker load
 sudo docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
-# 6. Phần còn lại giống hệt Giai đoạn 2.3/2.4: chờ healthy, khởi tạo DB
+# 9. Phần còn lại giống hệt Giai đoạn 2.3/2.4: chờ healthy, khởi tạo DB
 sudo docker compose -f docker-compose.prod.yml --env-file .env.prod ps    # chờ tới khi cả 4 dòng (healthy)
 sudo docker exec quiz7800_api npx prisma migrate deploy
 sudo docker exec quiz7800_api npm run seed
