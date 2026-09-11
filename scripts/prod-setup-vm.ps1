@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # 7800Quiz — Dựng máy ảo Ubuntu qua Hyper-V NGAY TRÊN MÁY CHỦ PROD
 # (dùng khi PROD đang được cắm Internet tạm thời — xem DEPLOYMENT.md Giai đoạn 2)
 #
