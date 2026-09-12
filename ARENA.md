@@ -294,6 +294,46 @@ màu đáp án đồng bộ 4 sắc độ Agribank thay vì đỏ/xanh/vàng/cam
 (kể cả transition FLIP do JS đặt inline — chặn ở cả 2 lớp CSS lẫn kiểm tra
 `matchMedia` trong `useFlipRows`).
 
+### 5.6 Giọng đọc thuyết minh (`lib/giong-doc.ts`)
+
+Đọc **chỉ đề bài** (không đọc 4 đáp án — đã hiện to trên màn hình, và mỗi câu
+chỉ có ~20 giây) + tên lĩnh vực ở pha chuẩn bị. Áp dụng ở **màn MC**
+(`ArenaPage.tsx` → `GameControl`, công tắc trong `extra` của Card câu hỏi) và
+**màn trình chiếu** (`ArenaSpectatorPage.tsx`, công tắc góc trên) — KHÔNG có ở
+máy người chơi (`ArenaPlayerPage.tsx`), tránh nhiều điện thoại cùng đọc lệch
+pha trong 1 phòng. Mặc định TẮT ở cả 2 nơi, lưu localStorage riêng từng nơi
+(`7800quiz.arena-host.giong-doc` / `7800quiz.arena-spectator.giong-doc`).
+
+**Nguyên tắc "chỉ bật ở MỘT máy"**: nếu MC và màn trình chiếu cùng bật, tiếng
+sẽ chồng nhau qua 1 loa hội trường. `giong-doc.ts` phát hiện bằng
+`BroadcastChannel('7800quiz-giong-doc')` — tab/thiết bị nào bật sau sẽ tự
+khiến tab kia (nếu đang bật) tắt công tắc của mình. Chỉ hoạt động giữa các
+tab/thiết bị **cùng trình duyệt cùng máy**; không chặn được 2 máy vật lý khác
+nhau cùng bật — MC cần tự thống nhất chỉ bật ở máy nối loa.
+
+**Đồng bộ với vòng đời câu hỏi** — 2 effect ở `ArenaPage.tsx` chỉ QUAN SÁT
+state đã có sẵn (`prepare`/`currentQuestion`/`locked`/`revealData`), không
+thêm handler socket mới:
+- Bắt đầu đọc khi `prepare`/`currentQuestion` đổi; hạn chót (`maxMs`) tính
+  bằng `deadlineAtMs − serverNowMs − 2000` (lấy hiệu 2 mốc trong cùng payload
+  nên miễn nhiễm lệch đồng hồ máy MC, không cần `useServerClock`).
+- Dừng ngay khi `locked` (hết giờ) hoặc `revealData` (đã công bố) — tiếng đọc
+  không bao giờ được đè lên lúc chốt điểm.
+
+Ở `ArenaSpectatorPage.tsx`, do màn này thường mở sẵn rồi bỏ đó (cắm HDMI, không
+ai chạm vào), chính sách autoplay của trình duyệt gần như chắc chắn chặn lần
+`play()` đầu tiên — có lớp phủ toàn màn hình "Bấm để bật giọng đọc" khi công
+tắc đang bật (từ localStorage phiên trước) nhưng chưa được "mồi" trong lần tải
+trang này; bấm 1 cái là xong.
+
+File audio sinh sẵn bằng `npm run giong-doc` (xem `DEPLOYMENT.md`, Phụ lục E),
+đặt tên theo hash nội dung — sửa câu hỏi mà chưa sinh lại audio thì câu đó
+**im lặng** (fail-safe, không đọc nhầm nội dung cũ).
+
+Khuyến nghị: nếu bật giọng đọc, đặt `questionDurationSec ≥ 30` giây khi tạo
+phiên (đọc riêng đề bài trung bình ~9 giây, câu dài nhất từng gặp ~46 giây) —
+xem gợi ý ngay trong form tạo phiên.
+
 ## 6. Dữ liệu (schema Prisma)
 
 6 model: `ArenaSession`, `ArenaInvite`, `ArenaTeam`, `ArenaTeamMember`,
@@ -334,8 +374,10 @@ Các trường quan trọng bổ sung trong migration
 `hooks/useArenaCountdown.ts`, `hooks/useFlipRows.ts`,
 `components/ArenaCountdownRing.tsx`, `components/ArenaBuzzStrip.tsx`,
 `components/ArenaRevealBoard.tsx`, `components/ArenaLeaderboard.tsx`,
-`pages/ArenaPage.tsx`, `pages/ArenaPlayerPage.tsx`, hiệu ứng trong
-`lib/feedback-fx.ts`, CSS `arena-*` trong `index.css`.
+`pages/ArenaPage.tsx`, `pages/ArenaPlayerPage.tsx`,
+`pages/ArenaSpectatorPage.tsx` (màn trình chiếu), hiệu ứng trong
+`lib/feedback-fx.ts`, giọng đọc thuyết minh trong `lib/giong-doc.ts` +
+`lib/giong-doc-key.ts` (§5.6), CSS `arena-*` trong `index.css`.
 
 ## 8. Test
 
@@ -360,6 +402,12 @@ trận, idempotency khi đua giữa MC và server, câu ORDERING, phá hoà, gi�
 chuyển động, bố cục điện thoại...) trong lịch sử trao đổi lúc lập kế hoạch
 tính năng này — chưa chạy tự động hoá được vì cần nhiều trình duyệt thật.
 Tài khoản seed dev: xem `apps/api/prisma/seed.ts`.
+
+Riêng giọng đọc thuyết minh (§5.6): mở 2 cửa sổ — `/manage/arena` (tắt giọng
+đọc) và `/arena/spectate/<joinCode>` (bật) — xác nhận pha chuẩn bị đọc lĩnh
+vực, câu hỏi đọc đề (không đọc đáp án), hết giờ/công bố đáp án tiếng dừng
+ngay lập tức. Bật cả 2 cửa sổ cùng lúc trên cùng trình duyệt để xác nhận
+`BroadcastChannel` tự tắt bớt một bên.
 
 ## 10. Ràng buộc đã tôn trọng khi xây tính năng
 

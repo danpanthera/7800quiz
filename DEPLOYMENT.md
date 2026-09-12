@@ -494,6 +494,8 @@ tail -n 10 /var/backups/7800quiz/backup.log
 
 > ⚠️ Cũng nên sao lưu định kỳ volume `caddy_data` (chứa CA nội bộ — xem cảnh báo ở Giai đoạn 5), ví dụ: `docker run --rm -v quiz7800_caddy_data:/data -v /var/backups/7800quiz:/backup alpine tar czf /backup/caddy_data_$(date +%F).tar.gz -C / data` (tên volume có tiền tố `quiz7800_` theo `name:` trong `docker-compose.prod.yml` — gõ sai tên thì Docker âm thầm tạo volume rỗng mới và sao lưu không có gì, kiểm tra bằng `docker volume ls`).
 
+> 💡 **Không cần sao lưu `assets/giong-doc/`** (audio giọng đọc thuyết minh) — tái sinh được 100% từ database bất cứ lúc nào (Phụ lục E). Đưa vào lịch backup hằng đêm chỉ tốn dung lượng vô ích.
+
 ### ✅ Checklist Giai đoạn 8
 - [ ] Cron job đã đăng ký thành công (`crontab -l` thấy dòng gọi `backup-db.sh`)
 - [ ] `backup.log` xác nhận chạy thành công lần đầu
@@ -558,6 +560,7 @@ sudo bash scripts/prod-set-static-ip.sh
 
 > ⚠️ Bắt buộc có `--build` ở bước 3 — `docker compose restart` sẽ không lấy mã nguồn mới vì image được build sẵn từ trước.
 > ⚠️ **Tuyệt đối không cập nhật khi đang có kỳ thi diễn ra.**
+> 💡 `git pull` ở bước 2 chỉ mang theo **mã nguồn** (kể cả thay đổi cấu hình như `nginx.conf`/`docker-compose.prod.yml`). Nếu có audio giọng đọc thuyết minh mới/đã sửa cần cập nhật, đó là việc RIÊNG — chép qua USB theo Phụ lục E, không đi kèm bước cập nhật này.
 > 🛑 **Nếu bước 5 (`migrate deploy`) báo lỗi**: dừng ngay, KHÔNG chạy `up -d`. Hệ thống đang tắt (`api`/`web` đã stop) nên chưa có ai bị ảnh hưởng bởi schema nửa vời — làm ngay theo mục **Rollback** bên dưới rồi mới thử lại. Vẫn có thể ngắt Internet ngay cả khi đang rollback — rollback không cần mạng.
 
 ### Nghiệm thu sau khi cập nhật
@@ -759,3 +762,71 @@ IMAGES_TAR=/tmp/quiz7800-images.tar bash /tmp/7800quiz-scripts/scripts/prod-setu
 - Chạy xong có thể xoá file tạm: `rm /tmp/quiz7800-images.tar`.
 
 Sau bước D.3, quay lại đúng Giai đoạn 2.4 trở đi của tài liệu chính (kiểm tra, ngắt Internet, chuyển sang mạng nội bộ...) — không có gì khác biệt nữa.
+
+> ⚠️ **`quiz7800-images.tar` KHÔNG chứa audio giọng đọc thuyết minh** — thư mục `assets/giong-doc/` nằm ngoài git, không đi theo `git clone` (bước D.3) lẫn image Docker. Phải chép riêng qua USB theo đúng Phụ lục E.
+
+## Phụ lục E — Giọng đọc thuyết minh: sinh file audio & cập nhật lên PROD
+
+Tính năng đọc to đề bài/đáp án/lĩnh vực bằng giọng nữ. **Chỉ áp dụng** ở chế độ phản hồi tức thì (thi thường) và Đấu trường (màn MC + màn trình chiếu) — không có ở thi cổ điển hay máy người chơi Đấu trường. Người dùng tự bật bằng công tắc trên giao diện, mặc định TẮT.
+
+File audio **sinh sẵn ở máy DEV** (có Internet) rồi **chép tay qua USB** lên PROD — PROD không tự gọi dịch vụ TTS lúc chạy, và thư mục audio **cố tình để ngoài git** (xem lý do ở mục D.0 bên dưới).
+
+### E.0. Vì sao không đi theo `git pull`/`git clone` như mã nguồn
+
+Thư mục `assets/giong-doc/` nằm trong `.gitignore`. Toàn kho ước tính **~300MB+** và tăng dần theo số câu hỏi — đưa vào git sẽ làm repo phình vĩnh viễn, mọi lần `git clone`/`git pull` (kể cả Phụ lục A, Phụ lục D) đều tải lại. Audio **tái sinh được 100% từ database** bất cứ lúc nào (chạy lại script), nên không cần bám theo lịch sử git hay lịch sao lưu.
+
+### E.1. Sinh audio trên máy DEV
+
+Điều kiện: `ffmpeg`/`ffprobe` (`brew install ffmpeg` trên macOS), khoá **Google Cloud Text-to-Speech** (`GOOGLE_TTS_API_KEY`).
+
+```bash
+cd apps/api
+npm run giong-doc -- --provider google --voice vi-VN-Neural2-A
+```
+
+Script tự khử trùng lặp nội dung, đọc thẳng từ database (bảng `questions`/`question_options`/`subjects` + snapshot đã đóng băng trong `quiz_versions`), sinh **tăng dần** — chạy lại lần sau chỉ sinh cho câu mới/đã sửa, không đốt lại toàn bộ. Cuối mỗi lần chạy có báo cáo:
+
+- Danh sách câu có **đề bài** đọc vượt ngưỡng Đấu trường (mặc định 20 giây, đổi bằng `--arena-limit`) — Đấu trường chỉ đọc đề bài nên chỉ cần quan tâm câu này, không tính đáp án.
+- Danh sách file mồ côi (nội dung không còn dùng) — chạy kèm `--prune` để dọn.
+
+Tham số hữu ích: `--subject "<tên lĩnh vực>"` hoặc `--quiz "<tên bộ đề>"` để chỉ sinh một phần (nhanh hơn khi chỉ sửa vài câu); `--dry-run` để xem trước không tốn quota; `--force` để sinh lại toàn bộ bất kể đã có.
+
+> `--provider macos` (giọng `Linh` có sẵn trên macOS, chạy `say`) dùng để chạy thử/kiểm tra đường ống — miễn phí, offline, nhưng chất lượng ghép âm cũ, **không dùng cho bản chính thức**.
+
+### E.2. Kiểm tra trước khi mang đi
+
+Nghe thử vài file bất kỳ trong `assets/giong-doc/*.mp3`, đọc kỹ báo cáo "vượt ngưỡng Đấu trường" ở cuối lần chạy — câu nào quá dài thì cân nhắc rút gọn nội dung hoặc tăng `questionDurationSec` của bộ đề đó khi tạo phiên Đấu trường.
+
+### E.3. Chép qua USB vào PROD
+
+1. Copy toàn bộ thư mục `assets/giong-doc/` (kể cả `manifest.json`) vào USB — qua đúng quy trình quét virus USB nội bộ đã dùng cho Phụ lục D.
+2. Chuyển tiếp từ Windows sang máy ảo Ubuntu qua `scp`, giống bước D.2:
+   ```powershell
+   scp -r D:\quiz\giong-doc <username>@<IP-máy-ảo>:/tmp/giong-doc
+   ```
+3. Trong máy ảo, đồng bộ vào đúng thư mục PROD dùng (giữ nguyên các file cũ không có trong bản mới, chỉ thêm/cập nhật):
+   ```bash
+   sudo mkdir -p /opt/7800quiz/assets/giong-doc
+   sudo rsync -a --info=progress2 /tmp/giong-doc/ /opt/7800quiz/assets/giong-doc/
+   rm -rf /tmp/giong-doc
+   ```
+
+**Xong — không build lại image, không restart container.** `docker-compose.prod.yml` đã bind-mount thư mục này thẳng vào nginx của container `web` (`./assets/giong-doc:/usr/share/nginx/html/giong-doc:ro`), nginx phục vụ file mới ngay khi file xuất hiện trên đĩa.
+
+> ⚠️ Lần đầu triển khai tính năng này trên PROD, cần đảm bảo `docker-compose.prod.yml` và `apps/web/nginx.conf` đang chạy trên PROD đã có khối cấu hình audio (đi theo `git pull`/`git clone` bình thường như mọi thay đổi mã nguồn khác) — riêng `nginx.conf` được đóng gói **lúc build image** nên cần `docker compose build web` (không chỉ `up -d`) sau khi cập nhật mã nguồn, đúng quy trình Phụ lục A.
+
+### E.4. Kiểm tra nhanh sau khi chép
+
+```bash
+curl -I https://quiz.vbalaichau.com/giong-doc/manifest.json    # 200
+curl -I https://quiz.vbalaichau.com/giong-doc/khongcothat.mp3  # PHẢI 404, không phải 200 kèm trang HTML
+```
+
+Rồi mở thử 1 bộ đề `instantFeedback`, bật công tắc giọng đọc, xác nhận nghe được.
+
+### ✅ Checklist Phụ lục E
+- [ ] Đã chạy `npm run giong-doc -- --provider google` trên máy DEV, đọc báo cáo vượt ngưỡng Đấu trường
+- [ ] Đã nghe thử vài file, chất lượng chấp nhận được
+- [ ] Đã chép `assets/giong-doc/` qua USB vào `/opt/7800quiz/assets/giong-doc` trên PROD
+- [ ] `curl -I .../giong-doc/manifest.json` trả 200, file không tồn tại trả đúng 404
+- [ ] Thử bật công tắc giọng đọc trên trình duyệt thật, nghe được tiếng

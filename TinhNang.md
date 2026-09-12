@@ -30,6 +30,18 @@ Tài liệu này ghi lại các tính năng đã hoàn thành trong đợt phát
 
 **Trạng thái: ✅**
 
+## 4. Giọng đọc thuyết minh (nữ miền Bắc)
+
+- Đọc to đề bài + đáp án A/B/C/D bằng giọng nữ ở **chế độ phản hồi tức thì** (`InstantQuizPlayer.tsx`); Đấu trường chỉ đọc **đề bài + tên lĩnh vực** (không đọc đáp án — mỗi câu chỉ có ~20 giây, đáp án đã hiện to sẵn trên màn hình) ở **màn MC** (`ArenaPage.tsx`) và **màn trình chiếu** (`ArenaSpectatorPage.tsx`, xem thêm ARENA.md §5.6).
+- **Cố ý KHÔNG áp dụng** cho thi cổ điển (`QuizPlayerPage.tsx`, giữ trải nghiệm nghiêm túc) và máy người chơi Đấu trường (`ArenaPlayerPage.tsx`, tránh nhiều điện thoại cùng đọc lệch pha trong 1 phòng).
+- Người dùng tự bật/tắt bằng công tắc trên giao diện, **mặc định TẮT**, ghi nhớ riêng từng màn qua `localStorage` (3 khoá `7800quiz.{instant-player,arena-host,arena-spectator}.giong-doc`).
+- File audio MP3 **sinh sẵn** ở máy DEV bằng `npm run giong-doc` (Google Cloud TTS, giọng `vi-VN-Neural2-A`) — PROD chạy mạng nội bộ không có Internet nên không gọi TTS lúc chạy thật. Đặt tên theo **hash nội dung câu hỏi** (`apps/web/src/lib/giong-doc-key.ts` ↔ `apps/api/src/common/giong-doc-key.ts`, 2 bản chép tay như `arena-types.ts`), không lưu trong database.
+- **Quy tắc quan trọng nhất cần nhớ**: sửa nội dung câu hỏi mà chưa chạy lại script sinh audio thì câu đó **im lặng** (không đọc), KHÔNG đọc nhầm nội dung cũ — đây là lựa chọn có chủ đích (im lặng an toàn hơn đọc sai với hệ thống thi của ngân hàng). Muốn có giọng đọc cho câu mới/sửa, chạy lại `npm run giong-doc` rồi chép qua USB lên PROD (xem `DEPLOYMENT.md`, Phụ lục E).
+- Thư mục `assets/giong-doc/` nằm **ngoài git** (`.gitignore`), phục vụ qua nginx bằng bind-mount `docker-compose.yml`/`docker-compose.prod.yml` — thêm/sửa audio không cần build lại image hay restart container.
+- File chính: `apps/api/scripts/sinh-giong-doc.ts` (+ `chuan-hoa-van-ban.ts`, `tu-dien-viet-tat.json`, `providers/*.ts`), `apps/web/src/lib/giong-doc.ts` (phát audio nối tiếp, chống chồng tiếng qua `BroadcastChannel`), `apps/web/nginx.conf`.
+
+**Trạng thái: ✅** (đã kiểm thử toàn bộ script sinh audio + hạ tầng phục vụ file bằng giọng thử macOS; **chưa sinh bằng giọng chính thức Google Cloud TTS** — cần khoá `GOOGLE_TTS_API_KEY` để chạy `npm run giong-doc -- --provider google` cho toàn bộ 4.047 câu hỏi thật)
+
 ---
 
 ## Danh sách "20 việc" — tính năng hay ho còn thiếu trên web
