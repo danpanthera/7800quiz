@@ -869,14 +869,29 @@ select {
   }
 }
 
+/* Tôn trọng thiết lập "giảm chuyển động" của hệ điều hành.
+ *
+ * ⚠ CỐ Ý KHÔNG dùng đoạn mẫu phổ biến trên mạng:
+ *     *, *::before, *::after { animation-duration: 0.01ms !important; ... }
+ *   Ant Design mở popup nổi (Tooltip, Popconfirm, Select, Dropdown — đều chạy
+ *   trên @rc-component/trigger) bằng cách giữ popup ở opacity 0 rồi CHỜ sự kiện
+ *   "hiệu ứng kết thúc" mới gỡ lớp ẩn. Ép thời lượng về ~0 cho MỌI phần tử làm
+ *   sự kiện đó không bao giờ tới nơi → popup nằm trong DOM nhưng vô hình vĩnh viễn.
+ *   Ngày 12/09/2026 lỗi này khiến MỌI nút xóa trên PROD "bấm không có phản ứng gì"
+ *   ở mọi máy Windows có tắt hiệu ứng hoạt ảnh; Modal thoát nạn vì chạy trên
+ *   rc-dialog, không đi qua trigger.
+ *   Vì vậy chỉ tắt hiệu ứng của CHÍNH dự án, tuyệt đối không đụng vào hiệu ứng
+ *   nội bộ của Ant Design. Hiệu ứng của Đấu trường và màn làm bài đã có khối
+ *   @media riêng ở phía dưới file này.
+ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  }
+
+  .ant-layout-content,
+  .arena-view-transition {
+    animation: none;
   }
 }
 
