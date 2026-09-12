@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { MulterModule } from '@nestjs/platform-express';
 import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth.controller';
@@ -24,6 +25,9 @@ import { RolesGuard } from './roles.guard';
     // AuthController) — không đăng ký làm APP_GUARD toàn cục nên các API khác
     // không bị giới hạn tốc độ.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 5 }]),
+    // Giới hạn 5MB áp cho me/avatar/upload — chỉ là giá trị mặc định, endpoint
+    // đã tự khai lại limits riêng trong FileInterceptor (auth.controller.ts).
+    MulterModule.register({ limits: { fileSize: 5 * 1024 * 1024 } }),
   ],
   controllers: [AuthController, SecurityController, AdminSecurityController],
   providers: [AuthService, JwtStrategy, RolesGuard, LoginThrottlerGuard],

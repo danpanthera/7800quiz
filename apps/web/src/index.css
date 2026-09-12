@@ -34,6 +34,16 @@
   --shadow-lg: 0 8px 32px rgba(122, 20, 40, 0.18);
   --transition: all 0.2s ease;
 
+  /* Token trung tính dùng cho giao diện sáng/tối — --bg-layout ở trên đổi theo theme
+     (khối [data-theme="dark"] bên dưới), còn 3 token này bổ sung cho nền thẻ/viền/chữ
+     phụ chưa có biến dùng chung trước đây. Chỉ khai báo mới, KHÔNG đổi giá trị các
+     class đang tồn tại để không gây lệch giao diện sáng hiện có. */
+  --surface: #ffffff;
+  --border-color: #dfe5ec;
+  --text-primary: #1A1A2E;
+  --text-secondary: #596b7d;
+  --text-muted: #68788a;
+
   /* Vùng an toàn trên thiết bị có tai thỏ/thanh cử chỉ (iPhone) — cần viewport-fit=cover trong index.html mới có giá trị khác 0 */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -48,6 +58,23 @@
   color-scheme: light;
 }
 
+/* ── Giao diện tối ────────────────────────────────────────────────────────── */
+/* Đặt bằng thuộc tính data-theme trên <html> (ThemeProvider trong lib/theme.tsx,
+   script chống-nháy trong index.html) thay vì chỉ dựa prefers-color-scheme —
+   người dùng có thể chọn tay Sáng/Tối/Theo hệ thống qua ThemeToggle ở Header.
+   KHÔNG áp dụng cho LoginPage, Arena/InstantQuizPlayer — các màn "sân khấu"
+   đó giữ nguyên 1 giao diện thương hiệu cố định bất kể theme, nên dùng thẳng
+   var(--pearl-white) thay vì var(--bg-layout) ở 2 nơi đó. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-layout: #170D10;
+  --surface: #1F1215;
+  --border-color: #3A252C;
+  --text-primary: #F3ECE6;
+  --text-secondary: #C9B8B0;
+  --text-muted: #9C8880;
+}
+
 /* ── Đặt lại mặc định ─────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -55,8 +82,9 @@ body {
   margin: 0;
   min-width: 320px;
   background: var(--bg-layout);
-  color: #1A1A2E;
+  color: var(--text-primary);
   padding-bottom: var(--safe-bottom);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {
@@ -208,6 +236,122 @@ select {
   color: #68788a;
   font-size: 12px;
   margin-top: 2px;
+}
+
+/* ── Công tắc sáng/tối (ThemeToggle) — viên trượt trôi theo lựa chọn ─────────── */
+.theme-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 96px;
+  height: 34px;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+}
+
+.theme-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: var(--agribank-red);
+  box-shadow: 0 2px 6px rgba(122, 20, 40, 0.35);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-toggle-btn {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.theme-toggle-btn.is-active {
+  color: #fff;
+}
+
+[data-theme="dark"] .theme-toggle-thumb {
+  background: var(--gold);
+  box-shadow: 0 2px 6px rgba(255, 179, 0, 0.3);
+}
+
+[data-theme="dark"] .theme-toggle-btn.is-active {
+  color: var(--agribank-red-dark);
+}
+
+@media (max-width: 400px) {
+  .theme-toggle { width: 84px; height: 30px; }
+}
+
+/* ── Bảng chọn ảnh đại diện (AvatarPickerModal) ──────────────────────────── */
+.avatar-picker-preview {
+  margin-bottom: 18px;
+  display: flex;
+  justify-content: center;
+}
+
+.avatar-picker-grid {
+  margin-bottom: 18px;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+}
+
+.avatar-picker-emoji {
+  aspect-ratio: 1;
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.avatar-picker-emoji:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.06);
+  border-color: var(--gold);
+  background: rgba(255, 179, 0, 0.12);
+}
+
+.avatar-picker-emoji:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.avatar-picker-emoji.is-selected {
+  border-color: var(--agribank-red);
+  background: rgba(122, 20, 40, 0.1);
+  box-shadow: 0 0 0 2px rgba(122, 20, 40, 0.18);
+}
+
+.avatar-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+@media (max-width: 400px) {
+  .avatar-picker-grid { grid-template-columns: repeat(6, 1fr); }
 }
 
 .portal-content {
@@ -1493,10 +1637,12 @@ select {
   animation: fadeIn 0.28s ease;
 }
 
-/* ArenaPlayerPage đứng ngoài AppLayout (không có .portal-header lo sẵn) nên tự xử lý safe-area riêng */
+/* ArenaPlayerPage đứng ngoài AppLayout (không có .portal-header lo sẵn) nên tự xử lý safe-area riêng.
+   Dùng thẳng var(--pearl-white) (không phải --bg-layout) — màn Đấu trường giữ nguyên
+   tông thương hiệu cố định, không đổi theo Sáng/Tối như phần còn lại của portal. */
 .arena-player-shell {
   min-height: 100svh;
-  background: var(--bg-layout);
+  background: var(--pearl-white);
 }
 
 /* "Sân khấu" Đấu trường — nền gradient nhẹ tái dùng đúng 2 màu thương hiệu đã
@@ -1507,7 +1653,7 @@ select {
   background:
     radial-gradient(circle at 12% -8%, rgba(255, 179, 0, 0.10), transparent 45%),
     radial-gradient(circle at 100% 0%, rgba(155, 0, 20, 0.08), transparent 50%),
-    var(--bg-layout);
+    var(--pearl-white);
 }
 
 /* Hiệu ứng thẻ câu hỏi/kết quả vào màn — dành cho nơi CHƯA có animation
@@ -2304,4 +2450,238 @@ p {
   .iq-verdict,
   .iq-verdict-face { animation: none; }
   .iq-option:hover:not(:disabled) { transform: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * GIAO DIỆN TỐI — ghi đè bổ sung
+ * ══════════════════════════════════════════════════════════════════════════
+ * Nguyên tắc: CHỈ THÊM, không sửa/xoá bất kỳ khai báo nào ở phần sáng phía trên
+ * (giữ nguyên 100% giao diện sáng hiện có, loại bỏ rủi ro hồi quy). Phần lớn
+ * component thuần Ant Design (Card/Table/Select/Modal/Dropdown/Form...) đã tự
+ * đổi màu qua antTheme.darkAlgorithm + token trong App.tsx — khối dưới đây chỉ
+ * xử lý các class CSS tự viết riêng của dự án (portal-, manage-, quiz-, dash-,
+ * auth-...) vì chúng hard-code màu trực tiếp, không đọc token của Ant Design.
+ *
+ * KHÔNG đụng tới .login-*, .arena-*, .iq-* — 3 nhóm màn "sân khấu" đó đã có
+ * tông thương hiệu Agribank cố định (nền đỏ mận/pearl-white) và phải giữ y
+ * nguyên bất kể người dùng chọn Sáng/Tối/Theo hệ thống.
+ */
+[data-theme="dark"] .portal-header {
+  background: rgba(31, 18, 21, 0.96) !important;
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .portal-page-context {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .portal-user-menu {
+  border-color: var(--border-color);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .portal-identity span {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .manage-record-card {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .manage-record-meta {
+  border-top-color: var(--border-color);
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .manage-record-meta dt {
+  color: var(--text-muted);
+}
+
+[data-theme="dark"] .manage-record-meta dd {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .manage-record-extra {
+  background: var(--surface);
+}
+
+[data-theme="dark"] .quiz-card {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .quiz-card-description {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .quiz-meta div {
+  border-top-color: var(--border-color);
+}
+
+[data-theme="dark"] .quiz-meta dt {
+  color: var(--text-muted);
+}
+
+[data-theme="dark"] .quiz-meta dd {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .dash-stat,
+[data-theme="dark"] .dash-badge {
+  border-color: var(--border-color);
+  background: var(--surface);
+}
+
+[data-theme="dark"] .dash-stat dt,
+[data-theme="dark"] .dash-badge-date {
+  color: var(--text-muted);
+}
+
+[data-theme="dark"] .auth-page {
+  background: var(--bg-layout);
+}
+
+[data-theme="dark"] .auth-panel {
+  border-color: var(--border-color);
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .quiz-player-header .ant-typography {
+  color: var(--text-secondary);
+}
+
+/* Đồng hồ đếm giờ màn thi chính thức — đổi sang tông "xanh mint" arena-correct
+   sẵn có thay vì xanh lá nhạt (#edf8f5) vốn chỉ hợp nền sáng */
+[data-theme="dark"] .quiz-timer {
+  border-color: rgba(47, 191, 113, 0.35);
+  color: var(--arena-correct);
+  background: rgba(47, 191, 113, 0.14);
+}
+
+[data-theme="dark"] .quiz-timer-warning {
+  border-color: rgba(255, 179, 0, 0.4);
+  color: var(--gold);
+  background: rgba(255, 179, 0, 0.14);
+}
+
+[data-theme="dark"] .quiz-save-status,
+[data-theme="dark"] .quiz-navigation-summary,
+[data-theme="dark"] .quiz-question-heading > .ant-typography,
+[data-theme="dark"] .quiz-review-nav-title.ant-typography,
+[data-theme="dark"] .quiz-review-explanation {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .quiz-navigation,
+[data-theme="dark"] .quiz-review-nav {
+  border-color: var(--border-color);
+  background: var(--surface);
+}
+
+[data-theme="dark"] .quiz-question-indexes .ant-btn {
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .quiz-question-indexes .quiz-question-index-answered:not(.ant-btn-primary) {
+  border-color: var(--arena-correct);
+  color: var(--arena-correct);
+  background: rgba(47, 191, 113, 0.14);
+}
+
+[data-theme="dark"] .quiz-question-card,
+[data-theme="dark"] .quiz-review-question {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .quiz-review-question.is-wrong {
+  border-color: var(--arena-wrong) !important;
+}
+
+[data-theme="dark"] .quiz-options .quiz-option,
+[data-theme="dark"] .quiz-review-option {
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .quiz-options .quiz-option:hover {
+  border-color: var(--arena-correct);
+  background: rgba(47, 191, 113, 0.08);
+}
+
+[data-theme="dark"] .quiz-option-letter {
+  color: var(--text-secondary);
+  background: var(--surface);
+}
+
+[data-theme="dark"] .quiz-player-actions {
+  border-top-color: var(--border-color);
+}
+
+[data-theme="dark"] .quiz-submit-note.ant-typography {
+  color: var(--text-muted);
+}
+
+[data-theme="dark"] .quiz-question-image {
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .quiz-review-option.is-correct-option {
+  border-color: var(--arena-correct);
+  background: rgba(47, 191, 113, 0.12);
+  color: var(--arena-correct);
+}
+
+[data-theme="dark"] .quiz-review-option.is-wrong-selected {
+  border-color: var(--arena-wrong);
+  background: rgba(232, 86, 79, 0.14);
+  color: #FF9D96;
+}
+
+/* Ghi đè viền/thanh cuộn dùng chung toàn app */
+[data-theme="dark"] .ant-card {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .ant-table-wrapper {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .ant-table-thead > tr > th {
+  border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .ant-modal-header,
+[data-theme="dark"] .ant-drawer-header {
+  border-bottom-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .ant-form-item-label > label {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Tiêu đề dùng var(--agribank-red-dark) — vốn thiết kế để nổi trên nền TRẮNG.
+   Trên nền thẻ tối (--surface) thì đỏ mận gần như đen trên đen, không đọc được.
+   Đổi sang vàng kim thương hiệu — vẫn rất "Agribank", tương phản tốt trên nền tối. */
+[data-theme="dark"] .manage-record-heading h5.ant-typography,
+[data-theme="dark"] .page-title-row h1.ant-typography,
+[data-theme="dark"] .quiz-card h3.ant-typography,
+[data-theme="dark"] .dash-stat dd,
+[data-theme="dark"] .dash-badge-name,
+[data-theme="dark"] .auth-panel-heading h2.ant-typography,
+[data-theme="dark"] .quiz-player-header h1.ant-typography,
+[data-theme="dark"] .quiz-navigation-summary strong,
+[data-theme="dark"] .quiz-question-card h3.ant-typography,
+[data-theme="dark"] .ant-modal-title,
+[data-theme="dark"] .ant-drawer-title,
+[data-theme="dark"] .arena-lb-score {
+  color: var(--gold) !important;
 }

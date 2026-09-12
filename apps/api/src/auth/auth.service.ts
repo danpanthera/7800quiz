@@ -10,6 +10,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { buildOtpauthUrl, generateTotpSecret, verifyTotpCode } from './totp';
 import * as bcrypt from 'bcrypt';
+import { mkdir, unlink, writeFile } from 'fs/promises';
+import { join } from 'path';
+import { AVATARS_DIR, AVATARS_URL_PREFIX } from '../common/uploads-dir';
 
 const DEFAULT_PASSWORD = 'Abcd@1234';
 
@@ -34,6 +37,8 @@ interface UserForSession {
   email: string | null;
   role: string;
   mustChangePassword: boolean;
+  avatarEmoji: string | null;
+  avatarUrl: string | null;
   department: {
     id: string;
     name: string;
@@ -249,6 +254,8 @@ export class AuthService {
         email: user.email,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+        avatarEmoji: user.avatarEmoji,
+        avatarUrl: user.avatarUrl,
         position: canBo?.position ?? null,
         department: user.department
           ? {
@@ -283,6 +290,68 @@ export class AuthService {
     });
 
     return { message: 'Đổi mật khẩu thành công' };
+  }
+
+  // ─── Ảnh đại diện ─────────────────────────────────────────────────────
+  // 2 kiểu loại trừ nhau: chọn emoji thì xoá avatarUrl (kèm xoá file cũ trên
+  // đĩa nếu có, tránh rác), tải ảnh lên thì xoá avatarEmoji. Trả về đúng 2
+  // field này để frontend merge vào AuthUser đang lưu, không cần đăng nhập lại.
+
+  async setAvatarEmoji(userId: string, emoji: string) {
+    const trimmed = emoji.trim();
+    if (!trimmed) throw new BadRequestException('Biểu tượng không hợp lệ');
+    await this.deleteUploadedAvatarFile(userId);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarEmoji: trimmed, avatarUrl: null },
+      select: { avatarEmoji: true, avatarUrl: true },
+    });
+  }
+
+  async setAvatarUpload(userId: string, file: Express.Multer.File) {
+    const ext = file.mimetype === 'image/png' ? 'png' : 'jpg';
+    // Hậu tố thời gian — tên file cũ (nếu có) vẫn còn nằm trên đĩa cho tới khi
+    // deleteUploadedAvatarFile xoá xong, tránh trùng tên đè lên chính nó.
+    const filename = `${userId}-${Date.now()}.${ext}`;
+    await mkdir(AVATARS_DIR, { recursive: true });
+    await writeFile(join(AVATARS_DIR, filename), file.buffer);
+
+    await this.deleteUploadedAvatarFile(userId);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        avatarUrl: `${AVATARS_URL_PREFIX}/${filename}`,
+        avatarEmoji: null,
+      },
+      select: { avatarEmoji: true, avatarUrl: true },
+    });
+  }
+
+  async clearAvatar(userId: string) {
+    await this.deleteUploadedAvatarFile(userId);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarEmoji: null, avatarUrl: null },
+      select: { avatarEmoji: true, avatarUrl: true },
+    });
+  }
+
+  // Chỉ xoá file thật khi avatarUrl trỏ vào đúng thư mục avatars quản lý ở đây
+  // — phòng trường hợp giá trị cũ (nếu tương lai có nguồn avatarUrl khác) trỏ
+  // ra ngoài, tránh xoá nhầm file không phải của mình.
+  private async deleteUploadedAvatarFile(userId: string): Promise<void> {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatarUrl: true },
+    });
+    if (!current?.avatarUrl?.startsWith(`${AVATARS_URL_PREFIX}/`)) return;
+
+    const filename = current.avatarUrl.slice(AVATARS_URL_PREFIX.length + 1);
+    try {
+      await unlink(join(AVATARS_DIR, filename));
+    } catch {
+      // File đã bị xoá/không tồn tại — bỏ qua, không phải lỗi nghiêm trọng
+    }
   }
 
   // ─── Việc 17: Xác thực 2 lớp (TOTP) ──────────────────────────────────────

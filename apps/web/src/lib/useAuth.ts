@@ -17,6 +17,15 @@ export interface AuthUser {
   // null nếu tài khoản không gắn hồ sơ CanBo hoặc chưa gán phòng ban.
   position?: string | null
   department?: AuthUserDepartment | null
+  // Ảnh đại diện — loại trừ nhau, xem apps/api/src/auth/auth.service.ts.
+  // Cả 2 null/undefined thì hiện icon người dùng mặc định.
+  avatarEmoji?: string | null
+  avatarUrl?: string | null
+}
+
+export interface AvatarUpdate {
+  avatarEmoji: string | null
+  avatarUrl: string | null
 }
 
 export interface AuthContextType {
@@ -24,6 +33,7 @@ export interface AuthContextType {
   token: string | null
   login: (token: string, user: AuthUser) => void
   markPasswordChanged: () => void
+  updateAvatar: (avatar: AvatarUpdate) => void
   logout: () => void
 }
 

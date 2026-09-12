@@ -100,6 +100,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Ảnh đại diện người dùng tự tải lên (uploads-dir.ts) — named volume để
+      # sống sót qua rebuild/redeploy image, không mất khi `docker compose up -d --build`.
+      - api_uploads:/app/uploads
     healthcheck:
       # node:22-alpine không có curl; Node 22 đã có sẵn fetch() toàn cục.
       test:
@@ -232,3 +236,4 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  api_uploads:

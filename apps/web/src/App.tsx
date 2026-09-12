@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ConfigProvider, App as AntApp, theme as antTheme } from 'antd'
 import viVN from 'antd/locale/vi_VN'
 import { AuthProvider } from './lib/auth'
+import { ThemeProvider } from './lib/theme'
+import { useThemeMode } from './lib/useThemeMode'
 import RequireAuth from './components/RequireAuth'
 import RoleGuard from './components/RoleGuard'
 import HomeRedirect from './components/HomeRedirect'
@@ -49,25 +52,59 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 })
 
+/**
+ * Ép giao diện sáng cố định cho các màn "sân khấu" thương hiệu Agribank
+ * (LoginPage, ArenaPlayerPage) — 2 màn này có tông đỏ/vàng cố định thiết kế
+ * riêng, không theo lựa chọn Sáng/Tối/Theo hệ thống của ThemeToggle. AntD
+ * ConfigProvider lồng nhau sẽ kế thừa mọi token khác từ ConfigProvider cha
+ * (màu thương hiệu, bo góc...), ở đây chỉ ghi đè lại phần nền/algorithm.
+ */
+function LightStage({ children }: { children: ReactNode }) {
+  return (
+    <ConfigProvider
+      theme={{
+        algorithm: antTheme.defaultAlgorithm,
+        token: { colorBgLayout: '#F8F4EC', colorBgContainer: '#ffffff', colorBgElevated: '#ffffff' },
+      }}
+    >
+      {children}
+    </ConfigProvider>
+  )
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <ThemedApp />
+      </ThemeProvider>
+    </QueryClientProvider>
+  )
+}
+
+function ThemedApp() {
+  const { resolved } = useThemeMode()
+  const isDark = resolved === 'dark'
+
+  return (
       <ConfigProvider
         locale={viVN}
         theme={{
-          algorithm: antTheme.defaultAlgorithm,
+          algorithm: isDark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
           token: {
             // Màu thương hiệu Agribank — phải khớp --agribank-red trong index.css
             // (AntD tự tính các sắc độ hover/active từ giá trị hex này nên không
-            // dùng được var(--...) ở đây).
+            // dùng được var(--...) ở đây). Giữ nguyên đỏ/vàng thương hiệu ở cả 2 theme,
+            // chỉ đổi nền/chữ trung tính — các giá trị dark PHẢI khớp khối
+            // `:root[data-theme="dark"]` trong index.css.
             colorPrimary: '#7A1428',
             colorSuccess: '#27AE60',
             colorWarning: '#F39C12',
             colorError: '#E53935',
             colorInfo: '#9C2A3F',
-            colorBgLayout: '#F8F4EC',
-            colorBgContainer: '#ffffff',
-            colorBgElevated: '#ffffff',
+            colorBgLayout: isDark ? '#170D10' : '#F8F4EC',
+            colorBgContainer: isDark ? '#1F1215' : '#ffffff',
+            colorBgElevated: isDark ? '#271820' : '#ffffff',
             borderRadius: 8,
             borderRadiusSM: 6,
             borderRadiusLG: 12,
@@ -75,7 +112,7 @@ export default function App() {
             fontSize: 14,
             controlHeight: 38,
             boxShadow: '0 4px 16px rgba(122,20,40,0.12)',
-            boxShadowSecondary: '0 2px 8px rgba(0,0,0,0.08)',
+            boxShadowSecondary: isDark ? '0 2px 8px rgba(0,0,0,0.45)' : '0 2px 8px rgba(0,0,0,0.08)',
           },
           components: {
             Button: {
@@ -83,21 +120,21 @@ export default function App() {
               controlHeight: 38,
               fontWeight: 600,
               primaryShadow: '0 4px 12px rgba(122,20,40,0.30)',
-              defaultShadow: '0 2px 6px rgba(0,0,0,0.08)',
+              defaultShadow: isDark ? '0 2px 6px rgba(0,0,0,0.4)' : '0 2px 6px rgba(0,0,0,0.08)',
               dangerShadow: '0 4px 12px rgba(229,57,53,0.28)',
             },
             Table: {
-              headerBg: '#FBF7F1',
-              headerColor: '#4E0D1A',
-              headerSortActiveBg: '#F5EDE6',
-              rowHoverBg: '#FBF5F2',
+              headerBg: isDark ? '#241519' : '#FBF7F1',
+              headerColor: isDark ? '#F3ECE6' : '#4E0D1A',
+              headerSortActiveBg: isDark ? '#2E1B22' : '#F5EDE6',
+              rowHoverBg: isDark ? '#241519' : '#FBF5F2',
               borderRadius: 12,
               borderRadiusOuter: 12,
               cellPaddingBlock: 12,
             },
             Card: {
               borderRadius: 12,
-              boxShadowTertiary: '0 2px 12px rgba(0,0,0,0.06)',
+              boxShadowTertiary: isDark ? '0 2px 12px rgba(0,0,0,0.3)' : '0 2px 12px rgba(0,0,0,0.06)',
             },
             Menu: {
               darkItemBg: 'transparent',
@@ -111,9 +148,10 @@ export default function App() {
               collapsedIconSize: 18,
             },
             Layout: {
+              // Sider luôn đỏ mận thương hiệu ở cả 2 theme — chỉ Header đổi theo
               siderBg: '#4E0D1A',
-              headerBg: '#ffffff',
-              footerBg: '#ffffff',
+              headerBg: isDark ? '#1F1215' : '#ffffff',
+              footerBg: isDark ? '#1F1215' : '#ffffff',
             },
             Input: {
               borderRadius: 8,
@@ -124,8 +162,8 @@ export default function App() {
             Select: {
               borderRadius: 8,
               controlHeight: 38,
-              optionSelectedBg: '#F5EDE6',
-              optionActiveBg: '#FBF7F1',
+              optionSelectedBg: isDark ? '#2E1B22' : '#F5EDE6',
+              optionActiveBg: isDark ? '#241519' : '#FBF7F1',
             },
             Modal: {
               borderRadius: 16,
@@ -146,11 +184,11 @@ export default function App() {
             },
             Form: {
               labelFontSize: 13,
-              labelColor: '#344054',
+              labelColor: isDark ? '#C9B8B0' : '#344054',
               verticalLabelPadding: '0 0 4px',
             },
             Divider: {
-              colorSplit: '#EFE6DD',
+              colorSplit: isDark ? '#3A252C' : '#EFE6DD',
             },
           },
         }}
@@ -160,7 +198,7 @@ export default function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/login" element={<LoginPage />} />
+              <Route path="/login" element={<LightStage><LoginPage /></LightStage>} />
               <Route
                 path="/change-password"
                 element={
@@ -175,7 +213,9 @@ export default function App() {
                 path="/arena/join/:joinCode"
                 element={
                   <RequireAuth>
-                    <ArenaPlayerPage />
+                    <LightStage>
+                      <ArenaPlayerPage />
+                    </LightStage>
                   </RequireAuth>
                 }
               />
@@ -254,6 +294,5 @@ export default function App() {
         </AuthProvider>
         </AntApp>
       </ConfigProvider>
-    </QueryClientProvider>
   )
 }

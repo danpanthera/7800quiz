@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { isUserRole } from './permissions'
-import { AuthContext, type AuthUser } from './useAuth'
+import { AuthContext, type AuthUser, type AvatarUpdate } from './useAuth'
 
 function getStoredUser(): AuthUser | null {
   const raw = localStorage.getItem('user')
@@ -36,6 +36,8 @@ function getStoredUser(): AuthUser | null {
       mustChangePassword: value.mustChangePassword === true,
       position: typeof value.position === 'string' ? value.position : null,
       department,
+      avatarEmoji: typeof value.avatarEmoji === 'string' ? value.avatarEmoji : null,
+      avatarUrl: typeof value.avatarUrl === 'string' ? value.avatarUrl : null,
     }
   } catch {
     localStorage.removeItem('user')
@@ -61,6 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updatedUser)
   }
 
+  // Gọi sau khi đổi ảnh đại diện thành công (chọn emoji/tải ảnh lên/xoá) — cập
+  // nhật ngay state + localStorage bằng đúng field API trả về, không cần đăng
+  // nhập lại để thấy avatar mới.
+  function updateAvatar(avatar: AvatarUpdate) {
+    if (!user) return
+    const updatedUser = { ...user, ...avatar }
+    localStorage.setItem('user', JSON.stringify(updatedUser))
+    setUser(updatedUser)
+  }
+
   function logout() {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -69,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, markPasswordChanged, logout }}>
+    <AuthContext.Provider value={{ user, token, login, markPasswordChanged, updateAvatar, logout }}>
       {children}
     </AuthContext.Provider>
   )

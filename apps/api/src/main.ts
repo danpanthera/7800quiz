@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { getCorsOrigin } from './cors-origin';
+import { UPLOADS_DIR } from './common/uploads-dir';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -14,6 +15,10 @@ async function bootstrap() {
   // đúng địa chỉ client từ X-Forwarded-For — Caddy tự thêm header này và
   // không có trusted_proxies nên client không tự giả IP được.
   app.set('trust proxy', 1);
+  // Phục vụ file người dùng tự tải lên (ảnh đại diện) — gắn tiền tố /api/uploads
+  // thẳng ra (không qua setGlobalPrefix bên dưới) để khớp AVATARS_URL_PREFIX và
+  // đi qua đúng đường dẫn /api mà web/Nginx/Caddy đã proxy sẵn sang service này.
+  app.useStaticAssets(UPLOADS_DIR, { prefix: '/api/uploads' });
   app.setGlobalPrefix('api');
   // Mặc định của Express chỉ 100kb — bước "Xác nhận import" của ngân hàng câu
   // hỏi gửi nguyên JSON các dòng đã xem/sửa (không phải file), vài trăm câu

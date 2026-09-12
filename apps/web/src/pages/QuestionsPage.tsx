@@ -542,7 +542,7 @@ export default function QuestionsPage() {
         <Sider
           width={siderWidth}
           style={{
-            background: '#fff', borderRight: '1px solid #f0f0f0', borderRadius: 8,
+            background: 'var(--surface)', borderRight: '1px solid var(--border-color)', borderRadius: 8,
             position: 'relative', transition: isResizing ? 'none' : undefined,
           }}
         >
@@ -561,7 +561,7 @@ export default function QuestionsPage() {
 
       {/* Main content */}
       <Content style={{ padding: isCardView ? 0 : '0 0 0 16px' }}>
-        <div style={{ background: '#fff', padding: 16, borderRadius: 8, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ background: 'var(--surface)', padding: 16, borderRadius: 8, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <Title level={5} style={{ margin: 0 }}>
             {selectedSubjectId ? subjects.find((s) => s.id === selectedSubjectId)?.name : 'Tất cả câu hỏi'}
             <Text type="secondary" style={{ fontWeight: 'normal', fontSize: 14, marginLeft: 8 }}>

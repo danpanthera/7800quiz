@@ -33,6 +33,11 @@ Thumbs.db
 # Prisma
 apps/api/prisma/migrations/dev.db
 
+# Ảnh đại diện người dùng tự tải lên (apps/api/src/common/uploads-dir.ts) —
+# dữ liệu runtime, không phải mã nguồn. Trên Docker được persist qua named
+# volume api_uploads (xem docker-compose.yml/docker-compose.prod.yml).
+apps/api/uploads/
+
 # Dữ liệu nhân sự thật (GAHR26 chứa CCCD, ngày sinh, số điện thoại,
 # địa chỉ, số tài khoản... của cán bộ) — tuyệt đối không đưa lên git
 apps/web/Mau/**/gahr26*

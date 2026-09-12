@@ -33,6 +33,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Ảnh đại diện người dùng tự tải lên (uploads-dir.ts) — named volume để
+      # sống sót qua `docker compose up -d --build api`, không mất khi build lại image.
+      - api_uploads:/app/uploads
 
   web:
     build:
@@ -53,3 +57,4 @@ services:
 
 volumes:
   postgres_data:
+  api_uploads:

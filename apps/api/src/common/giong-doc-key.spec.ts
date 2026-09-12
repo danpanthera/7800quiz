@@ -10,14 +10,16 @@ describe('khoaGiongDoc', () => {
     expect(khoaGiongDoc('')).toBe('cbf29ce484222325');
     expect(khoaGiongDoc('a')).toBe('af63dc4c8601ec8c');
     expect(khoaGiongDoc('Xin chào')).toBe('bd0a981101045201');
-    expect(khoaGiongDoc('Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam')).toBe(
-      'ca2756242052d8de',
-    );
-    expect(khoaGiongDoc('Theo Quy định số 3838/QyĐ-NHNo-TD ngày 15/11/2024')).toBe(
-      '6e9db7c8f99ddcf7',
-    );
     expect(
-      khoaGiongDoc('Câu hỏi có ký tự đặc biệt: 70% – "giá trị" … (ghi chú) ≥ 100%'),
+      khoaGiongDoc('Ngân hàng Nông nghiệp và Phát triển Nông thôn Việt Nam'),
+    ).toBe('ca2756242052d8de');
+    expect(
+      khoaGiongDoc('Theo Quy định số 3838/QyĐ-NHNo-TD ngày 15/11/2024'),
+    ).toBe('6e9db7c8f99ddcf7');
+    expect(
+      khoaGiongDoc(
+        'Câu hỏi có ký tự đặc biệt: 70% – "giá trị" … (ghi chú) ≥ 100%',
+      ),
     ).toBe('5f0c944b38036090');
     expect(khoaGiongDoc('A. Đáp án A')).toBe('815b475f42416f83');
     expect(khoaGiongDoc('B. Đáp án B')).toBe('2ef297d4ec319279');

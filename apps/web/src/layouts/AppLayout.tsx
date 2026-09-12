@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
+import { Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
 import {
   AlertOutlined,
   ApartmentOutlined,
@@ -23,17 +23,20 @@ import {
   RedoOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
+  SmileOutlined,
   StarOutlined,
   TeamOutlined,
   ThunderboltOutlined,
   TrophyOutlined,
-  UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/useAuth'
 import { useDeviceType } from '../hooks/useDeviceType'
 import { useScreenTimeReminder } from '../hooks/useScreenTimeReminder'
+import ThemeToggle from '../components/ThemeToggle'
+import UserAvatar from '../components/UserAvatar'
+import AvatarPickerModal from '../components/AvatarPickerModal'
 import type { UserRole } from '../lib/permissions'
 
 const { Sider, Header, Content } = Layout
@@ -114,6 +117,7 @@ export default function AppLayout() {
   const { category } = useDeviceType()
   const isDesktop = category === 'desktop'
   const [navigationOpen, setNavigationOpen] = useState(false)
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false)
   useScreenTimeReminder()
 
   // Đóng Drawer khi đổi route — cập nhật state ngay trong lúc render (theo khuyến nghị của React
@@ -160,6 +164,13 @@ export default function AppLayout() {
       icon: <KeyOutlined />,
       label: roleLabels[user.role],
       disabled: true,
+    },
+    { type: 'divider' as const },
+    {
+      key: 'avatar',
+      icon: <SmileOutlined />,
+      label: 'Đổi ảnh đại diện',
+      onClick: () => setAvatarModalOpen(true),
     },
     { type: 'divider' as const },
     {
@@ -222,9 +233,11 @@ export default function AppLayout() {
 
           <Text className="portal-page-context">{pageTitle}</Text>
 
+          <ThemeToggle />
+
           <Dropdown menu={{ items: userMenuItems }} trigger={['click']} placement="bottomRight">
             <button className="portal-user-menu" type="button">
-              <Avatar icon={<UserOutlined />} size={32} />
+              <UserAvatar avatarEmoji={user.avatarEmoji} avatarUrl={user.avatarUrl} size={32} />
               <span className="portal-user-name">{user.fullName}</span>
               <DownOutlined aria-hidden />
             </button>
@@ -235,6 +248,8 @@ export default function AppLayout() {
           <Outlet />
         </Content>
       </Layout>
+
+      <AvatarPickerModal open={avatarModalOpen} onClose={() => setAvatarModalOpen(false)} />
     </Layout>
   )
 }

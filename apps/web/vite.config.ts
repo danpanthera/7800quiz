@@ -19,8 +19,9 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#EEF2FF',
-        theme_color: '#1565C0',
+        // Khớp tông thương hiệu Agribank (--pearl-white/--agribank-red trong index.css)
+        background_color: '#F8F4EC',
+        theme_color: '#7A1428',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

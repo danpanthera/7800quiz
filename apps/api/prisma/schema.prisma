@@ -15,6 +15,12 @@ model User {
   passwordHash       String    @map("password_hash")
   fullName           String    @map("full_name")
   email              String?
+  // Ảnh đại diện — 2 kiểu loại trừ nhau (chọn kiểu này thì service tự xoá kiểu
+  // kia): avatarEmoji là emoji người dùng chọn từ bảng biểu tượng có sẵn, còn
+  // avatarUrl là đường dẫn ảnh tự tải lên (/api/uploads/avatars/...). Cả 2 đều
+  // null thì frontend hiện icon người dùng mặc định. Xem auth.service.ts.
+  avatarEmoji        String?   @map("avatar_emoji")
+  avatarUrl          String?   @map("avatar_url")
   departmentId       String?   @map("department_id")
   role               UserRole  @default(STAFF)
   isActive           Boolean   @default(true) @map("is_active")

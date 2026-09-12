@@ -43,10 +43,7 @@ async function getSpellChecker(): Promise<NSpellChecker> {
 // lại ở hàng trăm dòng thì chỉ tính đúng 1 lần. null = từ đúng chính tả.
 const SPELL_CACHE_MAX = 50_000;
 const spellCache = new Map<string, string[] | null>();
-function lookupSpelling(
-  checker: NSpellChecker,
-  word: string,
-): string[] | null {
+function lookupSpelling(checker: NSpellChecker, word: string): string[] | null {
   const cached = spellCache.get(word);
   if (cached !== undefined) return cached;
   const result = checker.correct(word)
