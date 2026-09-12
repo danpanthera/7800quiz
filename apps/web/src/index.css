@@ -1993,6 +1993,22 @@ p {
 .iq-sound:hover { background: rgba(251, 247, 242, 0.22); }
 .iq-sound-off { opacity: 0.45; text-decoration: line-through; }
 
+.iq-auto-advance {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 8px;
+  border-radius: 999px;
+  background: rgba(251, 247, 242, 0.12);
+  border: 1px solid rgba(251, 247, 242, 0.16);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iq-pearl);
+}
+
+.iq-auto-advance-label { white-space: nowrap; }
+
 /* ── Tiến độ ─────────────────────────────────────────────────────────────── */
 .iq-progress { position: relative; display: flex; flex-direction: column; gap: 8px; }
 .iq-progress .ant-progress-line { margin: 0; }
@@ -2218,6 +2234,7 @@ p {
 .iq-verdict-body strong { font-size: 18px; font-weight: 800; }
 .iq-verdict-body span { font-size: 13px; color: var(--iq-pearl-dim); }
 .iq-explanation { padding-top: 4px; font-style: italic; }
+.iq-verdict-hint { padding-top: 2px; font-size: 12px; opacity: 0.85; }
 
 .iq-next-button.ant-btn {
   height: 44px;
@@ -2241,6 +2258,9 @@ p {
   .iq-verdict-face { font-size: 32px; }
   .iq-next-button.ant-btn { width: 100%; }
   .iq-quiz-title { max-width: 52vw; }
+  /* Màn hẹp: giữ công tắc, ẩn chữ chú thích — vẫn còn tooltip title trên chính công tắc */
+  .iq-auto-advance { padding: 5px 8px; }
+  .iq-auto-advance-label { display: none; }
 }
 
 /* Tôn trọng thiết lập giảm chuyển động của hệ điều hành */
