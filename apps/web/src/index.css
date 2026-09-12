@@ -702,10 +702,15 @@ select {
 }
 
 .login-brand-footer.ant-typography {
-  color: var(--pearl-white);
-  font-size: clamp(16px, 1.5vw, 20px);
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  /* margin-top: auto ghim luôn xuống mép dưới cùng của .login-brand (flex column),
+     không phụ thuộc vào justify-content: space-between nếu sau này nội dung phía
+     trên (tiêu đề/statement) đổi chiều cao. */
+  margin-top: auto;
+  padding-top: 24px;
+  color: rgba(248, 244, 236, 0.55);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .login-form-region {
