@@ -516,6 +516,7 @@ export class AdminService {
     dryRun = false,
     sheetName?: string,
     submittedBy?: { id: string; role: string },
+    importDuplicates = false,
   ): Promise<{
     preview?: {
       rowNumber: number;
@@ -630,6 +631,7 @@ export class AdminService {
       subjectId,
       parsed,
       submittedBy,
+      importDuplicates,
     );
     return {
       imported: created.imported,
@@ -644,6 +646,10 @@ export class AdminService {
   // Luôn tự chấm lại trùng lặp ngay tại đây thay vì tin dữ liệu duplicateLevel do
   // client gửi lên, để câu vừa sửa nội dung cũng được đánh giá đúng bằng dữ liệu
   // DB mới nhất, không dùng kết quả trùng lặp đã cũ từ bước xem trước.
+  //
+  // importDuplicates=false (mặc định): câu trùng hoàn toàn/gần trùng (exact/high)
+  // bị tự động bỏ qua như trước giờ. true: admin đã xác nhận vẫn muốn import cả
+  // những câu đó (VD chủ đích thêm câu hỏi gần giống để đa dạng đề thi).
   private async createBankQuestions(
     subjectId: string,
     rows: {
@@ -654,6 +660,7 @@ export class AdminService {
       explanation: string | null;
     }[],
     submittedBy?: { id: string; role: string },
+    importDuplicates = false,
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     if (rows.length === 0) return { imported: 0, skipped: 0, errors: [] };
 
@@ -667,7 +674,11 @@ export class AdminService {
     for (let idx = 0; idx < rows.length; idx++) {
       const row = rows[idx];
       const topDup = dupResults[idx].matches[0];
-      if (topDup && (topDup.level === 'exact' || topDup.level === 'high')) {
+      if (
+        !importDuplicates &&
+        topDup &&
+        (topDup.level === 'exact' || topDup.level === 'high')
+      ) {
         skipped++;
         continue;
       }
@@ -712,6 +723,7 @@ export class AdminService {
     subjectId: string,
     rows: ImportBankQuestionRowDto[],
     submittedBy?: { id: string; role: string },
+    importDuplicates = false,
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     if (!subjectId)
       throw new BadRequestException('Phải chọn lĩnh vực trước khi import');
@@ -763,6 +775,7 @@ export class AdminService {
       subjectId,
       valid,
       submittedBy,
+      importDuplicates,
     );
     return {
       imported: created.imported,
