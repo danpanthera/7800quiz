@@ -41,6 +41,20 @@ if lsblk -no MOUNTPOINT "$DEV" 2>/dev/null | grep -q .; then
   echo "'$DEV' đang được mount ở đâu đó — dừng lại, kiểm tra lại bằng lsblk trước khi chạy tiếp" >&2
   exit 1
 fi
+# Tên /dev/sdX KHÔNG cố định — tuỳ máy, ổ hệ điều hành có thể ra /dev/sda HAY
+# /dev/sdb tuỳ thứ tự Linux dò thấy lúc khởi động, không đảm bảo ổ mới luôn là
+# ký tự sau ổ cũ. Ổ SCSI mới gắn phải HOÀN TOÀN TRỐNG (không phân vùng nào) —
+# đây là lớp chặn cuối cùng trước khi lỡ format nhầm ổ hệ điều hành đang chạy
+# (có /boot, LVM gắn /).
+PARTS="$(lsblk -no NAME "$DEV" | wc -l)"
+if [ "$PARTS" -gt 1 ]; then
+  echo "LỖI: '$DEV' đã có $((PARTS - 1)) phân vùng bên trong — đây không phải ổ mới trống." >&2
+  lsblk "$DEV" >&2
+  echo "Ổ SCSI mới gắn phải trống hoàn toàn, không có phân vùng nào. Rất có thể '$DEV'" >&2
+  echo "chính là ổ hệ điều hành đang chạy — kiểm tra lại toàn bộ \`lsblk\`, tìm đúng ổ" >&2
+  echo "KHÔNG có dòng nào ở cột MOUNTPOINTS và KHÔNG có phân vùng con." >&2
+  exit 1
+fi
 
 if ! blkid "$DEV" >/dev/null 2>&1; then
   log "Ổ '$DEV' chưa có filesystem."
