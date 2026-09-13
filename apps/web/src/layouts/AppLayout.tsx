@@ -128,9 +128,21 @@ const taiLieuKyThuat: NavigationItem = {
   label: 'Tài liệu kỹ thuật',
 }
 
+// Cán bộ IT được uỷ đúng 1 việc trong khối quản trị: reset mật khẩu cán bộ.
+// Vào được trang Quản lý cán bộ nhưng các nút còn lại bị ẩn (xem CanBoPage).
+const quanLyCanBo: NavigationItem = {
+  key: '/manage/staff',
+  icon: <IdcardOutlined />,
+  label: 'Quản lý cán bộ',
+}
+
 function getNavigation(role: UserRole, isItStaff: boolean): NavigationItem[] {
   const huongDan = huongDanNavigation(role === 'ADMIN' || isItStaff)
-  if (role === 'STAFF') return [...staffNavigation, huongDan]
+  if (role === 'STAFF') {
+    return isItStaff
+      ? [...staffNavigation, quanLyCanBo, huongDan]
+      : [...staffNavigation, huongDan]
+  }
   return role === 'ADMIN'
     ? [...trainingNavigation, ...adminNavigation, huongDan, taiLieuKyThuat]
     : [...trainingNavigation, huongDan]

@@ -279,10 +279,15 @@ function ThemedApp() {
                   <Route path="manage/tournaments" element={<TournamentsPage />} />
                 </Route>
 
+                {/* Cán bộ IT vào được đúng trang này để reset mật khẩu; mọi thao tác
+                    khác trong trang bị khoá ở cả giao diện lẫn API (can-bo-it.guard.ts) */}
+                <Route element={<RoleGuard allowedRoles={ADMIN_ROLES} allowItStaff />}>
+                  <Route path="manage/staff" element={<CanBoPage />} />
+                </Route>
+
                 <Route element={<RoleGuard allowedRoles={ADMIN_ROLES} />}>
                   <Route path="manage/academic-years" element={<AcademicYearsPage />} />
                   <Route path="manage/classes" element={<ClassesPage />} />
-                  <Route path="manage/staff" element={<CanBoPage />} />
                   <Route path="manage/branches" element={<BranchesPage />} />
                   <Route path="manage/audit-logs" element={<AuditLogsPage />} />
                   <Route path="manage/security" element={<AdminSecurityPage />} />
