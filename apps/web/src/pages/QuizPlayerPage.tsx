@@ -661,16 +661,8 @@ export default function QuizPlayerPage() {
           },
         ]),
     )
-    // InstantQuizPlayer tự vẽ toàn màn hình (position: fixed) — banner đặt đè
-    // lên trên bằng z-index cao hơn thay vì chèn vào bên trong component đó
-    // (không sửa InstantQuizPlayer.tsx vì file đang có thay đổi khác của Sếp).
     return (
       <>
-        {(violationLimit > 0 || violationCount > 0) && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 30, padding: 12 }}>
-            <BannerViPham violationCount={violationCount} violationLimit={violationLimit} />
-          </div>
-        )}
         {showFullscreenExitOverlay && <FullscreenExitOverlay onReenter={requestFullscreen} />}
         <InstantQuizPlayer
           attemptId={attemptId!}
@@ -679,6 +671,11 @@ export default function QuizPlayerPage() {
           initialResults={lockedResults}
           remainingSeconds={remainingSeconds}
           isSubmitting={submitMutation.isPending}
+          banner={
+            (violationLimit > 0 || violationCount > 0) && (
+              <BannerViPham violationCount={violationCount} violationLimit={violationLimit} />
+            )
+          }
           onFinish={() => {
             if (submissionStarted.current) return
             submissionStarted.current = true

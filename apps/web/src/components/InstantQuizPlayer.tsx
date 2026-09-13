@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Progress, Switch } from 'antd'
 import {
   ArrowDownOutlined,
@@ -51,6 +51,10 @@ interface Props {
   remainingSeconds: number
   isSubmitting: boolean
   onFinish: () => void
+  // Banner cảnh báo vi phạm (QuizPlayerPage) — render TRONG luồng bố cục ngay
+  // dưới thanh công cụ, không phải overlay position:fixed, để không đè lên các
+  // nút loa/âm thanh/tự động chuyển câu ở .iq-topbar.
+  banner?: ReactNode
 }
 
 // Thời gian giữ màn hình kết quả trước khi tự sang câu kế — CHỈ áp dụng khi
@@ -84,6 +88,7 @@ export default function InstantQuizPlayer({
   remainingSeconds,
   isSubmitting,
   onFinish,
+  banner,
 }: Props) {
   const [results, setResults] = useState<Record<string, LockedResult>>(initialResults)
   // Vào thẳng câu chưa trả lời đầu tiên — người làm tải lại trang không phải bấm lại từ đầu.
@@ -359,6 +364,8 @@ export default function InstantQuizPlayer({
           </span>
         </div>
       </header>
+
+      {banner && <div className="iq-banner">{banner}</div>}
 
       <div className="iq-progress">
         <Progress percent={progressPercent} showInfo={false} strokeColor="#E0B44C" trailColor="rgba(251,247,242,0.18)" />
