@@ -112,13 +112,13 @@ export default function LoginPage() {
           ) : (
           <Form layout="vertical" onFinish={mutation.mutate} size="large" requiredMark={false}>
             <Form.Item
-              label="User AD (VD: datnguyentien2)"
+              label="User AD"
               name="username"
               rules={[{ required: true, message: 'Vui lòng nhập User AD' }]}
             >
               <Input
                 prefix={<UserOutlined />}
-                placeholder="datnguyentien2"
+                placeholder="VD: datnguyentien2"
                 autoComplete="username"
               />
             </Form.Item>
@@ -131,7 +131,7 @@ export default function LoginPage() {
             >
               <Input.Password
                 prefix={<LockOutlined />}
-                placeholder="Mật khẩu này độc lập với mật khẩu vào máy"
+                placeholder="Mật khẩu vào máy/mail Agribank"
                 autoComplete="current-password"
               />
             </Form.Item>
