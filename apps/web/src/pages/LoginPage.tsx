@@ -59,7 +59,11 @@ export default function LoginPage() {
         </div>
         <div className="login-brand-title">
           <Title level={1}>7800Quiz</Title>
-          <p className="login-brand-statement">Thi thử nghiệp vụ<br />Đấu trường kiến thức</p>
+          <p className="login-brand-statement">
+            <span className="login-brand-highlight login-brand-highlight-exam">Thi</span> nghiệp vụ
+            <br />
+            <span className="login-brand-highlight login-brand-highlight-arena">Đấu trường</span> kiến thức
+          </p>
         </div>
         <Text className="login-brand-footer">R&D by IT Dept</Text>
       </section>

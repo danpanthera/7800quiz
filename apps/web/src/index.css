@@ -1,5 +1,8 @@
 /* ── Google Fonts ─────────────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
+/* Playfair Display/Bungee chỉ dùng riêng cho 2 chữ "Thi"/"Đấu trường" ở trang
+   đăng nhập (login-brand-highlight-*) — cả 2 đều có đủ bộ dấu tiếng Việt trên
+   Google Fonts, không lo vỡ dấu như phần lớn font display khác. */
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@1,700;1,800&family=Bungee&display=swap');
 
 /* ── Biến CSS ─────────────────────────────────────────────────────────────── */
 /*
@@ -854,6 +857,55 @@ select {
   line-height: 1.4;
 }
 
+/* "Thi"/"Đấu trường" — 2 chức năng chính của dự án, tách hẳn màu + font riêng
+   khỏi phần còn lại của câu (vẫn vàng kim/Be Vietnam Pro) để nổi bật. */
+.login-brand-highlight {
+  font-size: 1.15em;
+}
+
+/* "Thi" — trang trọng: chữ nghiêng serif ánh nhũ vàng-ngà, cố ý ĐỨNG YÊN (không
+   hoạt ảnh) để đối lập với "Đấu trường" rực lửa bên dưới — 1 tĩnh/sang trọng,
+   1 động/sôi nổi, đúng tính chất 2 chức năng (thi cử nghiêm túc vs đấu trường). */
+.login-brand-highlight-exam {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #FFFDF5 0%, var(--gold) 55%, #FFFDF5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* "Đấu trường" — bốc lửa: chữ khối đậm Bungee tô dải màu lửa (đỏ thẫm-cam-vàng)
+   trượt ngang liên tục kèm quầng sáng nhấp nháy, mô phỏng ánh lửa bập bùng. */
+.login-brand-highlight-arena {
+  font-family: 'Bungee', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  background: linear-gradient(90deg, #7A1B00 0%, #FF3D00 25%, #FFC400 50%, #FF3D00 75%, #7A1B00 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: arena-flame-shift 2.6s ease-in-out infinite, arena-flame-flicker 1.1s ease-in-out infinite;
+}
+
+@keyframes arena-flame-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes arena-flame-flicker {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(255, 100, 0, 0.55)) drop-shadow(0 0 16px rgba(255, 60, 0, 0.35));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(255, 180, 0, 0.8)) drop-shadow(0 0 26px rgba(255, 60, 0, 0.55));
+  }
+}
+
 .login-brand-footer.ant-typography {
   /* margin-top: auto ghim luôn xuống mép dưới cùng của .login-brand (flex column),
      không phụ thuộc vào justify-content: space-between nếu sau này nội dung phía
@@ -1048,7 +1100,8 @@ select {
   }
 
   .ant-layout-content,
-  .arena-view-transition {
+  .arena-view-transition,
+  .login-brand-highlight-arena {
     animation: none;
   }
 }
