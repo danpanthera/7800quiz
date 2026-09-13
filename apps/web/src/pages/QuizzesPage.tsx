@@ -279,7 +279,7 @@ export default function QuizzesPage() {
       render: (v: boolean) => <Badge status={v ? 'success' : 'default'} text={v ? 'Hoạt động' : 'Tắt'} />,
     },
     {
-      title: '', width: 160,
+      title: '',
       render: (_: unknown, quiz: Quiz) => renderQuizActions(quiz),
     },
   ]

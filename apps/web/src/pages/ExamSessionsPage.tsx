@@ -299,7 +299,7 @@ export default function ExamSessionsPage() {
       render: (v: string) => <Tag color={STATUS_MAP[v]?.color}>{STATUS_MAP[v]?.label}</Tag>,
     },
     {
-      title: '', width: 200,
+      title: '', width: 240,
       render: (_: unknown, row: ExamSession) => renderExamSessionActions(row),
     },
   ]

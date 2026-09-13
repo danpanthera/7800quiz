@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type Key } from 'react'
+import { useMemo, useState, type Key } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Button, Card, Col, Input, Popconfirm, Progress, Row,
@@ -6,9 +6,6 @@ import {
 } from 'antd'
 import { DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { Resizable } from 'react-resizable'
-import type { ResizeCallbackData } from 'react-resizable'
-import 'react-resizable/css/styles.css'
 import ManageTable from '../components/ManageTable'
 import api from '../lib/api'
 
@@ -37,32 +34,6 @@ interface Dept {
   parent: { id: string; name: string } | null
 }
 
-// Ô tiêu đề có thể kéo giãn, cho phép admin kéo thả để đổi độ rộng cột
-const ResizableTitle = (props: React.HTMLAttributes<HTMLElement> & {
-  onResize: (e: React.SyntheticEvent, data: ResizeCallbackData) => void
-  width: number
-}) => {
-  const { onResize, width, ...restProps } = props
-  if (!width) return <th {...restProps} />
-  return (
-    <Resizable
-      width={width}
-      height={0}
-      handle={
-        <span
-          className="react-resizable-handle"
-          onClick={(e) => e.stopPropagation()}
-          style={{ position: 'absolute', right: -5, bottom: 0, zIndex: 1, width: 10, height: '100%', cursor: 'col-resize' }}
-        />
-      }
-      onResize={onResize}
-      draggableOpts={{ enableUserSelectHack: false }}
-    >
-      <th {...restProps} style={{ ...restProps.style, position: 'relative' }} />
-    </Resizable>
-  )
-}
-
 // Chuẩn hoá chuỗi tiếng Việt để tìm kiếm không phân biệt dấu
 const vn = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, (c) => (c === 'đ' ? 'd' : 'D')).toLowerCase()
@@ -80,9 +51,6 @@ const STATUS_LABEL: Record<string, string> = {
   SYNC_ERROR: 'Lỗi sync',
 }
 
-// Độ rộng mặc định của từng cột (key = index trong mảng columns)
-const DEFAULT_COL_WIDTHS = [140, 180, 200, 180, 180, 130, 175, 50]
-
 export default function ReportsPage() {
   const qc = useQueryClient()
   const [searchName, setSearchName] = useState('')
@@ -90,7 +58,6 @@ export default function ReportsPage() {
   const [filterDept, setFilterDept] = useState<string | undefined>()
   const [filterQuiz, setFilterQuiz] = useState<string | undefined>()
   const [filterScore, setFilterScore] = useState<string | undefined>()
-  const [colWidths, setColWidths] = useState<number[]>(DEFAULT_COL_WIDTHS)
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
 
   // Xóa xong bài thi thì Thành tích/Bảng xếp hạng đã được server tính lại —
@@ -100,17 +67,6 @@ export default function ReportsPage() {
     qc.invalidateQueries({ queryKey: ['leaderboard'] })
     qc.invalidateQueries({ queryKey: ['badge-stats'] })
   }
-
-  const handleResize = useCallback(
-    (index: number) => (_: React.SyntheticEvent, { size }: ResizeCallbackData) => {
-      setColWidths((prev) => {
-        const next = [...prev]
-        next[index] = size.width
-        return next
-      })
-    },
-    [],
-  )
 
   const { data: rows = [], isLoading } = useQuery<ReportRow[]>({
     queryKey: ['reports'],
@@ -265,14 +221,9 @@ export default function ReportsPage() {
     },
   ]
 
-  // Gắn width động và onHeaderCell để hỗ trợ kéo thả độ rộng cột
-  const columns = baseColumns.map((col, index) => ({
+  // Kéo thả/autofit độ rộng cột đã có sẵn ở ManageTable — chỉ cần giữ cách bọc chữ ở đây
+  const columns = baseColumns.map((col) => ({
     ...col,
-    width: colWidths[index],
-    onHeaderCell: (column: { width?: number | string }) => ({
-      width: typeof column.width === 'number' ? column.width : undefined,
-      onResize: handleResize(index),
-    }),
     onCell: () => ({ style: { whiteSpace: 'normal' as const, wordBreak: 'break-word' as const } }),
   })) as ColumnsType<ReportRow>
 
@@ -399,8 +350,6 @@ export default function ReportsPage() {
         rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, preserveSelectedRowKeys: true }}
         pagination={{ defaultPageSize: 50, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '200'], showTotal: (t) => `${t} bài thi` }}
         size="small"
-        scroll={{ x: 'max-content' }}
-        components={{ header: { cell: ResizableTitle } }}
         cardHeading={(r) => <Typography.Title level={5}>{r.fullName}</Typography.Title>}
         cardBadge={(r) => <Tag color={STATUS_COLOR[r.status] ?? 'default'}>{STATUS_LABEL[r.status] ?? r.status}</Tag>}
         cardMeta={[

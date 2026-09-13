@@ -1601,6 +1601,22 @@ select {
   border-bottom: none !important;
 }
 
+/* Tay kéo đổi độ rộng cột (ManageTable) — nằm mép phải mỗi ô tiêu đề */
+.manage-table-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.manage-table-resize-handle:hover,
+.manage-table-resize-handle:active {
+  background: rgba(122, 20, 40, 0.35);
+}
+
 /* Hộp thoại (Modal) */
 .ant-modal-content {
   border-radius: 16px !important;

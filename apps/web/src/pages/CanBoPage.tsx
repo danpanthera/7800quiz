@@ -315,7 +315,7 @@ export default function CanBoPage() {
       render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? 'Hoạt động' : 'Nghỉ'}</Tag>,
     },
     {
-      title: 'Thao tác', width: 150, fixed: 'right' as const,
+      title: 'Thao tác', width: 190, fixed: 'right' as const,
       render: (_: unknown, record: CanBoItem) => renderCanBoActions(record),
     },
   ]

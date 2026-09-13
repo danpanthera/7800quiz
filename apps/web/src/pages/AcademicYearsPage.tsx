@@ -118,7 +118,7 @@ export default function AcademicYearsPage() {
     { title: 'Số lớp', dataIndex: ['_count', 'classes'], width: 90, render: (v: number) => v ?? 0 },
     {
       title: 'Thao tác',
-      width: 200,
+      width: 240,
       render: (_: unknown, row: AcademicYear) => renderAcademicYearActions(row),
     },
   ]

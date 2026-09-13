@@ -391,6 +391,9 @@ function SessionList({ onNew, onOpen }: { onNew: () => void; onOpen: (s: ArenaSe
         <Table
           dataSource={data ?? []}
           rowKey="id"
+          // Cột thao tác có nhiều nút chữ (Vào phòng/Xem lại/Dừng/Xóa...), không khai
+          // báo width cố định — cho cuộn ngang thay vì cắt cụt nút khi màn hẹp.
+          scroll={{ x: 'max-content' }}
           rowSelection={{
             selectedRowKeys: selectedKeys,
             onChange: setSelectedKeys,
