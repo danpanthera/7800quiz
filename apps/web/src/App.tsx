@@ -201,7 +201,10 @@ function ThemedApp() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/login" element={<LightStage><LoginPage /></LightStage>} />
+              {/* Vế trái (logo/slogan) luôn đỏ mận/vàng kim cố định bất kể theme — chỉ vế
+                  phải (form đăng nhập) theo đúng Sáng/Tối/Theo hệ thống như phần còn lại
+                  của portal, nên KHÔNG bọc LightStage ở đây (khác ArenaPlayerPage). */}
+              <Route path="/login" element={<LoginPage />} />
               <Route
                 path="/change-password"
                 element={

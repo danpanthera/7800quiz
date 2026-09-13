@@ -134,6 +134,13 @@ select {
   color: var(--agribank-red-dark);
   background: var(--gold);
   flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.portal-brand-mark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .portal-brand strong,
@@ -2841,6 +2848,28 @@ p {
 [data-theme="dark"] .quiz-question-card h3.ant-typography,
 [data-theme="dark"] .ant-modal-title,
 [data-theme="dark"] .ant-drawer-title,
-[data-theme="dark"] .arena-lb-score {
+[data-theme="dark"] .arena-lb-score,
+[data-theme="dark"] .login-form-heading h2.ant-typography,
+[data-theme="dark"] .quiz-result .ant-result-icon {
   color: var(--gold) !important;
+}
+
+/* Cùng lý do như trên nhưng cho nhãn nhỏ (eyebrow) dùng var(--agribank-red)
+   thường (không phải -dark) — vẫn quá tối để đọc trên nền thẻ tối. */
+[data-theme="dark"] .page-eyebrow,
+[data-theme="dark"] .auth-panel-heading,
+[data-theme="dark"] .login-form-heading > .ant-typography,
+[data-theme="dark"] .login-mobile-brand,
+[data-theme="dark"] .login-form-wrap .ant-input-affix-wrapper .anticon {
+  color: var(--gold);
+}
+
+/* ── Trang đăng nhập: vế phải (form) theo Sáng/Tối như phần còn lại của portal —
+   vế trái (login-brand, thương hiệu Agribank) cố tình giữ nguyên, không đụng tới. */
+[data-theme="dark"] .login-page {
+  background: var(--bg-layout);
+}
+
+[data-theme="dark"] .login-support.ant-typography {
+  color: var(--text-secondary);
 }
