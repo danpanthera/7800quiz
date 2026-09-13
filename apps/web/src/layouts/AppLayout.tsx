@@ -36,6 +36,7 @@ import {
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/useAuth'
+import conMatAiCap from '../assets/con-mat-ai-cap.jpeg'
 import { useDeviceType } from '../hooks/useDeviceType'
 import { useScreenTimeReminder } from '../hooks/useScreenTimeReminder'
 import ThemeToggle from '../components/ThemeToggle'
@@ -151,7 +152,14 @@ function getNavigation(role: UserRole, isItStaff: boolean): NavigationItem[] {
 function PortalBrand({ role }: { role: UserRole }) {
   return (
     <div className="portal-brand">
-      <span className="portal-brand-mark"><BankOutlined /></span>
+      <span className="portal-brand-mark">
+        {/* Riêng Quản trị viên dùng logo tuỳ chỉnh thay icon ngân hàng mặc định */}
+        {role === 'ADMIN' ? (
+          <img src={conMatAiCap} alt="" className="portal-brand-mark-img" />
+        ) : (
+          <BankOutlined />
+        )}
+      </span>
       <span>
         <strong>7800Quiz</strong>
         <small>{roleLabels[role]}</small>
