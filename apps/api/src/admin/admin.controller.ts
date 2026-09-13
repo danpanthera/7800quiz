@@ -647,4 +647,22 @@ export class AdminController {
     return this.adminService.deleteCanBo(id, req.user.id);
   }
 
+  // Xoá triệt để — bỏ qua mọi chốt chặn còn lịch sử làm bài. Chỉ ADMIN mới
+  // gọi được (không mở rộng @Roles như các endpoint cán bộ khác ở trên).
+  @Delete('can-bo/:id/super-delete')
+  superDeleteCanBo(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.superDeleteCanBo(id, req.user.id);
+  }
+
+  // Reset cứng huy hiệu + cấp độ về ban đầu, không quan tâm lịch sử thi.
+  @Post('can-bo/:id/hard-reset')
+  hardResetCanBo(
+    @Param('id') id: string,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.hardResetCanBo(id, req.user.id);
+  }
 }

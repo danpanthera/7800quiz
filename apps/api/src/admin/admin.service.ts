@@ -2559,6 +2559,165 @@ export class AdminService {
     return { reset, noAccount: noAccount.length, details };
   }
 
+  /**
+   * Xoá triệt để 1 cán bộ khỏi hệ thống, bỏ qua mọi chốt chặn "còn lịch sử
+   * làm bài" — dùng khi admin thật sự muốn dọn sạch 1 tài khoản (vd tài
+   * khoản test, tài khoản nhập nhầm...). Chỉ xoá dữ liệu RIÊNG của người
+   * này (phân công, bài làm, lượt thi, huy hiệu, cấp độ...); KHÔNG đụng tới
+   * bộ đề/câu hỏi dùng chung — nếu bộ đề đó vẫn đang được giao cho cán bộ
+   * khác thì họ hoàn toàn không bị ảnh hưởng.
+   */
+  async superDeleteCanBo(id: string, actorUserId?: string) {
+    const canBo = await this.prisma.canBo.findUniqueOrThrow({ where: { id } });
+    const username = this.getLoginUsername(canBo.cbCode, canBo.userAD);
+    const user = await this.prisma.user.findUnique({ where: { username } });
+
+    const summary = await this.prisma.$transaction(async (tx) => {
+      let quizAttempts = 0;
+      let submissions = 0;
+      let assignments = 0;
+      let xpTransactions = 0;
+      let userBadges = 0;
+      let dailyQuestionAttempts = 0;
+      let reviewCards = 0;
+
+      if (user) {
+        const userId = user.id;
+
+        // Xoá lượt thi/bài nộp TRƯỚC — quiz_attempts đang RESTRICT theo
+        // assignment_id nên phải dọn xong mới xoá được assignment bên dưới.
+        quizAttempts = (await tx.quizAttempt.deleteMany({ where: { userId } }))
+          .count;
+        submissions = (await tx.submission.deleteMany({ where: { userId } }))
+          .count;
+
+        const asgByUser = await tx.assignment.deleteMany({
+          where: { userId },
+        });
+        const asgByCanBo = await tx.assignment.deleteMany({
+          where: { canBoId: id },
+        });
+        assignments = asgByUser.count + asgByCanBo.count;
+
+        const progress = await tx.userProgress.findUnique({
+          where: { userId },
+        });
+        if (progress) {
+          userBadges = await tx.userBadge.count({ where: { userId } });
+          xpTransactions = await tx.xpTransaction.count({ where: { userId } });
+          // onDelete: Cascade tự dọn user_badges + xp_transactions của progress này.
+          await tx.userProgress.delete({ where: { userId } });
+        }
+
+        dailyQuestionAttempts = (
+          await tx.dailyQuestionAttempt.deleteMany({ where: { userId } })
+        ).count;
+        reviewCards = (await tx.reviewCard.deleteMany({ where: { userId } }))
+          .count;
+        await tx.userSession.deleteMany({ where: { userId } });
+
+        // arena_invites/arena_team_members: onDelete Cascade; audit_logs:
+        // onDelete SetNull (giữ lại nhật ký, chỉ mất liên kết) — Prisma tự lo
+        // khi xoá User ngay sau đây.
+        await tx.user.delete({ where: { id: userId } });
+      } else {
+        // Không có tài khoản đăng nhập liên kết — vẫn có thể có phân công gán
+        // thẳng theo can_bo_id (giao việc trước khi có tài khoản).
+        assignments = (
+          await tx.assignment.deleteMany({ where: { canBoId: id } })
+        ).count;
+      }
+
+      await tx.canBo.delete({ where: { id } });
+
+      return {
+        quizAttempts,
+        submissions,
+        assignments,
+        xpTransactions,
+        userBadges,
+        dailyQuestionAttempts,
+        reviewCards,
+      };
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorUserId,
+        action: 'SUPER_DELETE_CAN_BO',
+        entityId: id,
+        meta: {
+          cbCode: canBo.cbCode,
+          fullName: canBo.fullName,
+          username,
+          ...summary,
+        },
+      },
+    });
+
+    return summary;
+  }
+
+  /**
+   * Reset cứng huy hiệu + cấp độ của 1 cán bộ về trạng thái ban đầu, KHÔNG
+   * quan tâm lịch sử làm bài thật sự thế nào (khác recomputeUserProgress —
+   * hàm đó tính lại đúng theo dữ liệu còn lại, còn hàm này đưa thẳng về mốc
+   * 0). Không đụng tới bài nộp/lượt thi — chỉ reset lớp game hoá.
+   */
+  async hardResetCanBo(id: string, actorUserId?: string) {
+    const canBo = await this.prisma.canBo.findUniqueOrThrow({ where: { id } });
+    const username = this.getLoginUsername(canBo.cbCode, canBo.userAD);
+    const user = await this.prisma.user.findUnique({ where: { username } });
+    if (!user) {
+      throw new BadRequestException(
+        `Cán bộ "${canBo.fullName}" chưa có tài khoản đăng nhập nên không có dữ liệu game hoá để reset`,
+      );
+    }
+    const userId = user.id;
+
+    const summary = await this.prisma.$transaction(async (tx) => {
+      const userBadges = await tx.userBadge.count({ where: { userId } });
+      const xpTransactions = await tx.xpTransaction.count({
+        where: { userId },
+      });
+      await tx.userBadge.deleteMany({ where: { userId } });
+      await tx.xpTransaction.deleteMany({ where: { userId } });
+      await tx.userProgress.upsert({
+        where: { userId },
+        update: {
+          xp: 0,
+          level: 1,
+          currentStreak: 0,
+          maxStreak: 0,
+          totalSubmissions: 0,
+          totalPassed: 0,
+          totalArenaWins: 0,
+          lastActivityDate: null,
+          streakFreezeCount: 2,
+          lastStreakFreezeGrantAt: null,
+        },
+        create: { userId },
+      });
+      return { userBadges, xpTransactions };
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorUserId,
+        action: 'HARD_RESET_GAMIFICATION',
+        entityId: id,
+        meta: {
+          cbCode: canBo.cbCode,
+          fullName: canBo.fullName,
+          username,
+          ...summary,
+        },
+      },
+    });
+
+    return summary;
+  }
+
   // Đọc workbook từ buffer upload.
   // .xlsx (chữ ký ZIP "PK") và .xls (chữ ký OLE) tự mang thông tin encoding nên
   // đọc thẳng từ buffer. Riêng CSV/TXT là văn bản thuần — nếu để thư viện tự

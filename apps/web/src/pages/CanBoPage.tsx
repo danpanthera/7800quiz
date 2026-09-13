@@ -2,9 +2,9 @@ import { useState } from 'react'
 import React from 'react'
 import {
   App, Button, Table, Space, Modal, Form, Input, Select, Popconfirm,
-  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert,
+  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert, Dropdown,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined, MoreOutlined, UndoOutlined, ClearOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import ManageTable from '../components/ManageTable'
@@ -48,6 +48,11 @@ interface CanBoItem {
 // Dữ liệu form thêm/sửa cán bộ — bỏ các field server tự sinh (id, username, department object)
 type CanBoFormValues = Omit<CanBoItem, 'id' | 'username' | 'department'>
 
+interface SuperDeleteResult {
+  quizAttempts: number; submissions: number; assignments: number;
+  xpTransactions: number; userBadges: number; dailyQuestionAttempts: number; reviewCards: number;
+}
+
 export default function CanBoPage() {
   const qc = useQueryClient()
   const { message } = App.useApp()
@@ -67,6 +72,10 @@ export default function CanBoPage() {
     created: number; updated: number; skipped: number; errors: string[];
     rows: { empno: string; fullName: string; branchCode?: string; branchName?: string; deptName?: string; position?: string; userAD?: string; action: 'created' | 'updated' | 'skipped' | 'error'; note?: string }[];
   } | null>(null)
+  const [superDeleteTarget, setSuperDeleteTarget] = useState<CanBoItem | null>(null)
+  const [superDeleteConfirmText, setSuperDeleteConfirmText] = useState('')
+  const [superDeleteResultOpen, setSuperDeleteResultOpen] = useState(false)
+  const [superDeleteResult, setSuperDeleteResult] = useState<SuperDeleteResult | null>(null)
 
   const { data: canBoList = [], isLoading } = useQuery<CanBoItem[]>({
     queryKey: ['can-bo', search, filterUnitId, filterDeptId],
@@ -119,6 +128,26 @@ export default function CanBoPage() {
       message.success(`Đã xóa ${data.deleted} cán bộ`)
     },
     onError: () => message.error('Lỗi khi xóa cán bộ'),
+  })
+
+  const superDeleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/can-bo/${id}/super-delete`).then(r => r.data),
+    onSuccess: (data: SuperDeleteResult) => {
+      qc.invalidateQueries({ queryKey: ['can-bo'] })
+      setSuperDeleteTarget(null)
+      setSuperDeleteConfirmText('')
+      setSuperDeleteResult(data)
+      setSuperDeleteResultOpen(true)
+    },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi xóa triệt để')),
+  })
+
+  const hardResetMut = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/can-bo/${id}/hard-reset`).then(r => r.data),
+    onSuccess: (data: { userBadges: number; xpTransactions: number }) => {
+      message.success(`Đã reset cứng: gỡ ${data.userBadges} huy hiệu, xóa ${data.xpTransactions} giao dịch XP, đưa cấp độ về 1`)
+    },
+    onError: (e: unknown) => message.error(getErrorMessage(e, 'Lỗi khi reset cứng')),
   })
 
   const importMut = useMutation({
@@ -230,6 +259,36 @@ export default function CanBoPage() {
       <Popconfirm title="Xác nhận xóa cán bộ này?" onConfirm={() => deleteMut.mutate(record.id)} okText="Xóa" cancelText="Hủy">
         <Button size="small" danger icon={<DeleteOutlined />} />
       </Popconfirm>
+      <Dropdown
+        menu={{
+          items: [
+            {
+              key: 'hard-reset',
+              icon: <UndoOutlined />,
+              label: 'Reset cứng huy hiệu/cấp độ',
+              onClick: () => {
+                Modal.confirm({
+                  title: 'Reset cứng huy hiệu + cấp độ?',
+                  content: `Đưa toàn bộ XP, cấp độ, huy hiệu của "${record.fullName}" về mốc ban đầu (cấp 1, 0 XP), không quan tâm đã thi thế nào. Không đụng tới bài nộp/lượt thi đã có.`,
+                  okText: 'Reset', okButtonProps: { danger: true }, cancelText: 'Hủy',
+                  onOk: () => hardResetMut.mutate(record.id),
+                })
+              },
+            },
+            { type: 'divider' },
+            {
+              key: 'super-delete',
+              icon: <ClearOutlined />,
+              danger: true,
+              label: 'Xóa triệt để (Super Delete)',
+              onClick: () => { setSuperDeleteTarget(record); setSuperDeleteConfirmText('') },
+            },
+          ],
+        }}
+        trigger={['click']}
+      >
+        <Button size="small" icon={<MoreOutlined />} title="Thao tác khác" />
+      </Dropdown>
     </Space>
   )
 
@@ -256,7 +315,7 @@ export default function CanBoPage() {
       render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? 'Hoạt động' : 'Nghỉ'}</Tag>,
     },
     {
-      title: 'Thao tác', width: 120, fixed: 'right' as const,
+      title: 'Thao tác', width: 150, fixed: 'right' as const,
       render: (_: unknown, record: CanBoItem) => renderCanBoActions(record),
     },
   ]
@@ -503,6 +562,76 @@ export default function CanBoPage() {
               pagination={false}
             />
           </>
+        )}
+      </Modal>
+
+      {/* Modal: Xác nhận Super Delete — phải gõ đúng mã CB mới bấm được */}
+      <Modal
+        title="⚠️ Xóa triệt để cán bộ"
+        open={!!superDeleteTarget}
+        onCancel={() => { setSuperDeleteTarget(null); setSuperDeleteConfirmText('') }}
+        onOk={() => superDeleteTarget && superDeleteMut.mutate(superDeleteTarget.id)}
+        okText="Xóa triệt để"
+        cancelText="Hủy"
+        okButtonProps={{
+          danger: true,
+          disabled: !superDeleteTarget || superDeleteConfirmText.trim() !== superDeleteTarget.cbCode,
+          loading: superDeleteMut.isPending,
+        }}
+      >
+        {superDeleteTarget && (
+          <>
+            <Alert
+              type="error"
+              showIcon
+              message="Hành động KHÔNG THỂ HOÀN TÁC"
+              description={
+                <>
+                  Sẽ xóa vĩnh viễn toàn bộ phân công, bài nộp, lượt thi, huy hiệu, cấp độ
+                  và tài khoản đăng nhập của <strong>{superDeleteTarget.fullName}</strong> ({superDeleteTarget.cbCode}),
+                  bỏ qua mọi cảnh báo "còn lịch sử làm bài". Bộ đề dùng chung vẫn được giữ
+                  nguyên cho những cán bộ khác đang được giao/đang dùng.
+                </>
+              }
+              style={{ marginBottom: 16 }}
+            />
+            <Typography.Text>
+              Gõ đúng mã CB <Typography.Text code>{superDeleteTarget.cbCode}</Typography.Text> để xác nhận:
+            </Typography.Text>
+            <Input
+              style={{ marginTop: 8 }}
+              placeholder={superDeleteTarget.cbCode}
+              value={superDeleteConfirmText}
+              onChange={(e) => setSuperDeleteConfirmText(e.target.value)}
+              onPressEnter={() => {
+                if (superDeleteTarget && superDeleteConfirmText.trim() === superDeleteTarget.cbCode) {
+                  superDeleteMut.mutate(superDeleteTarget.id)
+                }
+              }}
+            />
+          </>
+        )}
+      </Modal>
+
+      {/* Modal: Kết quả Super Delete */}
+      <Modal
+        title="Đã xóa triệt để"
+        open={superDeleteResultOpen}
+        onOk={() => setSuperDeleteResultOpen(false)}
+        onCancel={() => setSuperDeleteResultOpen(false)}
+        cancelButtonProps={{ style: { display: 'none' } }}
+        okText="Đóng"
+      >
+        {superDeleteResult && (
+          <ul style={{ paddingLeft: 20, margin: 0 }}>
+            <li>Lượt thi: <strong>{superDeleteResult.quizAttempts}</strong></li>
+            <li>Bài nộp: <strong>{superDeleteResult.submissions}</strong></li>
+            <li>Phân công: <strong>{superDeleteResult.assignments}</strong></li>
+            <li>Huy hiệu: <strong>{superDeleteResult.userBadges}</strong></li>
+            <li>Giao dịch XP: <strong>{superDeleteResult.xpTransactions}</strong></li>
+            <li>Câu hỏi hàng ngày đã trả lời: <strong>{superDeleteResult.dailyQuestionAttempts}</strong></li>
+            <li>Thẻ ôn tập ngắt quãng: <strong>{superDeleteResult.reviewCards}</strong></li>
+          </ul>
         )}
       </Modal>
 
