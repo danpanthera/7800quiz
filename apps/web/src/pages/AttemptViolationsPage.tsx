@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Input, Select, Space, Tag, Typography } from 'antd'
 import ManageTable from '../components/ManageTable'
 import api from '../lib/api'
+import { NHAN_LOAI_VI_PHAM as TYPE_LABEL } from '../lib/violation-labels'
 
 const { Text } = Typography
 
@@ -19,17 +20,6 @@ interface ViolationRow {
   attemptStatus: 'IN_PROGRESS' | 'GRADED'
   totalViolationsInAttempt: number
   violationSubmitted: boolean
-}
-
-const TYPE_LABEL: Record<string, { label: string; color: string }> = {
-  TAB_HIDDEN: { label: 'Rời tab / thu nhỏ cửa sổ', color: 'warning' },
-  FULLSCREEN_EXIT: { label: 'Thoát toàn màn hình', color: 'orange' },
-  COPY_ATTEMPT: { label: 'Cố sao chép đề bài', color: 'error' },
-  WINDOW_BLUR: { label: 'Chuyển sang cửa sổ khác', color: 'orange' },
-  IDLE_TIMEOUT: { label: 'Vắng mặt bất thường', color: 'error' },
-  MULTI_SESSION_LOGIN: { label: 'Đăng nhập thêm nơi khác', color: 'error' },
-  DEVTOOLS_OPEN: { label: 'Nghi vấn mở DevTools (độ tin cậy thấp)', color: 'default' },
-  SCREENSHOT_ATTEMPT: { label: 'Nghi vấn chụp màn hình (độ tin cậy thấp)', color: 'default' },
 }
 
 export default function AttemptViolationsPage() {

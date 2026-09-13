@@ -6,6 +6,7 @@ import {
   Card,
   Checkbox,
   Empty,
+  Modal,
   Progress,
   Radio,
   Result,
@@ -36,6 +37,7 @@ import {
   saveAttemptDraft,
   type AttemptDraft,
 } from '../lib/attempt-drafts'
+import { NHAN_LOAI_VI_PHAM } from '../lib/violation-labels'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -355,11 +357,14 @@ export default function QuizPlayerPage() {
       }
       try {
         const response = await api.post(`/me/attempts/${attemptId}/violations`, { type })
-        const { violationCount: nextCount, violationLimit: limit, autoSubmitted, submissionId } = response.data as {
+        const {
+          violationCount: nextCount, violationLimit: limit, autoSubmitted, submissionId, violationBreakdown,
+        } = response.data as {
           violationCount: number
           violationLimit: number
           autoSubmitted: boolean
           submissionId?: string
+          violationBreakdown?: { type: string; count: number }[]
         }
         if (isSoft) return
         setViolationCount(nextCount)
@@ -367,7 +372,29 @@ export default function QuizPlayerPage() {
         if (autoSubmitted && submissionId) {
           await deleteAttemptDraft(attemptId)
           exitFullscreenIfActive()
-          navigate(`/my/results/${submissionId}`, { replace: true })
+          // Chặn điều hướng tới khi Sếp/cán bộ bấm "Đã hiểu" — để chắc chắn đọc được
+          // lý do trước khi rời màn hình, không tự động nhảy trang ngay lập tức.
+          Modal.warning({
+            title: 'Bạn đã vi phạm quá số lần được phép',
+            content: (
+              <div>
+                <Paragraph style={{ marginBottom: violationBreakdown?.length ? 8 : 0 }}>
+                  Hệ thống đã tự động nộp bài. Điểm được chấm theo các câu đã lưu tới thời điểm đó.
+                </Paragraph>
+                {!!violationBreakdown?.length && (
+                  <ul style={{ paddingLeft: 20, margin: 0 }}>
+                    {violationBreakdown.map((b) => (
+                      <li key={b.type}>
+                        {NHAN_LOAI_VI_PHAM[b.type]?.label ?? b.type}: {b.count} lần
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ),
+            okText: 'Đã hiểu',
+            onOk: () => navigate(`/my/results/${submissionId}`, { replace: true }),
+          })
           return
         }
         if (limit > 0) {

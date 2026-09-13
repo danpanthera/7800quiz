@@ -504,6 +504,10 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
           violationLimit,
           autoSubmitted: true,
           submissionId: result.id,
+          // Để màn hình làm bài giải thích RÕ vì sao bị tự nộp — chỉ tính loại
+          // "cứng" (đã cộng vào violationCount/ngưỡng), bỏ qua loại "mềm"
+          // (DEVTOOLS_OPEN/SCREENSHOT_ATTEMPT) vì chúng không phải lý do tự nộp.
+          violationBreakdown: await this.thongKeViPhamCung(id),
         };
       }
     }
@@ -513,6 +517,19 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       violationLimit,
       autoSubmitted: false,
     };
+  }
+
+  /** Đếm số lần theo từng LOẠI vi phạm "cứng" của 1 lượt thi — phục vụ popup giải thích lý do tự nộp bài. */
+  private async thongKeViPhamCung(
+    attemptId: string,
+  ): Promise<{ type: AttemptViolationType; count: number }[]> {
+    const rows = await this.prisma.attemptViolation.findMany({
+      where: { attemptId, type: { notIn: Array.from(SOFT_VIOLATION_TYPES) } },
+      select: { type: true },
+    });
+    const dem = new Map<AttemptViolationType, number>();
+    for (const r of rows) dem.set(r.type, (dem.get(r.type) ?? 0) + 1);
+    return Array.from(dem, ([type, count]) => ({ type, count }));
   }
 
   async finalize(userId: string, id: string, timedOut: boolean) {
