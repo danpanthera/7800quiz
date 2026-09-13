@@ -92,8 +92,19 @@ const TEN_CHU_CAI: Record<string, string> = {
   t: 'tê', u: 'u', v: 'vê', x: 'ích', y: 'i',
 };
 
+/**
+ * Một số cụm trong mã văn bản cán bộ quen đọc kiểu tiếng Anh, KHÁC với đánh vần
+ * từng chữ cái theo bảng chữ cái tiếng Việt ở trên — vd. "LC" (Letter of
+ * Credit/thư tín dụng) đọc "eo xi" [L-C kiểu Anh], không đọc "lờ xê".
+ */
+const CUM_DAC_BIET: Record<string, string> = {
+  LC: 'eo xi',
+};
+
 /** Đánh vần TỪNG CHỮ CÁI của 1 cụm viết tắt — vd. "NHNo" → "nờ hắt nờ o". */
 function docTungChuCai(tu: string): string {
+  const dacBiet = CUM_DAC_BIET[tu.toUpperCase()];
+  if (dacBiet) return dacBiet;
   return tu
     .split('')
     .map((c) => TEN_CHU_CAI[c.toLowerCase()] ?? c)
@@ -228,6 +239,22 @@ export function chuyenSo(text: string, spellOut: boolean): string {
   return ket;
 }
 
+const SO_LA_MA: Record<string, number> = {
+  I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10,
+};
+
+/**
+ * "chi nhánh loại I/II/III..." (phân hạng chi nhánh) đọc THEO GIÁ TRỊ số —
+ * "loại một", "loại hai"... KHÔNG đánh vần chữ cái "loại i". Chỉ áp dụng ngay
+ * sau từ "loại" để tránh đổi nhầm chữ I/V/X đứng ở ngữ cảnh khác.
+ */
+export function chuyenLoaiSoLaMa(text: string): string {
+  return text.replace(/\b([Ll]oại)\s+([IVXLCDM]{1,5})\b/g, (m, tuLoai: string, soLaMa: string) => {
+    const giaTri = SO_LA_MA[soLaMa.toUpperCase()];
+    return giaTri === undefined ? m : `${tuLoai} ${soSangChu(giaTri)}`;
+  });
+}
+
 /** Ký hiệu tạo nhịp nghỉ — không đổi ý nghĩa, chỉ giúp máy đọc ngắt câu tự nhiên hơn. */
 export function chuyenKyHieu(text: string): string {
   return text
@@ -250,6 +277,7 @@ export interface TuyChonChuanHoa {
 export function chuanHoaVanBanDeDoc(text: string, opts: TuyChonChuanHoa): string {
   const tuDien = taiTuDienVietTat();
   let ket = text.normalize('NFC').replace(/\s+/g, ' ').trim();
+  ket = chuyenLoaiSoLaMa(ket);
   ket = chuyenMaVanBan(ket);
   ket = chuyenNgayThang(ket);
   ket = apDungTuDien(ket, tuDien);
