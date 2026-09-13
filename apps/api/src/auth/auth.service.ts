@@ -265,7 +265,7 @@ export class AuthService {
       // với User.username qua syncCanBoUser, xem admin.service.ts).
       this.prisma.canBo.findFirst({
         where: { username: user.username },
-        select: { position: true },
+        select: { position: true, isItStaff: true },
       }),
     ]);
 
@@ -302,6 +302,9 @@ export class AuthService {
         avatarEmoji: user.avatarEmoji,
         avatarUrl: user.avatarUrl,
         position: canBo?.position ?? null,
+        // Cán bộ IT: được xem thêm hướng dẫn quản trị và vài chức năng kỹ thuật,
+        // nhưng KHÔNG phải quyền quản trị — mọi trang /manage vẫn chặn theo role.
+        isItStaff: canBo?.isItStaff ?? false,
         department: user.department
           ? {
               id: user.department.id,

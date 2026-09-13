@@ -10,6 +10,7 @@ import {
   CalendarOutlined,
   CheckSquareOutlined,
   ClusterOutlined,
+  CodeOutlined,
   CrownOutlined,
   DownOutlined,
   ExperimentOutlined,
@@ -20,14 +21,17 @@ import {
   LogoutOutlined,
   MenuOutlined,
   PieChartOutlined,
+  ReadOutlined,
   RedoOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
+  SettingOutlined,
   SmileOutlined,
   StarOutlined,
   TeamOutlined,
   ThunderboltOutlined,
   TrophyOutlined,
+  UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -46,6 +50,8 @@ interface NavigationItem {
   key: string
   icon: ReactNode
   label: string
+  /** Mục có con thì hiện thành menu xổ xuống, bản thân nó không phải 1 trang */
+  children?: NavigationItem[]
 }
 
 const staffNavigation: NavigationItem[] = [
@@ -91,11 +97,43 @@ const roleLabels: Record<UserRole, string> = {
   ADMIN: 'Quản trị viên',
 }
 
-function getNavigation(role: UserRole): NavigationItem[] {
-  if (role === 'STAFF') return staffNavigation
+/**
+ * Menu "Hướng dẫn sử dụng" — bản dành cho quản trị hệ thống chỉ hiện với quản
+ * trị viên và cán bộ IT (cờ isItStaff ở hồ sơ cán bộ); mọi người đều xem được
+ * bản dành cho người dùng.
+ */
+function huongDanNavigation(xemDuocBanQuanTri: boolean): NavigationItem {
+  return {
+    key: '/huong-dan',
+    icon: <ReadOutlined />,
+    label: 'Hướng dẫn sử dụng',
+    children: [
+      ...(xemDuocBanQuanTri
+        ? [{
+            key: '/huong-dan/quan-tri',
+            icon: <SettingOutlined />,
+            label: 'Dành cho Quản trị hệ thống',
+          }]
+        : []),
+      { key: '/huong-dan/nguoi-dung', icon: <UserOutlined />, label: 'Dành cho Người dùng' },
+    ],
+  }
+}
+
+// Chỉ quản trị viên xem được — phân tích thiết kế hệ thống, KHÔNG mở rộng cho
+// cán bộ IT như "Hướng dẫn sử dụng" (nội dung nhạy cảm về kiến trúc/hạ tầng).
+const taiLieuKyThuat: NavigationItem = {
+  key: '/manage/technical-docs',
+  icon: <CodeOutlined />,
+  label: 'Tài liệu kỹ thuật',
+}
+
+function getNavigation(role: UserRole, isItStaff: boolean): NavigationItem[] {
+  const huongDan = huongDanNavigation(role === 'ADMIN' || isItStaff)
+  if (role === 'STAFF') return [...staffNavigation, huongDan]
   return role === 'ADMIN'
-    ? [...trainingNavigation, ...adminNavigation]
-    : trainingNavigation
+    ? [...trainingNavigation, ...adminNavigation, huongDan, taiLieuKyThuat]
+    : [...trainingNavigation, huongDan]
 }
 
 function PortalBrand({ role }: { role: UserRole }) {
@@ -131,16 +169,21 @@ export default function AppLayout() {
 
   if (!user) return null
 
-  const navigation = getNavigation(user.role)
-  const selectedKey = navigation.find((item) =>
+  const navigation = getNavigation(user.role, !!user.isItStaff)
+  // Trải phẳng để tìm trang đang mở — mục cha (vd "Hướng dẫn sử dụng") không phải 1 trang
+  const navigationPhang = navigation.flatMap((item) => item.children ?? [item])
+  const selectedKey = navigationPhang.find((item) =>
     location.pathname === item.key || location.pathname.startsWith(`${item.key}/`),
   )?.key
-  const pageTitle = navigation.find((item) => item.key === selectedKey)?.label ?? '7800Quiz'
+  const pageTitle = navigationPhang.find((item) => item.key === selectedKey)?.label ?? '7800Quiz'
   const menuItems: MenuProps['items'] = navigation.map((item) => ({
     key: item.key,
     icon: item.icon,
     label: item.label,
+    children: item.children?.map((con) => ({ key: con.key, icon: con.icon, label: con.label })),
   }))
+  // Đang ở trang con nào thì mở sẵn nhánh cha chứa nó
+  const openKey = navigation.find((item) => item.children?.some((con) => con.key === selectedKey))?.key
 
   function handleLogout() {
     logout()
@@ -188,6 +231,7 @@ export default function AppLayout() {
       theme="dark"
       mode="inline"
       selectedKeys={selectedKey ? [selectedKey] : []}
+      defaultOpenKeys={openKey ? [openKey] : []}
       items={menuItems}
       onClick={({ key }) => navigate(key)}
     />

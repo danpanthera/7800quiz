@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import React from 'react'
 import {
-  App, Button, Table, Space, Modal, Form, Input, Select, Popconfirm,
+  App, Button, Checkbox, Table, Space, Modal, Form, Input, Select, Popconfirm,
   Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert, Dropdown,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined, MoreOutlined, UndoOutlined, ClearOutlined } from '@ant-design/icons'
@@ -168,7 +168,7 @@ export default function CanBoPage() {
     setEditing(null)
     setFormUnitId(undefined)
     form.resetFields()
-    form.setFieldsValue({ isActive: true })
+    form.setFieldsValue({ isActive: true, isItStaff: false })
     setModalOpen(true)
   }
 
@@ -187,6 +187,7 @@ export default function CanBoPage() {
       gioiTinh: record.gioiTinh,
       position: record.position,
       isActive: record.isActive,
+      isItStaff: record.isItStaff,
       ngaySinh: record.ngaySinh ? dayjs(record.ngaySinh) : undefined,
       departmentId: deptId,
     })
@@ -295,7 +296,15 @@ export default function CanBoPage() {
   const columns = [
     { title: 'STT', render: (_: unknown, __: unknown, i: number) => i + 1, width: 55 },
     { title: 'Mã CB', dataIndex: 'cbCode', width: 110, sorter: (a: CanBoItem, b: CanBoItem) => a.cbCode.localeCompare(b.cbCode) },
-    { title: 'Họ tên', dataIndex: 'fullName', width: 180 },
+    {
+      title: 'Họ tên', dataIndex: 'fullName', width: 180,
+      render: (v: string, r: CanBoItem) => (
+        <Space size={4} wrap>
+          <span>{v}</span>
+          {r.isItStaff && <Tag color="geekblue">Cán bộ IT</Tag>}
+        </Space>
+      ),
+    },
     { title: 'UserAD', dataIndex: 'userAD', width: 130 },
     { title: 'Phòng ban', dataIndex: ['department', 'name'], width: 200,
       render: (_: unknown, r: CanBoItem) => r.department
@@ -409,6 +418,7 @@ export default function CanBoPage() {
           <>
             <Typography.Title level={5}>{record.fullName}</Typography.Title>
             <Tag>{record.cbCode}</Tag>
+            {record.isItStaff && <Tag color="geekblue">Cán bộ IT</Tag>}
           </>
         )}
         cardBadge={(record) => <Tag color={record.isActive ? 'green' : 'red'}>{record.isActive ? 'Hoạt động' : 'Nghỉ'}</Tag>}
@@ -523,9 +533,23 @@ export default function CanBoPage() {
             </Col>
           </Row>
 
-          <Form.Item name="isActive" label="Trạng thái" valuePropName="checked">
-            <Switch checkedChildren="Đang làm" unCheckedChildren="Đã nghỉ" />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="isActive" label="Trạng thái" valuePropName="checked">
+                <Switch checkedChildren="Đang làm" unCheckedChildren="Đã nghỉ" />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Form.Item
+                name="isItStaff"
+                label="Cán bộ IT"
+                valuePropName="checked"
+                extra="Được xem thêm hướng dẫn và một số chức năng kỹ thuật dành riêng. KHÔNG phải quyền quản trị viên — vẫn không vào được các trang quản trị."
+              >
+                <Checkbox>Đánh dấu là cán bộ IT</Checkbox>
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
 

@@ -500,6 +500,78 @@ select {
   text-transform: uppercase;
 }
 
+/* Nội dung văn xuôi trang "Tài liệu kỹ thuật" — tiêu đề phụ, danh sách, bảng
+   so sánh phiên bản/cấu hình. Dùng thẻ HTML thuần (h5/ul/table) thay vì kéo
+   thêm component AntD cho nội dung tĩnh, chỉ định dạng lại bằng CSS. */
+.td-content h5 {
+  margin: 18px 0 6px;
+  color: var(--agribank-red-dark);
+  font-size: 14px;
+  font-weight: 700;
+}
+.td-content h5:first-child {
+  margin-top: 0;
+}
+.td-content p {
+  margin: 0 0 10px;
+  line-height: 1.65;
+}
+.td-content ul,
+.td-content ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+  line-height: 1.75;
+}
+.td-content li {
+  margin-bottom: 4px;
+}
+.td-content li > ul,
+.td-content li > ol {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.td-content code {
+  background: rgba(122, 20, 40, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.td-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0 16px;
+  font-size: 13px;
+}
+.td-content th,
+.td-content td {
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.td-content th {
+  background: var(--agribank-red);
+  color: #fff;
+  font-weight: 600;
+}
+:root[data-theme='dark'] .td-content code {
+  background: rgba(255, 255, 255, 0.08);
+}
+:root[data-theme='dark'] .td-content th {
+  background: var(--agribank-red-light);
+}
+.td-canh-bao {
+  border-left: 3px solid var(--agribank-red);
+  background: rgba(229, 57, 53, 0.08);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+:root[data-theme='dark'] .td-canh-bao {
+  background: rgba(229, 57, 53, 0.14);
+}
+
 .quiz-list .ant-list-item {
   height: 100%;
 }
@@ -1599,6 +1671,24 @@ select {
 
 .ant-table-tbody > tr:last-child > td {
   border-bottom: none !important;
+}
+
+/* Nội dung văn xuôi 2 trang "Hướng dẫn sử dụng" — dùng thẻ HTML thuần (ul/ol/li)
+   nên phải trả lại khoảng cách mà nền tảng đã reset về 0 */
+.noi-dung-huong-dan {
+  line-height: 1.7;
+}
+.noi-dung-huong-dan ul,
+.noi-dung-huong-dan ol {
+  margin: 8px 0 12px;
+  padding-left: 22px;
+}
+.noi-dung-huong-dan li {
+  margin-bottom: 6px;
+}
+.noi-dung-huong-dan h5.ant-typography {
+  margin: 16px 0 6px;
+  color: var(--agribank-red-dark);
 }
 
 /* Tay kéo đổi độ rộng cột (ManageTable) — nằm mép phải mỗi ô tiêu đề */

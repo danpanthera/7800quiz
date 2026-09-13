@@ -34,6 +34,7 @@ function getStoredUser(): AuthUser | null {
       fullName: value.fullName,
       role: value.role,
       mustChangePassword: value.mustChangePassword === true,
+      isItStaff: value.isItStaff === true,
       position: typeof value.position === 'string' ? value.position : null,
       department,
       avatarEmoji: typeof value.avatarEmoji === 'string' ? value.avatarEmoji : null,

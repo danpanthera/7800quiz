@@ -46,6 +46,9 @@ import QuestionApprovalPage from './pages/QuestionApprovalPage'
 import TournamentsPage from './pages/TournamentsPage'
 import SecurityPage from './pages/SecurityPage'
 import AdminSecurityPage from './pages/AdminSecurityPage'
+import TechnicalDocsPage from './pages/TechnicalDocsPage'
+import HuongDanQuanTriPage from './pages/HuongDanQuanTriPage'
+import HuongDanNguoiDungPage from './pages/HuongDanNguoiDungPage'
 import { ADMIN_ROLES, TRAINING_ROLES, USER_ROLES } from './lib/permissions'
 
 const queryClient = new QueryClient({
@@ -247,6 +250,15 @@ function ThemedApp() {
                   <Route path="my/security" element={<SecurityPage />} />
                 </Route>
 
+                {/* Hướng dẫn sử dụng — bản người dùng ai cũng xem được, bản quản
+                    trị chỉ quản trị viên và cán bộ IT (cờ isItStaff) xem được */}
+                <Route element={<RoleGuard allowedRoles={USER_ROLES} />}>
+                  <Route path="huong-dan/nguoi-dung" element={<HuongDanNguoiDungPage />} />
+                </Route>
+                <Route element={<RoleGuard allowedRoles={ADMIN_ROLES} allowItStaff />}>
+                  <Route path="huong-dan/quan-tri" element={<HuongDanQuanTriPage />} />
+                </Route>
+
                 <Route element={<RoleGuard allowedRoles={TRAINING_ROLES} />}>
                   <Route path="manage/questions" element={<QuestionsPage />} />
                   <Route path="manage/question-analytics" element={<QuestionAnalyticsPage />} />
@@ -274,6 +286,11 @@ function ThemedApp() {
                   <Route path="manage/branches" element={<BranchesPage />} />
                   <Route path="manage/audit-logs" element={<AuditLogsPage />} />
                   <Route path="manage/security" element={<AdminSecurityPage />} />
+                </Route>
+
+                {/* Tài liệu kỹ thuật — phân tích thiết kế hệ thống, chỉ quản trị viên xem được */}
+                <Route element={<RoleGuard allowedRoles={ADMIN_ROLES} />}>
+                  <Route path="manage/technical-docs" element={<TechnicalDocsPage />} />
                 </Route>
 
                 <Route path="quizzes" element={<HomeRedirect />} />

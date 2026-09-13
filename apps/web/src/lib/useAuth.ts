@@ -17,6 +17,10 @@ export interface AuthUser {
   // null nếu tài khoản không gắn hồ sơ CanBo hoặc chưa gán phòng ban.
   position?: string | null
   department?: AuthUserDepartment | null
+  // Cán bộ IT (đánh dấu ở trang Quản lý cán bộ) — được xem hướng dẫn dành cho
+  // quản trị hệ thống, nhưng KHÔNG có quyền quản trị. Tài khoản đăng nhập từ
+  // trước khi có tính năng này sẽ nhận cờ sau lần đăng nhập kế tiếp.
+  isItStaff?: boolean
   // Ảnh đại diện — loại trừ nhau, xem apps/api/src/auth/auth.service.ts.
   // Cả 2 null/undefined thì hiện icon người dùng mặc định.
   avatarEmoji?: string | null
