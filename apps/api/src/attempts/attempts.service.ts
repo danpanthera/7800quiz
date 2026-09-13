@@ -69,9 +69,19 @@ type StoredAttempt = {
   answerRevision: number;
   finalizedAt: Date | null;
   timedOut: boolean;
+  violationCount: number;
+  violationSubmitted: boolean;
 };
 
 const EXPIRY_SWEEP_INTERVAL_MS = 60_000;
+
+// Vi phạm "mềm" — độ tin cậy thấp (dễ oan do cấu hình trình duyệt/màn hình/phím
+// tắt hệ điều hành khác nhau giữa từng máy). Vẫn ghi 1 dòng attempt_violations để
+// admin đối chiếu, nhưng KHÔNG cộng vào violationCount/ngưỡng tự nộp.
+const SOFT_VIOLATION_TYPES: ReadonlySet<AttemptViolationType> = new Set([
+  AttemptViolationType.DEVTOOLS_OPEN,
+  AttemptViolationType.SCREENSHOT_ATTEMPT,
+]);
 
 @Injectable()
 export class AttemptsService implements OnModuleInit, OnModuleDestroy {
@@ -87,6 +97,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.expiryTimer = setInterval(() => {
       void this.finalizeExpiredAttempts();
+      void this.finalizeViolationExceededAttempts();
     }, EXPIRY_SWEEP_INTERVAL_MS);
     this.expiryTimer.unref();
   }
@@ -190,6 +201,8 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       snapshot,
       [],
       Boolean(assignment.quiz?.instantFeedback),
+      assignment.quiz?.violationLimit ?? 0,
+      Boolean(assignment.quiz?.auditMode),
     );
   }
 
@@ -211,6 +224,8 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       snapshot,
       attempt.answers,
       attempt.quizVersion.quiz.instantFeedback,
+      attempt.quizVersion.quiz.violationLimit,
+      attempt.quizVersion.quiz.auditMode,
     );
   }
 
@@ -430,9 +445,11 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Ghi nhận hành vi nghi vấn (rời màn hình, thoát fullscreen, cố sao chép đề) khi
-  // đang làm bài — chỉ ghi log + tăng bộ đếm, KHÔNG tự động chấm rớt (tránh oan nếu
-  // người dùng vô tình alt-tab). Admin xem lại violationCount khi cần đối chiếu.
+  // Ghi nhận hành vi nghi vấn (rời màn hình, chuyển cửa sổ, cố sao chép đề) khi
+  // đang làm bài. Mặc định (Quiz.violationLimit = 0) chỉ ghi log + tăng bộ đếm,
+  // KHÔNG tự động chấm rớt (tránh oan nếu người dùng vô tình alt-tab). Nếu bộ đề
+  // bật ngưỡng (> 0), tới đúng lần vi phạm thứ N thì server tự nộp bài, chấm theo
+  // các câu đã lưu — xem finalize() để biết vì sao bài tự nộp không được cộng XP.
   async reportViolation(
     userId: string,
     id: string,
@@ -440,11 +457,28 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
   ) {
     const attempt = await this.prisma.quizAttempt.findFirst({
       where: { id, userId },
+      include: {
+        quizVersion: { select: { quiz: { select: { violationLimit: true } } } },
+      },
     });
     if (!attempt)
       throw new NotFoundException('Không tìm thấy bài kiểm tra đang làm');
+    const violationLimit = attempt.quizVersion.quiz.violationLimit;
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
-      return { violationCount: attempt.violationCount };
+      return {
+        violationCount: attempt.violationCount,
+        violationLimit,
+        autoSubmitted: false,
+      };
+    }
+
+    if (SOFT_VIOLATION_TYPES.has(type)) {
+      await this.prisma.attemptViolation.create({ data: { attemptId: id, type } });
+      return {
+        violationCount: attempt.violationCount,
+        violationLimit,
+        autoSubmitted: false,
+      };
     }
 
     const [, updated] = await this.prisma.$transaction([
@@ -455,7 +489,30 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       }),
     ]);
 
-    return { violationCount: updated.violationCount };
+    if (violationLimit > 0 && updated.violationCount >= violationLimit) {
+      // "Giành quyền" tự nộp bằng update có điều kiện — nếu 2 lần vi phạm chạm
+      // ngưỡng gần như đồng thời (2 request song song), chỉ request nào thật sự
+      // đổi được 1 dòng mới được gọi finalize(), tránh chấm bài 2 lần.
+      const claimed = await this.prisma.quizAttempt.updateMany({
+        where: { id, status: AttemptStatus.IN_PROGRESS, violationSubmitted: false },
+        data: { violationSubmitted: true },
+      });
+      if (claimed.count === 1) {
+        const result = await this.finalize(userId, id, false);
+        return {
+          violationCount: updated.violationCount,
+          violationLimit,
+          autoSubmitted: true,
+          submissionId: result.id,
+        };
+      }
+    }
+
+    return {
+      violationCount: updated.violationCount,
+      violationLimit,
+      autoSubmitted: false,
+    };
   }
 
   async finalize(userId: string, id: string, timedOut: boolean) {
@@ -522,13 +579,14 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         userId,
         action: 'FINALIZE_ATTEMPT',
         entityId: attempt.id,
-        meta: { timedOut },
+        meta: { timedOut, violationSubmitted: attempt.violationSubmitted },
       },
     });
 
     // Chỉ cộng XP ở lần nộp bài ĐẦU TIÊN của lượt giao bài — làm lại (khi bộ đề
     // cho phép thi lại nhiều lần) vẫn được chấm điểm/lưu kết quả bình thường,
-    // nhưng không cộng thêm XP để tránh cày điểm ảo bằng cách bấm làm lại.
+    // nhưng không cộng thêm XP để tránh cày điểm ảo bằng cách bấm làm lại. Bài
+    // bị server tự nộp vì vi phạm cũng KHÔNG được cộng XP dù là lần đầu.
     const priorGradedCount = await this.prisma.quizAttempt.count({
       where: {
         userId,
@@ -538,7 +596,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     const xpResult =
-      priorGradedCount === 0
+      priorGradedCount === 0 && !attempt.violationSubmitted
         ? await this.awardSubmissionXp(userId, isPassed, score, submission.id)
         : { levelUp: false, newLevel: 0, newBadges: [] };
     return {
@@ -570,6 +628,41 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // Lưới an toàn cho các nguồn ghi vi phạm KHÔNG đi qua reportViolation() ở trên
+  // (vd: AuthService ghi nhận MULTI_SESSION_LOGIN thẳng qua Prisma khi phát hiện
+  // đăng nhập nơi khác — không inject AttemptsService vào AuthModule để tránh
+  // vòng phụ thuộc AuthModule → AttemptsModule → GamificationModule → AuthModule).
+  // Quét mỗi phút, chấp nhận độ trễ tới 1 phút vì không có tab nào đang chờ phản
+  // hồi tức thì cho trường hợp này (khác với vi phạm phát hiện ngay trên chính
+  // tab đang làm bài).
+  async finalizeViolationExceededAttempts() {
+    try {
+      const candidates = await this.prisma.quizAttempt.findMany({
+        where: {
+          status: AttemptStatus.IN_PROGRESS,
+          violationSubmitted: false,
+          quizVersion: { quiz: { violationLimit: { gt: 0 } } },
+        },
+        select: {
+          id: true,
+          userId: true,
+          violationCount: true,
+          quizVersion: { select: { quiz: { select: { violationLimit: true } } } },
+        },
+      });
+      for (const c of candidates) {
+        if (c.violationCount < c.quizVersion.quiz.violationLimit) continue;
+        const claimed = await this.prisma.quizAttempt.updateMany({
+          where: { id: c.id, status: AttemptStatus.IN_PROGRESS, violationSubmitted: false },
+          data: { violationSubmitted: true },
+        });
+        if (claimed.count === 1) await this.finalize(c.userId, c.id, false);
+      }
+    } catch (error) {
+      this.logger.error('Không thể tự nộp các bài vượt ngưỡng vi phạm', error);
+    }
+  }
+
   private async findAttempt(userId: string, id: string) {
     const attempt = await this.prisma.quizAttempt.findFirst({
       where: { id, userId },
@@ -578,7 +671,13 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         quizVersion: {
           select: {
             snapshot: true,
-            quiz: { select: { instantFeedback: true } },
+            quiz: {
+              select: {
+                instantFeedback: true,
+                violationLimit: true,
+                auditMode: true,
+              },
+            },
           },
         },
       },
@@ -712,6 +811,8 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       isCorrect?: boolean | null;
     }>,
     instantFeedback = false,
+    violationLimit = 0,
+    auditMode = false,
   ) {
     const questionsById = new Map(
       snapshot.questions.map((question) => [question.id, question]),
@@ -729,10 +830,14 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         answerRevision: attempt.answerRevision,
         finalizedAt: attempt.finalizedAt,
         timedOut: attempt.timedOut,
+        violationCount: attempt.violationCount,
+        violationSubmitted: attempt.violationSubmitted,
       },
       quiz: {
         ...snapshot.quiz,
         instantFeedback,
+        violationLimit,
+        auditMode,
         questions: snapshot.questions.map((question) => ({
           id: question.id,
           content: question.content,

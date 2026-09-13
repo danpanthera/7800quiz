@@ -536,4 +536,324 @@ describe('AttemptsService', () => {
     expect(gamification.updateActivity).not.toHaveBeenCalled();
     expect(result).toMatchObject({ id: attemptId, score: 100, isPassed: true });
   });
+
+  it('violationLimit = 0 (tắt): chỉ tăng bộ đếm vi phạm, không tự nộp bài', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      status: AttemptStatus.IN_PROGRESS,
+      quizVersion: { quiz: { violationLimit: 0 } },
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue(storedAttempt),
+        update: jest.fn().mockResolvedValue({ violationCount: 1 }),
+        updateMany: jest.fn(),
+      },
+      attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.reportViolation(
+      'user-1',
+      attemptId,
+      'TAB_HIDDEN' as never,
+    );
+
+    expect(result).toEqual({
+      violationCount: 1,
+      violationLimit: 0,
+      autoSubmitted: false,
+    });
+    expect(prisma.quizAttempt.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('bỏ qua, không tăng bộ đếm khi bài đã GRADED', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      status: AttemptStatus.GRADED,
+      violationCount: 5,
+      quizVersion: { quiz: { violationLimit: 3 } },
+    };
+    const prisma = {
+      quizAttempt: { findFirst: jest.fn().mockResolvedValue(storedAttempt) },
+      $transaction: jest.fn(),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.reportViolation(
+      'user-1',
+      attemptId,
+      'COPY_ATTEMPT' as never,
+    );
+
+    expect(result).toEqual({
+      violationCount: 5,
+      violationLimit: 3,
+      autoSubmitted: false,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('chạm violationLimit: tự nộp bài theo các câu đã lưu, KHÔNG cộng XP', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      assignmentId,
+      quizId: 'quiz-1',
+      quizVersionId: 'version-1',
+      status: AttemptStatus.IN_PROGRESS,
+      startedAt: new Date('2026-09-03T08:00:00.000Z'),
+      deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+      timedOut: false,
+      // Đọc lại từ DB sau khi updateMany đã đặt cờ này — xem giải thích trong
+      // comment cạnh reportViolation()/finalize() về thứ tự xảy ra thật.
+      violationSubmitted: true,
+      quizVersion: { snapshot, quiz: { violationLimit: 3, instantFeedback: false } },
+      answers: [
+        {
+          questionId: 'question-1',
+          selectedOptionIds: ['option-1'],
+          updatedAt: new Date('2026-09-03T08:05:00.000Z'),
+        },
+      ],
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue(storedAttempt),
+        update: jest.fn().mockResolvedValue({ violationCount: 3 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+      submission: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: attemptId, status: 'GRADED', score: 100 }),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const gamification = {
+      updateActivity: jest.fn(),
+      incrementSubmissionStats: jest.fn(),
+      awardXp: jest.fn(),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      gamification as never,
+    );
+
+    const result = await service.reportViolation(
+      'user-1',
+      attemptId,
+      'WINDOW_BLUR' as never,
+    );
+
+    expect(prisma.quizAttempt.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: attemptId,
+        status: AttemptStatus.IN_PROGRESS,
+        violationSubmitted: false,
+      },
+      data: { violationSubmitted: true },
+    });
+    expect(result).toEqual({
+      violationCount: 3,
+      violationLimit: 3,
+      autoSubmitted: true,
+      submissionId: attemptId,
+    });
+    expect(gamification.awardXp).not.toHaveBeenCalled();
+    expect(gamification.incrementSubmissionStats).not.toHaveBeenCalled();
+    expect(gamification.updateActivity).not.toHaveBeenCalled();
+  });
+
+  it('chạm violationLimit nhưng thua trong lần "giành quyền" tự nộp: không chấm bài lần 2', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      status: AttemptStatus.IN_PROGRESS,
+      quizVersion: { quiz: { violationLimit: 1 } },
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue(storedAttempt),
+        update: jest.fn().mockResolvedValue({ violationCount: 1 }),
+        // count: 0 = 1 request khác đã thắng và đổi cờ trước, request này không
+        // còn dòng nào khớp điều kiện violationSubmitted: false để cập nhật.
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.reportViolation(
+      'user-1',
+      attemptId,
+      'TAB_HIDDEN' as never,
+    );
+
+    expect(result).toEqual({
+      violationCount: 1,
+      violationLimit: 1,
+      autoSubmitted: false,
+    });
+  });
+
+  it('vi phạm mềm (DEVTOOLS_OPEN) chỉ ghi log, không cộng violationCount/không tự nộp', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      status: AttemptStatus.IN_PROGRESS,
+      violationCount: 2,
+      quizVersion: { quiz: { violationLimit: 3 } },
+    };
+    const prisma = {
+      quizAttempt: {
+        findFirst: jest.fn().mockResolvedValue(storedAttempt),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+      $transaction: jest.fn(),
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.reportViolation(
+      'user-1',
+      attemptId,
+      'DEVTOOLS_OPEN' as never,
+    );
+
+    expect(prisma.attemptViolation.create).toHaveBeenCalledWith({
+      data: { attemptId, type: 'DEVTOOLS_OPEN' },
+    });
+    expect(prisma.quizAttempt.update).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      violationCount: 2, // giữ nguyên, KHÔNG cộng thêm
+      violationLimit: 3,
+      autoSubmitted: false,
+    });
+  });
+
+  it('vi phạm mềm (SCREENSHOT_ATTEMPT) cũng không cộng dồn', async () => {
+    const storedAttempt = {
+      id: attemptId,
+      status: AttemptStatus.IN_PROGRESS,
+      violationCount: 0,
+      quizVersion: { quiz: { violationLimit: 0 } },
+    };
+    const prisma = {
+      quizAttempt: { findFirst: jest.fn().mockResolvedValue(storedAttempt) },
+      attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new AttemptsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.reportViolation(
+      'user-1',
+      attemptId,
+      'SCREENSHOT_ATTEMPT' as never,
+    );
+
+    expect(result.violationCount).toBe(0);
+    expect(result.autoSubmitted).toBe(false);
+  });
+
+  describe('finalizeViolationExceededAttempts', () => {
+    it('tự nộp đúng các attempt đã chạm ngưỡng, bỏ qua các attempt chưa chạm', async () => {
+      const prisma = {
+        quizAttempt: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'att-du-nguong',
+              userId: 'user-1',
+              violationCount: 3,
+              quizVersion: { quiz: { violationLimit: 3 } },
+            },
+            {
+              id: 'att-chua-du',
+              userId: 'user-2',
+              violationCount: 1,
+              quizVersion: { quiz: { violationLimit: 3 } },
+            },
+          ]),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'att-du-nguong',
+            status: AttemptStatus.GRADED,
+            submissionId: 'sub-1',
+          }),
+        },
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        {} as never,
+        {} as never,
+      );
+      const finalizeSpy = jest
+        .spyOn(service, 'finalize')
+        .mockResolvedValue({ id: 'sub-1' } as never);
+
+      await service.finalizeViolationExceededAttempts();
+
+      expect(prisma.quizAttempt.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.quizAttempt.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'att-du-nguong',
+          status: AttemptStatus.IN_PROGRESS,
+          violationSubmitted: false,
+        },
+        data: { violationSubmitted: true },
+      });
+      expect(finalizeSpy).toHaveBeenCalledWith('user-1', 'att-du-nguong', false);
+    });
+
+    it('không chấm bài nếu "giành quyền" thất bại (nơi khác đã xử lý trước)', async () => {
+      const prisma = {
+        quizAttempt: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'att-1',
+              userId: 'user-1',
+              violationCount: 5,
+              quizVersion: { quiz: { violationLimit: 3 } },
+            },
+          ]),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        {} as never,
+        {} as never,
+      );
+      const finalizeSpy = jest.spyOn(service, 'finalize');
+
+      await service.finalizeViolationExceededAttempts();
+
+      expect(finalizeSpy).not.toHaveBeenCalled();
+    });
+  });
 });

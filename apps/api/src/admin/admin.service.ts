@@ -17,6 +17,15 @@ import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
 
+// Xem getAtRiskStaff() (nhóm staleAttempts) — không có lần lưu nào trong ngần
+// này phút được coi là "bài đang treo" đáng ngờ.
+const STALE_ATTEMPT_MINUTES = 20;
+// Xem getReports() (cờ suspiciousSpeed) — tốc độ trả lời trung bình dưới ngần
+// này (ms) kèm điểm cao bị coi là bất thường, có thể biết trước đáp án.
+const SUSPICIOUS_AVG_ANSWER_MS = 3_000;
+const SUSPICIOUS_MIN_ANSWERED_QUESTIONS = 3;
+const SUSPICIOUS_MIN_SCORE = 80;
+
 type NSpellChecker = {
   correct(word: string): boolean;
   suggest(word: string): string[];
@@ -825,6 +834,8 @@ export class AdminService {
     passScore?: number;
     instantFeedback?: boolean;
     maxAttempts?: number;
+    violationLimit?: number;
+    auditMode?: boolean;
   }) {
     return this.prisma.quiz.create({ data });
   }
@@ -840,6 +851,8 @@ export class AdminService {
       isActive?: boolean;
       instantFeedback?: boolean;
       maxAttempts?: number;
+      violationLimit?: number;
+      auditMode?: boolean;
     },
   ) {
     return this.prisma.quiz.update({ where: { id }, data });
@@ -868,6 +881,8 @@ export class AdminService {
         passScore: original.passScore,
         instantFeedback: original.instantFeedback,
         maxAttempts: original.maxAttempts,
+        violationLimit: original.violationLimit,
+        auditMode: original.auditMode,
         isActive: false,
         questions: {
           create: original.questions.map((q) => ({
@@ -1258,6 +1273,13 @@ export class AdminService {
         quizVersion: {
           include: { quiz: { select: { id: true, title: true } } },
         },
+        attempt: {
+          select: {
+            violationCount: true,
+            violationSubmitted: true,
+            answers: { select: { answeredMs: true } },
+          },
+        },
       },
       orderBy: { submittedAt: 'desc' },
     });
@@ -1276,23 +1298,45 @@ export class AdminService {
       }
     }
 
-    return rows.map((s) => ({
-      id: s.id,
-      userId: s.userId,
-      fullName: s.user?.fullName ?? '',
-      departmentId: s.user?.department?.id ?? null,
-      department: s.user?.department?.name ?? '',
-      parentDepartmentId: s.user?.department?.parentId ?? null,
-      parentDepartment: s.user?.department?.parent?.name ?? null,
-      quizTitle: s.quizVersion?.quiz?.title ?? '',
-      score: s.score,
-      status: s.status,
-      submittedAt: s.submittedAt,
-      isBestForUser:
-        s.score !== null &&
-        bestScoreByKey.get(`${s.userId}::${s.quizVersion?.quiz?.id ?? ''}`) ===
-          s.score,
-    }));
+    return rows.map((s) => {
+      // Tốc độ trả lời trung bình (chỉ tính câu đã có answeredMs — câu bỏ
+      // trống/chưa từng lưu không tính) — nghi vấn biết trước đáp án khi trả
+      // lời rất nhanh mà vẫn đạt điểm cao. Chỉ là gợi ý cho admin đối chiếu,
+      // KHÔNG tự động xử lý gì.
+      const answeredMsList = (s.attempt?.answers ?? [])
+        .map((a) => a.answeredMs)
+        .filter((v): v is number => v !== null);
+      const avgAnsweredMs =
+        answeredMsList.length > 0
+          ? answeredMsList.reduce((sum, v) => sum + v, 0) / answeredMsList.length
+          : null;
+      const suspiciousSpeed =
+        avgAnsweredMs !== null &&
+        answeredMsList.length >= SUSPICIOUS_MIN_ANSWERED_QUESTIONS &&
+        avgAnsweredMs < SUSPICIOUS_AVG_ANSWER_MS &&
+        (s.score ?? 0) >= SUSPICIOUS_MIN_SCORE;
+
+      return {
+        id: s.id,
+        userId: s.userId,
+        fullName: s.user?.fullName ?? '',
+        departmentId: s.user?.department?.id ?? null,
+        department: s.user?.department?.name ?? '',
+        parentDepartmentId: s.user?.department?.parentId ?? null,
+        parentDepartment: s.user?.department?.parent?.name ?? null,
+        quizTitle: s.quizVersion?.quiz?.title ?? '',
+        score: s.score,
+        status: s.status,
+        submittedAt: s.submittedAt,
+        violationCount: s.attempt?.violationCount ?? 0,
+        violationSubmitted: s.attempt?.violationSubmitted ?? false,
+        suspiciousSpeed,
+        isBestForUser:
+          s.score !== null &&
+          bestScoreByKey.get(`${s.userId}::${s.quizVersion?.quiz?.id ?? ''}`) ===
+            s.score,
+      };
+    });
   }
 
   // ── Xu hướng điểm & tỷ lệ đạt theo thời gian (Dashboard) ────────────────
@@ -1485,6 +1529,7 @@ export class AdminService {
             quizId: true,
             status: true,
             violationCount: true,
+            violationSubmitted: true,
             user: { select: { fullName: true, username: true } },
             assignment: { select: { quiz: { select: { title: true } } } },
           },
@@ -1505,6 +1550,7 @@ export class AdminService {
       quizTitle: r.attempt.assignment.quiz.title,
       attemptStatus: r.attempt.status,
       totalViolationsInAttempt: r.attempt.violationCount,
+      violationSubmitted: r.attempt.violationSubmitted,
     }));
   }
 
@@ -1626,6 +1672,89 @@ export class AdminService {
     );
   }
 
+  // ── Đối chiếu đáp án trùng lặp giữa các cán bộ (nghi vấn chép bài) ───────
+  // Chỉ xét đáp án SAI giống hệt nhau — đáp án đúng giống nhau là chuyện bình
+  // thường (nhiều người cùng biết đúng), không phải dấu hiệu gian lận. Dùng
+  // đáp án đúng HIỆN TẠI của bộ đề (không phải bản snapshot lúc thi) — đủ dùng
+  // để đối chiếu, không phải để chấm điểm lại.
+  async getAnswerCollusion(quizId: string) {
+    const questions = await this.prisma.question.findMany({
+      where: { quizId, isBank: false },
+      select: {
+        id: true,
+        content: true,
+        questionType: true,
+        orderIndex: true,
+        options: { select: { id: true, content: true, isCorrect: true, orderIndex: true } },
+      },
+      orderBy: { orderIndex: 'asc' },
+    });
+    if (questions.length === 0) return [];
+    const questionById = new Map(questions.map((q) => [q.id, q]));
+    const optionContentById = new Map(
+      questions.flatMap((q) => q.options.map((o) => [o.id, o.content] as const)),
+    );
+
+    const answers = await this.prisma.submissionAnswer.findMany({
+      where: { questionId: { in: [...questionById.keys()] } },
+      select: {
+        questionId: true,
+        selectedOptionIds: true,
+        submission: { select: { userId: true, user: { select: { fullName: true } } } },
+      },
+    });
+
+    const groups = new Map<
+      string,
+      { questionId: string; optionIds: string[]; students: Map<string, string | null> }
+    >();
+    for (const a of answers) {
+      const q = questionById.get(a.questionId);
+      if (!q) continue;
+      const selected = Array.isArray(a.selectedOptionIds)
+        ? (a.selectedOptionIds as unknown[]).filter((v): v is string => typeof v === 'string')
+        : [];
+      if (selected.length === 0) continue;
+      if (this.isAnswerCorrectForAnalytics(q.questionType, q.options, selected)) {
+        continue;
+      }
+
+      // ORDERING: giữ đúng thứ tự đã chọn (2 người sai GIỐNG THỨ TỰ mới đáng
+      // ngờ). SINGLE/MULTIPLE: sắp xếp lại vì chỉ quan tâm ĐÃ CHỌN GÌ, thứ tự
+      // tick chọn không có ý nghĩa.
+      const normalized =
+        q.questionType === QuestionType.ORDERING ? selected : [...selected].sort();
+      const key = `${a.questionId}::${JSON.stringify(normalized)}`;
+      const group = groups.get(key) ?? {
+        questionId: a.questionId,
+        optionIds: normalized,
+        students: new Map<string, string | null>(),
+      };
+      group.students.set(a.submission.userId, a.submission.user?.fullName ?? null);
+      groups.set(key, group);
+    }
+
+    return Array.from(groups.values())
+      .filter((g) => g.students.size >= 2)
+      .map((g) => {
+        const question = questionById.get(g.questionId)!;
+        return {
+          questionId: g.questionId,
+          questionContent: question.content,
+          selectedOptionIds: g.optionIds,
+          selectedOptionContents: g.optionIds.map(
+            (id) => optionContentById.get(id) ?? '?',
+          ),
+          studentCount: g.students.size,
+          students: Array.from(g.students.entries()).map(([userId, fullName]) => ({
+            userId,
+            fullName,
+          })),
+        };
+      })
+      .sort((a, b) => b.studentCount - a.studentCount);
+  }
+
   // ── So sánh hiệu suất theo chi nhánh/phòng ban (Department Performance) ──
   // Gộp theo Department của USER làm bài (không phải department trên Assignment —
   // 1 assignment có thể giao cho cả phòng ban, còn ở đây cần biết TỪNG người thuộc
@@ -1683,8 +1812,9 @@ export class AdminService {
     const now = new Date();
     const soon = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const staleThreshold = new Date(now.getTime() - STALE_ATTEMPT_MINUTES * 60 * 1000);
 
-    const [nearDeadlineNoSubmission, recentFails, highViolations] =
+    const [nearDeadlineNoSubmission, recentFails, highViolations, staleAttempts] =
       await Promise.all([
         // Được giao trực tiếp (không phải giao theo phòng ban) và sắp hết hạn
         // trong 3 ngày tới nhưng chưa có bài nào được chấm.
@@ -1730,6 +1860,31 @@ export class AdminService {
           },
           orderBy: { violationCount: 'desc' },
         }),
+        // Đang làm dở, còn hạn nộp, nhưng KHÔNG có bất kỳ lần lưu nào trong ít
+        // nhất STALE_ATTEMPT_MINUTES phút gần nhất — dấu hiệu có thể đã tắt
+        // JS/chặn request để né hệ thống giám sát vi phạm (nếu vậy, mọi cơ chế
+        // ghi nhận phía client đều vô hiệu, đây là tín hiệu DUY NHẤT phía server
+        // còn phát hiện được), hoặc đơn giản là đang rời máy đi làm việc khác.
+        this.prisma.quizAttempt.findMany({
+          where: {
+            status: 'IN_PROGRESS',
+            deadlineAt: { gt: now },
+            startedAt: { lte: staleThreshold },
+            OR: [
+              { lastSavedAt: null },
+              { lastSavedAt: { lte: staleThreshold } },
+            ],
+          },
+          select: {
+            userId: true,
+            startedAt: true,
+            lastSavedAt: true,
+            deadlineAt: true,
+            user: { select: { fullName: true } },
+            assignment: { select: { quiz: { select: { title: true } } } },
+          },
+          orderBy: { startedAt: 'asc' },
+        }),
       ]);
 
     return {
@@ -1751,6 +1906,14 @@ export class AdminService {
         userName: a.user?.fullName ?? null,
         quizTitle: a.assignment?.quiz?.title ?? null,
         violationCount: a.violationCount,
+      })),
+      staleAttempts: staleAttempts.map((a) => ({
+        userId: a.userId,
+        userName: a.user?.fullName ?? null,
+        quizTitle: a.assignment?.quiz?.title ?? null,
+        startedAt: a.startedAt,
+        lastSavedAt: a.lastSavedAt,
+        deadlineAt: a.deadlineAt,
       })),
     };
   }

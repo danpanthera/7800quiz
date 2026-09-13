@@ -52,6 +52,8 @@ export class AssignmentsService {
             durationMin: true,
             instantFeedback: true,
             maxAttempts: true,
+            violationLimit: true,
+            auditMode: true,
           },
         },
         // Toàn bộ lần làm bài của chính user (chặn take:1 cũ) — để trang chủ vừa

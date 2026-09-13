@@ -1,11 +1,13 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   BadRequestException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { AttemptStatus, AttemptViolationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { buildOtpauthUrl, generateTotpSecret, verifyTotpCode } from './totp';
@@ -48,6 +50,8 @@ interface UserForSession {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -164,6 +168,33 @@ export class AuthService {
     return this.issueSession(user, meta);
   }
 
+  // Ghi nhận vi phạm MULTI_SESSION_LOGIN cho mọi bài đang làm dở của user này.
+  // Cố tình KHÔNG dùng AttemptsService.reportViolation() ở đây để tránh vòng
+  // phụ thuộc module (AuthModule → AttemptsModule → GamificationModule →
+  // AuthModule) — chỉ ghi log + tăng bộ đếm bằng Prisma trực tiếp. Việc tự nộp
+  // khi chạm ngưỡng được xử lý sau đó bởi vòng quét định kỳ
+  // AttemptsService.finalizeViolationExceededAttempts() (tối đa trễ 1 phút —
+  // chấp nhận được vì không có tab nào đang chờ phản hồi ngay cho trường hợp này).
+  private async flagMultiSessionIfActiveAttempt(userId: string) {
+    const activeAttempts = await this.prisma.quizAttempt.findMany({
+      where: { userId, status: AttemptStatus.IN_PROGRESS },
+      select: { id: true },
+    });
+    if (!activeAttempts.length) return;
+
+    await this.prisma.$transaction(
+      activeAttempts.flatMap((a) => [
+        this.prisma.attemptViolation.create({
+          data: { attemptId: a.id, type: AttemptViolationType.MULTI_SESSION_LOGIN },
+        }),
+        this.prisma.quizAttempt.update({
+          where: { id: a.id },
+          data: { violationCount: { increment: 1 } },
+        }),
+      ]),
+    );
+  }
+
   private assertNotLocked(lockedUntil: Date | null): void {
     if (!lockedUntil || lockedUntil <= new Date()) return;
     const minutesLeft = Math.max(
@@ -237,6 +268,20 @@ export class AuthService {
         select: { position: true },
       }),
     ]);
+
+    // Đăng nhập lần này KHÔNG phải mở thêm tab của cùng trình duyệt (JWT lưu
+    // sẵn chỉ tự gắn kèm request, không gọi lại issueSession) — chỉ chạy khi
+    // thật sự gõ lại thông tin đăng nhập, nên đây là tín hiệu tương đối đáng
+    // tin: đang có người khác (hoặc chính người này ở máy khác) đăng nhập
+    // trong lúc còn bài làm dở. Không được để lỗi ở đây làm hỏng cả lượt đăng
+    // nhập — chỉ ghi log, không throw.
+    try {
+      await this.flagMultiSessionIfActiveAttempt(user.id);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Không ghi được vi phạm đăng nhập nhiều nơi cho user ${user.id}: ${String(error)}`,
+      );
+    }
 
     const token = this.jwtService.sign({
       sub: user.id,

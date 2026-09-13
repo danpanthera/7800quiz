@@ -260,6 +260,7 @@ describe('AdminService.getAttemptViolations', () => {
           quizId: 'quiz-1',
           status: 'IN_PROGRESS',
           violationCount: 2,
+          violationSubmitted: false,
           user: { fullName: 'Nguyễn Văn A', username: 'nguyenvana' },
           assignment: { quiz: { title: 'Nghiệp vụ tín dụng' } },
         },
@@ -287,6 +288,7 @@ describe('AdminService.getAttemptViolations', () => {
             quizId: true,
             status: true,
             violationCount: true,
+            violationSubmitted: true,
             user: { select: { fullName: true, username: true } },
             assignment: { select: { quiz: { select: { title: true } } } },
           },
@@ -308,6 +310,7 @@ describe('AdminService.getAttemptViolations', () => {
         quizTitle: 'Nghiệp vụ tín dụng',
         attemptStatus: 'IN_PROGRESS',
         totalViolationsInAttempt: 2,
+        violationSubmitted: false,
       },
     ]);
   });
@@ -687,7 +690,7 @@ describe('AdminService.getDepartmentPerformance', () => {
 });
 
 describe('AdminService.getAtRiskStaff', () => {
-  it('trả về đủ 3 nhóm rủi ro, mỗi nhóm ánh xạ đúng field', async () => {
+  it('trả về đủ 4 nhóm rủi ro, mỗi nhóm ánh xạ đúng field', async () => {
     const prisma = {
       assignment: {
         findMany: jest.fn().mockResolvedValue([
@@ -711,15 +714,31 @@ describe('AdminService.getAtRiskStaff', () => {
           },
         ]),
       },
+      // 2 truy vấn quizAttempt.findMany khác nhau (highViolations vs
+      // staleAttempts) chạy song song trong Promise.all — phân biệt bằng where.
       quizAttempt: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            userId: 'user-3',
-            violationCount: 5,
-            user: { fullName: 'Lê Văn C' },
-            assignment: { quiz: { title: 'CNTT' } },
-          },
-        ]),
+        findMany: jest.fn().mockImplementation(({ where }) => {
+          if (where.status === 'IN_PROGRESS') {
+            return Promise.resolve([
+              {
+                userId: 'user-4',
+                startedAt: new Date('2026-09-13T00:00:00.000Z'),
+                lastSavedAt: null,
+                deadlineAt: new Date('2026-09-13T02:00:00.000Z'),
+                user: { fullName: 'Phạm Văn D' },
+                assignment: { quiz: { title: 'Rủi ro' } },
+              },
+            ]);
+          }
+          return Promise.resolve([
+            {
+              userId: 'user-3',
+              violationCount: 5,
+              user: { fullName: 'Lê Văn C' },
+              assignment: { quiz: { title: 'CNTT' } },
+            },
+          ]);
+        }),
       },
     };
     const service = new AdminService(prisma as never, {} as never);
@@ -752,6 +771,253 @@ describe('AdminService.getAtRiskStaff', () => {
           violationCount: 5,
         },
       ],
+      staleAttempts: [
+        {
+          userId: 'user-4',
+          userName: 'Phạm Văn D',
+          quizTitle: 'Rủi ro',
+          startedAt: new Date('2026-09-13T00:00:00.000Z'),
+          lastSavedAt: null,
+          deadlineAt: new Date('2026-09-13T02:00:00.000Z'),
+        },
+      ],
     });
+  });
+});
+
+describe('AdminService.getReports — cờ suspiciousSpeed', () => {
+  function buildSubmission(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'sub-1',
+      userId: 'user-1',
+      score: 90,
+      status: 'GRADED',
+      submittedAt: new Date('2026-09-13T00:00:00.000Z'),
+      user: { fullName: 'Nguyễn Văn A', department: null },
+      quizVersion: { quiz: { id: 'quiz-1', title: 'Nghiệp vụ' } },
+      attempt: { violationCount: 0, violationSubmitted: false, answers: [] },
+      ...overrides,
+    };
+  }
+
+  it('trả lời rất nhanh (< 3s/câu) kèm điểm cao ≥ 80 → gắn cờ nghi vấn', async () => {
+    const prisma = {
+      submission: {
+        findMany: jest.fn().mockResolvedValue([
+          buildSubmission({
+            attempt: {
+              violationCount: 0,
+              violationSubmitted: false,
+              answers: [{ answeredMs: 1000 }, { answeredMs: 1500 }, { answeredMs: 2000 }],
+            },
+          }),
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const [row] = await service.getReports();
+
+    expect(row.suspiciousSpeed).toBe(true);
+  });
+
+  it('trả lời nhanh nhưng điểm thấp → KHÔNG gắn cờ', async () => {
+    const prisma = {
+      submission: {
+        findMany: jest.fn().mockResolvedValue([
+          buildSubmission({
+            score: 50,
+            attempt: {
+              violationCount: 0,
+              violationSubmitted: false,
+              answers: [{ answeredMs: 500 }, { answeredMs: 500 }, { answeredMs: 500 }],
+            },
+          }),
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const [row] = await service.getReports();
+
+    expect(row.suspiciousSpeed).toBe(false);
+  });
+
+  it('điểm cao nhưng trả lời với tốc độ bình thường → KHÔNG gắn cờ', async () => {
+    const prisma = {
+      submission: {
+        findMany: jest.fn().mockResolvedValue([
+          buildSubmission({
+            attempt: {
+              violationCount: 0,
+              violationSubmitted: false,
+              answers: [{ answeredMs: 15_000 }, { answeredMs: 20_000 }, { answeredMs: 18_000 }],
+            },
+          }),
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const [row] = await service.getReports();
+
+    expect(row.suspiciousSpeed).toBe(false);
+  });
+
+  it('quá ít câu có answeredMs → KHÔNG đủ căn cứ, không gắn cờ', async () => {
+    const prisma = {
+      submission: {
+        findMany: jest.fn().mockResolvedValue([
+          buildSubmission({
+            attempt: {
+              violationCount: 0,
+              violationSubmitted: false,
+              answers: [{ answeredMs: 500 }],
+            },
+          }),
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const [row] = await service.getReports();
+
+    expect(row.suspiciousSpeed).toBe(false);
+  });
+});
+
+describe('AdminService.getAnswerCollusion', () => {
+  const question = {
+    id: 'q1',
+    content: 'Câu 1',
+    questionType: 'SINGLE',
+    orderIndex: 1,
+    options: [
+      { id: 'opt-dung', content: 'Đúng', isCorrect: true, orderIndex: 1 },
+      { id: 'opt-sai-a', content: 'Sai A', isCorrect: false, orderIndex: 2 },
+      { id: 'opt-sai-b', content: 'Sai B', isCorrect: false, orderIndex: 3 },
+    ],
+  };
+
+  it('≥ 2 người chọn CHUNG 1 đáp án SAI → gộp thành 1 nhóm nghi vấn', async () => {
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([question]) },
+      submissionAnswer: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-sai-a'],
+            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+          },
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-sai-a'],
+            submission: { userId: 'user-2', user: { fullName: 'Trần Thị B' } },
+          },
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-dung'],
+            submission: { userId: 'user-3', user: { fullName: 'Lê Văn C' } },
+          },
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getAnswerCollusion('quiz-1');
+
+    expect(result).toEqual([
+      {
+        questionId: 'q1',
+        questionContent: 'Câu 1',
+        selectedOptionIds: ['opt-sai-a'],
+        selectedOptionContents: ['Sai A'],
+        studentCount: 2,
+        students: [
+          { userId: 'user-1', fullName: 'Nguyễn Văn A' },
+          { userId: 'user-2', fullName: 'Trần Thị B' },
+        ],
+      },
+    ]);
+  });
+
+  it('chỉ 1 người chọn sai (không ai giống) → không gộp nhóm nào', async () => {
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([question]) },
+      submissionAnswer: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-sai-a'],
+            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+          },
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getAnswerCollusion('quiz-1');
+
+    expect(result).toEqual([]);
+  });
+
+  it('nhiều người cùng chọn đáp án ĐÚNG giống nhau → không tính là nghi vấn', async () => {
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([question]) },
+      submissionAnswer: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-dung'],
+            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+          },
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['opt-dung'],
+            submission: { userId: 'user-2', user: { fullName: 'Trần Thị B' } },
+          },
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getAnswerCollusion('quiz-1');
+
+    expect(result).toEqual([]);
+  });
+
+  it('câu MULTIPLE: chọn cùng 1 bộ đáp án sai dù tích theo thứ tự khác nhau vẫn gộp chung', async () => {
+    const multiQuestion = {
+      ...question,
+      questionType: 'MULTIPLE',
+      options: [
+        { id: 'a', content: 'A', isCorrect: true, orderIndex: 1 },
+        { id: 'b', content: 'B', isCorrect: true, orderIndex: 2 },
+        { id: 'c', content: 'C', isCorrect: false, orderIndex: 3 },
+      ],
+    };
+    const prisma = {
+      question: { findMany: jest.fn().mockResolvedValue([multiQuestion]) },
+      submissionAnswer: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['a', 'c'],
+            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+          },
+          {
+            questionId: 'q1',
+            selectedOptionIds: ['c', 'a'],
+            submission: { userId: 'user-2', user: { fullName: 'Trần Thị B' } },
+          },
+        ]),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never);
+
+    const result = await service.getAnswerCollusion('quiz-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].studentCount).toBe(2);
   });
 });

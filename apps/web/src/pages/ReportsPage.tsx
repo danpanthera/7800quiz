@@ -24,6 +24,9 @@ interface ReportRow {
   score: number | null
   status: string
   submittedAt: string | null
+  violationCount: number
+  violationSubmitted: boolean
+  suspiciousSpeed: boolean
   isBestForUser: boolean
 }
 
@@ -236,7 +239,18 @@ export default function ReportsPage() {
       dataIndex: 'status',
       filters: Object.entries(STATUS_LABEL).map(([v, t]) => ({ text: t, value: v })),
       onFilter: (v, r) => r.status === v,
-      render: (v: string) => <Tag color={STATUS_COLOR[v] ?? 'default'}>{STATUS_LABEL[v] ?? v}</Tag>,
+      render: (v: string, r) => (
+        <Space size={4} wrap>
+          <Tag color={STATUS_COLOR[v] ?? 'default'}>{STATUS_LABEL[v] ?? v}</Tag>
+          {r.violationSubmitted && <Tag color="error">Tự nộp do vi phạm</Tag>}
+          {!r.violationSubmitted && r.violationCount > 0 && <Tag color="warning">{r.violationCount} vi phạm</Tag>}
+          {r.suspiciousSpeed && (
+            <Tag color="purple" title="Trả lời rất nhanh kèm điểm cao — chỉ là gợi ý đối chiếu, không tự động xử lý">
+              Tốc độ bất thường
+            </Tag>
+          )}
+        </Space>
+      ),
     },
     {
       title: 'Thời gian nộp',

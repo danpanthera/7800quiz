@@ -18,12 +18,18 @@ interface ViolationRow {
   quizTitle: string
   attemptStatus: 'IN_PROGRESS' | 'GRADED'
   totalViolationsInAttempt: number
+  violationSubmitted: boolean
 }
 
 const TYPE_LABEL: Record<string, { label: string; color: string }> = {
   TAB_HIDDEN: { label: 'Rời tab / thu nhỏ cửa sổ', color: 'warning' },
   FULLSCREEN_EXIT: { label: 'Thoát toàn màn hình', color: 'orange' },
   COPY_ATTEMPT: { label: 'Cố sao chép đề bài', color: 'error' },
+  WINDOW_BLUR: { label: 'Chuyển sang cửa sổ khác', color: 'orange' },
+  IDLE_TIMEOUT: { label: 'Vắng mặt bất thường', color: 'error' },
+  MULTI_SESSION_LOGIN: { label: 'Đăng nhập thêm nơi khác', color: 'error' },
+  DEVTOOLS_OPEN: { label: 'Nghi vấn mở DevTools (độ tin cậy thấp)', color: 'default' },
+  SCREENSHOT_ATTEMPT: { label: 'Nghi vấn chụp màn hình (độ tin cậy thấp)', color: 'default' },
 }
 
 export default function AttemptViolationsPage() {
@@ -69,8 +75,11 @@ export default function AttemptViolationsPage() {
     {
       title: 'Trạng thái bài làm',
       dataIndex: 'attemptStatus',
-      width: 140,
-      render: (v: string) => <Tag color={v === 'GRADED' ? 'success' : 'processing'}>{v === 'GRADED' ? 'Đã nộp' : 'Đang làm dở'}</Tag>,
+      width: 160,
+      render: (v: string, r: ViolationRow) => {
+        if (r.violationSubmitted) return <Tag color="error">Tự nộp do vi phạm</Tag>
+        return <Tag color={v === 'GRADED' ? 'success' : 'processing'}>{v === 'GRADED' ? 'Đã nộp' : 'Đang làm dở'}</Tag>
+      },
     },
   ]
 
@@ -115,7 +124,7 @@ export default function AttemptViolationsPage() {
           { label: 'Thời gian', render: (r) => new Date(r.occurredAt).toLocaleString('vi-VN') },
           { label: 'Bộ đề', render: (r) => r.quizTitle },
           { label: 'Tổng vi phạm trong bài', render: (r) => r.totalViolationsInAttempt },
-          { label: 'Trạng thái bài làm', render: (r) => (r.attemptStatus === 'GRADED' ? 'Đã nộp' : 'Đang làm dở') },
+          { label: 'Trạng thái bài làm', render: (r) => (r.violationSubmitted ? 'Tự nộp do vi phạm' : r.attemptStatus === 'GRADED' ? 'Đã nộp' : 'Đang làm dở') },
         ]}
         emptyText="Chưa ghi nhận vi phạm nào khớp bộ lọc"
       />

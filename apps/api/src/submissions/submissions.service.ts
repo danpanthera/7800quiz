@@ -195,11 +195,16 @@ export class SubmissionsService {
         syncedAt: true,
         quizVersion: { select: { snapshot: true } },
         answers: { select: { questionId: true, selectedOptionIds: true } },
+        attempt: {
+          select: { violationCount: true, violationSubmitted: true },
+        },
       },
     });
     if (!submission) return null;
 
-    const { quizVersion, answers, ...rest } = submission;
+    const { quizVersion, answers, attempt, ...rest } = submission;
+    const violationCount = attempt?.violationCount ?? 0;
+    const violationSubmitted = attempt?.violationSubmitted ?? false;
     const snapshot = quizVersion.snapshot as unknown as QuizSnapshot;
     const answersByQuestion = new Map(
       answers.map((a) => [
@@ -282,6 +287,6 @@ export class SubmissionsService {
           })
       : [];
 
-    return { ...rest, questions };
+    return { ...rest, violationCount, violationSubmitted, questions };
   }
 }

@@ -46,6 +46,12 @@ function buildPrismaMock(user: unknown) {
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 2 }),
     },
+    quizAttempt: {
+      findMany: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
 }
 
@@ -308,5 +314,55 @@ describe('AuthService — bảo mật đăng nhập (việc 15/16/17)', () => {
       where: { id: 'user-1' },
       data: { failedLoginCount: 0, lockedUntil: null },
     });
+  });
+
+  // ─── Phát hiện đăng nhập nhiều nơi (MULTI_SESSION_LOGIN) ───────────────
+
+  it('đăng nhập trong lúc đang có bài làm dở → ghi vi phạm MULTI_SESSION_LOGIN', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    prisma.quizAttempt.findMany.mockResolvedValue([{ id: 'attempt-1' }]);
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await service.login(
+      { username: 'nhanvien01', password: PASSWORD },
+      {},
+    );
+
+    expect(prisma.quizAttempt.findMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', status: 'IN_PROGRESS' },
+      select: { id: true },
+    });
+    expect(prisma.attemptViolation.create).toHaveBeenCalledWith({
+      data: { attemptId: 'attempt-1', type: 'MULTI_SESSION_LOGIN' },
+    });
+    expect(prisma.quizAttempt.update).toHaveBeenCalledWith({
+      where: { id: 'attempt-1' },
+      data: { violationCount: { increment: 1 } },
+    });
+  });
+
+  it('đăng nhập khi không có bài làm dở → không ghi vi phạm gì', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await service.login(
+      { username: 'nhanvien01', password: PASSWORD },
+      {},
+    );
+
+    expect(prisma.attemptViolation.create).not.toHaveBeenCalled();
+  });
+
+  it('lỗi khi ghi MULTI_SESSION_LOGIN không được làm hỏng lượt đăng nhập', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    prisma.quizAttempt.findMany.mockRejectedValue(new Error('lỗi giả lập'));
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    const result = await service.login(
+      { username: 'nhanvien01', password: PASSWORD },
+      {},
+    );
+
+    expect(result).toHaveProperty('accessToken');
   });
 });

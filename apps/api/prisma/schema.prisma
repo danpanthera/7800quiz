@@ -91,6 +91,13 @@ model Quiz {
   // Số lần được phép làm bài (tính theo Submission đã chấm) cho mỗi lượt giao
   // bài (Assignment). Mặc định 1 để giữ đúng hành vi cũ; 0 = không giới hạn.
   maxAttempts     Int      @default(1) @map("max_attempts")
+  // Chế tài vi phạm khi làm bài: tới lần vi phạm thứ N (rời tab, chuyển cửa sổ,
+  // cố sao chép đề) thì server tự nộp bài. 0 = tắt, chỉ ghi nhận để admin đối chiếu.
+  violationLimit  Int      @default(0) @map("violation_limit")
+  // Chế độ giám sát nghiêm ngặt (audit): bắt buộc toàn màn hình trong lúc thi —
+  // thoát toàn màn hình bị tính 1 lần vi phạm (FULLSCREEN_EXIT), cộng dồn chung
+  // với violationLimit ở trên. Mặc định TẮT cho đề luyện tập/thi thử.
+  auditMode       Boolean  @default(false) @map("audit_mode")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -266,6 +273,8 @@ model QuizAttempt {
   finalizedAt    DateTime?     @map("finalized_at") @db.Timestamptz(3)
   timedOut       Boolean       @default(false) @map("timed_out")
   violationCount Int           @default(0) @map("violation_count") // số lần phát hiện rời màn hình/dán nội dung khi đang làm bài
+  // true = bài bị server tự nộp vì chạm Quiz.violationLimit (không cộng XP).
+  violationSubmitted Boolean   @default(false) @map("violation_submitted")
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -296,6 +305,14 @@ enum AttemptViolationType {
   TAB_HIDDEN // chuyển tab / thu nhỏ cửa sổ
   FULLSCREEN_EXIT // thoát chế độ toàn màn hình
   COPY_ATTEMPT // cố sao chép nội dung đề bài
+  WINDOW_BLUR // chuyển sang cửa sổ khác (chia đôi màn hình, màn hình phụ) quá 3 giây
+  IDLE_TIMEOUT // không thao tác chuột/bàn phím trong lúc tab vẫn đang mở và focus
+  MULTI_SESSION_LOGIN // phát hiện đăng nhập thêm 1 nơi khác trong lúc đang có bài làm dở
+  // 2 loại dưới đây độ tin cậy thấp (dễ oan do cấu hình trình duyệt/phím tắt hệ
+  // điều hành khác nhau) — chỉ ghi log để đối chiếu, KHÔNG cộng dồn vào ngưỡng tự
+  // nộp. Xem SOFT_VIOLATION_TYPES trong attempts.service.ts.
+  DEVTOOLS_OPEN // nghi vấn mở công cụ dành cho lập trình viên (F12)
+  SCREENSHOT_ATTEMPT // nghi vấn chụp màn hình (phím tắt PrintScreen...)
 
   @@map("attempt_violation_type")
 }

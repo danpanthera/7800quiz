@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Result, Skeleton, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Result, Skeleton, Space, Tag, Typography } from 'antd'
 import { CheckCircleOutlined, CloseCircleOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import api from '../lib/api'
@@ -32,6 +32,8 @@ interface QuizResult {
   score: number | null
   isPassed: boolean | null
   submittedAt: string | null
+  violationCount: number
+  violationSubmitted: boolean
   questions: ResultQuestion[]
 }
 
@@ -102,6 +104,16 @@ export default function QuizResultPage() {
           </>
         }
       />
+
+      {result.violationSubmitted && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ maxWidth: 640, margin: '0 auto 24px' }}
+          message="Bài làm đã bị hệ thống tự động nộp do vi phạm"
+          description={`Đã phát hiện ${result.violationCount} lần rời màn hình/chuyển cửa sổ/cố sao chép đề trong lúc làm bài. Điểm được chấm theo các câu đã lưu tính đến thời điểm đó.`}
+        />
+      )}
 
       {xpInfo && (xpInfo.levelUp || (xpInfo.newBadges?.length ?? 0) > 0) && (
         <Card className="quiz-xp-banner" style={{ maxWidth: 640, margin: '0 auto 24px' }}>

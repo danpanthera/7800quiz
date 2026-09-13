@@ -189,6 +189,8 @@ export class AdminController {
       passScore?: number;
       instantFeedback?: boolean;
       maxAttempts?: number;
+      violationLimit?: number;
+      auditMode?: boolean;
     },
   ) {
     return this.adminService.createQuiz(body);
@@ -372,6 +374,12 @@ export class AdminController {
     @Query() query: { quizId?: string; subjectId?: string },
   ) {
     return this.adminService.getQuestionAnalytics(query);
+  }
+
+  @Get('quizzes/:id/answer-collusion')
+  @Roles(...TRAINING_ROLES)
+  getAnswerCollusion(@Param('id') id: string) {
+    return this.adminService.getAnswerCollusion(id);
   }
 
   @Get('department-performance')
@@ -638,4 +646,5 @@ export class AdminController {
   ) {
     return this.adminService.deleteCanBo(id, req.user.id);
   }
+
 }

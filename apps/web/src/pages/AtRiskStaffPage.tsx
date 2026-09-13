@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Card, Col, Empty, Row, Table, Tag, Typography } from 'antd'
-import { ClockCircleOutlined, FrownOutlined, WarningOutlined } from '@ant-design/icons'
+import { ClockCircleOutlined, FrownOutlined, PauseCircleOutlined, WarningOutlined } from '@ant-design/icons'
 import api from '../lib/api'
 
 const { Text } = Typography
@@ -8,11 +8,17 @@ const { Text } = Typography
 interface NearDeadlineRow { userId: string | null; userName: string | null; quizTitle: string; endAt: string }
 interface RecentFailRow { userId: string; userName: string | null; quizTitle: string | null; score: number | null; submittedAt: string | null }
 interface HighViolationRow { userId: string; userName: string | null; quizTitle: string | null; violationCount: number }
+interface StaleAttemptRow { userId: string; userName: string | null; quizTitle: string | null; startedAt: string; lastSavedAt: string | null; deadlineAt: string }
 
 interface AtRiskData {
   nearDeadlineNoSubmission: NearDeadlineRow[]
   recentFails: RecentFailRow[]
   highViolations: HighViolationRow[]
+  staleAttempts: StaleAttemptRow[]
+}
+
+function phutTruoc(iso: string): number {
+  return Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
 }
 
 export default function AtRiskStaffPage() {
@@ -31,7 +37,7 @@ export default function AtRiskStaffPage() {
       </header>
 
       <Row gutter={16}>
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={6}>
           <Card
             size="small"
             loading={isLoading}
@@ -54,7 +60,7 @@ export default function AtRiskStaffPage() {
           </Card>
         </Col>
 
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={6}>
           <Card
             size="small"
             loading={isLoading}
@@ -77,7 +83,7 @@ export default function AtRiskStaffPage() {
           </Card>
         </Col>
 
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={6}>
           <Card
             size="small"
             loading={isLoading}
@@ -94,6 +100,35 @@ export default function AtRiskStaffPage() {
                   { title: 'Cán bộ', dataIndex: 'userName', render: (v: string | null) => v ?? '—' },
                   { title: 'Bộ đề', dataIndex: 'quizTitle', ellipsis: true, render: (v: string | null) => v ?? '—' },
                   { title: 'Số vi phạm', dataIndex: 'violationCount', render: (v: number) => <Tag color="warning">{v}</Tag> },
+                ]}
+              />
+            ) : <Empty description="Không có ai" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={6}>
+          <Card
+            size="small"
+            loading={isLoading}
+            title={<span><PauseCircleOutlined /> Bài đang treo bất thường ({data?.staleAttempts.length ?? 0})</span>}
+            style={{ marginBottom: 16 }}
+          >
+            {data?.staleAttempts.length ? (
+              <Table
+                size="small"
+                pagination={false}
+                dataSource={data.staleAttempts}
+                rowKey={(r, i) => `${r.userId}-${i}`}
+                columns={[
+                  { title: 'Cán bộ', dataIndex: 'userName', render: (v: string | null) => v ?? '—' },
+                  { title: 'Bộ đề', dataIndex: 'quizTitle', ellipsis: true, render: (v: string | null) => v ?? '—' },
+                  {
+                    title: 'Im lặng',
+                    dataIndex: 'lastSavedAt',
+                    render: (v: string | null, r: StaleAttemptRow) => (
+                      <Tag color="purple">{phutTruoc(v ?? r.startedAt)} phút</Tag>
+                    ),
+                  },
                 ]}
               />
             ) : <Empty description="Không có ai" image={Empty.PRESENTED_IMAGE_SIMPLE} />}

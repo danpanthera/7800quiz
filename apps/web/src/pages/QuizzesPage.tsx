@@ -5,7 +5,7 @@ import {
   Modal, Form, Input, InputNumber, Switch, Drawer, Select, theme,
   Tooltip, Divider,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined, CopyOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined, MinusCircleOutlined, CopyOutlined, AlertOutlined } from '@ant-design/icons'
 import ManageTable from '../components/ManageTable'
 import { useDeviceType } from '../hooks/useDeviceType'
 import api, { getErrorMessage } from '../lib/api'
@@ -13,12 +13,19 @@ import api, { getErrorMessage } from '../lib/api'
 interface Quiz {
   id: string; title: string; description?: string; topic?: string
   durationMin: number; passScore?: number; isActive: boolean; instantFeedback?: boolean
-  maxAttempts?: number
+  maxAttempts?: number; violationLimit?: number; auditMode?: boolean
   _count: { questions: number; assignments: number }
 }
 interface Subject { id: string; name: string; _count?: { questions: number } }
 interface QuestionOption { content: string; isCorrect: boolean }
 interface Question { id: string; content: string; questionType: string; points: number; options: QuestionOption[]; subject?: { name: string } }
+interface CollusionGroup {
+  questionId: string
+  questionContent: string
+  selectedOptionContents: string[]
+  studentCount: number
+  students: { userId: string; fullName: string | null }[]
+}
 
 type QuizFormValues = Omit<Quiz, 'id' | '_count'>
 interface SubjectSlot { subjectId?: string; count: number }
@@ -60,6 +67,8 @@ export default function QuizzesPage() {
   const [detailQuiz, setDetailQuiz] = useState<Quiz | null>(null)
   const [pickModalOpen, setPickModalOpen] = useState(false)
   const [pickTarget, setPickTarget] = useState<Quiz | null>(null)
+  const [collusionQuiz, setCollusionQuiz] = useState<Quiz | null>(null)
+  const [collusionModalOpen, setCollusionModalOpen] = useState(false)
   const [quizForm] = Form.useForm()
   const [pickForm] = Form.useForm()
 
@@ -110,6 +119,12 @@ export default function QuizzesPage() {
     enabled: !!detailQuiz,
   })
 
+  const { data: collusionGroups = [], isLoading: collusionLoading } = useQuery<CollusionGroup[]>({
+    queryKey: ['answer-collusion', collusionQuiz?.id],
+    queryFn: () => api.get(`/admin/quizzes/${collusionQuiz!.id}/answer-collusion`).then((r) => r.data),
+    enabled: !!collusionQuiz,
+  })
+
   // ── Thao tác ghi dữ liệu ──────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: (data: QuizFormValues) => api.post<Quiz>('/admin/quizzes', data).then((r) => r.data),
@@ -149,7 +164,7 @@ export default function QuizzesPage() {
     setEditQuiz(null)
     quizForm.resetFields()
     quizForm.setFieldsValue({
-      durationMin: 30, passScore: 70, isActive: true, instantFeedback: false, maxAttempts: 1,
+      durationMin: 30, passScore: 70, isActive: true, instantFeedback: false, maxAttempts: 1, violationLimit: 0, auditMode: false,
       autoPickEnabled: false, subjectRatios: [{ percent: 100 }],
     })
     setQuizModalOpen(true)
@@ -230,6 +245,14 @@ export default function QuizzesPage() {
           onClick={() => duplicateMutation.mutate(quiz.id)}
         />
       </Tooltip>
+      <Tooltip title="Đối chiếu đáp án trùng lặp (nghi vấn chép bài)">
+        <Button
+          aria-label={`Đối chiếu đáp án trùng lặp cho ${quiz.title}`}
+          icon={<AlertOutlined />}
+          size="small"
+          onClick={() => { setCollusionQuiz(quiz); setCollusionModalOpen(true) }}
+        />
+      </Tooltip>
       <Popconfirm title="Xóa bộ đề?" onConfirm={() => deleteMutation.mutate(quiz.id)}>
         <Tooltip title="Xóa bộ đề">
           <Button
@@ -284,6 +307,8 @@ export default function QuizzesPage() {
         cardMeta={[
           { label: 'Thời gian', render: (quiz) => `${quiz.durationMin} phút` },
           { label: 'Số lần thi', render: (quiz) => (quiz.maxAttempts === 0 ? 'Không giới hạn' : `${quiz.maxAttempts ?? 1} lần`) },
+          { label: 'Tự nộp khi vi phạm', render: (quiz) => (!quiz.violationLimit ? 'Tắt' : `Sau ${quiz.violationLimit} lần`) },
+          { label: 'Giám sát nghiêm ngặt (audit)', render: (quiz) => (quiz.auditMode ? 'Bật' : 'Tắt') },
           { label: 'Câu hỏi', render: (quiz) => quiz._count.questions },
           { label: 'Phân công', render: (quiz) => quiz._count.assignments },
         ]}
@@ -334,6 +359,23 @@ export default function QuizzesPage() {
             valuePropName="checked"
             tooltip="Bật: chọn xong hiện ngay đúng/sai, tự sang câu kế, đáp án bị khoá không sửa được — hợp với đề luyện tập. TẮT cho kỳ thi chính thức vì chế độ này để lộ đáp án ngay trong lúc thi."
             extra="Chỉ bật cho đề luyện tập. Kỳ thi chính thức nên tắt để không lộ đáp án."
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="violationLimit"
+            label="Tự nộp bài khi vi phạm"
+            tooltip="Vi phạm = rời tab, chuyển sang cửa sổ khác, hoặc cố sao chép đề trong lúc làm bài. Chạm đúng số lần này thì hệ thống tự động nộp bài theo các câu đã lưu."
+            extra="0 = tắt (chỉ ghi nhận, không tự nộp). Nên đặt từ 3 trở lên để tránh oan khi lỡ tay hoặc có cuộc gọi đến trên điện thoại."
+          >
+            <InputNumber min={0} max={20} style={{ width: 140 }} />
+          </Form.Item>
+          <Form.Item
+            name="auditMode"
+            label="Chế độ giám sát nghiêm ngặt (audit)"
+            valuePropName="checked"
+            tooltip="Bật: bắt buộc ở chế độ toàn màn hình trong suốt lúc thi — thoát toàn màn hình bị tính là 1 lần vi phạm (cộng dồn chung với ngưỡng tự nộp ở trên). Dùng cho kỳ thi chính thức."
+            extra="Mặc định TẮT cho đề luyện tập/thi thử."
           >
             <Switch />
           </Form.Item>
@@ -583,6 +625,42 @@ export default function QuizzesPage() {
             }}
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Modal: Đối chiếu đáp án trùng lặp giữa các cán bộ */}
+      <Modal
+        title={`Đối chiếu đáp án trùng lặp: ${collusionQuiz?.title ?? ''}`}
+        open={collusionModalOpen}
+        onCancel={() => { setCollusionModalOpen(false); setCollusionQuiz(null) }}
+        footer={<Button onClick={() => setCollusionModalOpen(false)}>Đóng</Button>}
+        width={720}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          Chỉ liệt kê những câu mà từ 2 cán bộ trở lên cùng chọn CHUNG 1 đáp án SAI giống hệt nhau
+          — đáp án đúng giống nhau là chuyện bình thường nên không tính. Đây chỉ là gợi ý để đối
+          chiếu thêm, không phải bằng chứng chắc chắn.
+        </Typography.Paragraph>
+        {collusionLoading ? (
+          <Typography.Text type="secondary">Đang tải...</Typography.Text>
+        ) : collusionGroups.length === 0 ? (
+          <Typography.Text type="secondary">Không phát hiện nhóm đáp án sai trùng lặp nào.</Typography.Text>
+        ) : (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            {collusionGroups.map((g, i) => (
+              <div key={`${g.questionId}-${i}`} style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+                <Typography.Text strong>{g.questionContent}</Typography.Text>
+                <div style={{ margin: '8px 0' }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Đáp án sai giống nhau: </Typography.Text>
+                  {g.selectedOptionContents.map((c, idx) => <Tag key={idx} color="error">{c}</Tag>)}
+                </div>
+                <Space size={4} wrap>
+                  <Tag color="purple">{g.studentCount} cán bộ</Tag>
+                  {g.students.map((s) => <Tag key={s.userId}>{s.fullName ?? s.userId}</Tag>)}
+                </Space>
+              </div>
+            ))}
+          </Space>
+        )}
       </Modal>
     </>
   )
