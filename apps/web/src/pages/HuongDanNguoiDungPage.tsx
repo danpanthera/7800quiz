@@ -12,7 +12,7 @@ const CAC_MUC: MucHuongDan[] = [
         <ol>
           <li>Mở trình duyệt, vào địa chỉ hệ thống do đơn vị cung cấp, màn hình <b>Đăng nhập</b> hiện ra.</li>
           <li>Ô <b>User AD</b>: gõ tên đăng nhập máy tính của mình (ví dụ <i>datnguyentien2</i>). Nếu chưa có User AD thì dùng <b>mã cán bộ 9 số</b>.</li>
-          <li>Ô <b>Mật khẩu</b>: lần đầu dùng mật khẩu mặc định <b>Abcd@1234</b>. Đây là mật khẩu riêng của hệ thống thi, <b>không liên quan</b> tới mật khẩu vào máy tính.</li>
+          <li>Ô <b>Mật khẩu</b>: lần đầu dùng <b>mật khẩu tạm</b> do cán bộ IT/quản trị viên cấp cho riêng bạn. Đây là mật khẩu riêng của hệ thống thi, <b>không liên quan</b> tới mật khẩu vào máy tính — <b>không</b> gõ mật khẩu Windows/email vào đây.</li>
           <li>Bấm <b>Đăng nhập</b>. Hệ thống bắt đổi mật khẩu ngay lần đầu: nhập mật khẩu hiện tại, mật khẩu mới (<b>tối thiểu 6 ký tự</b>) và nhập lại cho khớp, bấm <b>Cập nhật mật khẩu</b>.</li>
           <li>Đổi xong là vào thẳng trang <b>Bài kiểm tra của tôi</b>.</li>
         </ol>
@@ -20,7 +20,7 @@ const CAC_MUC: MucHuongDan[] = [
         <ul>
           <li>Nhập sai mật khẩu <b>5 lần liên tiếp</b> thì tài khoản bị <b>khoá tạm 15 phút</b>, sau đó tự mở. Không phải gọi ai.</li>
           <li>Một phiên đăng nhập có hiệu lực <b>8 tiếng</b>, sau đó phải đăng nhập lại.</li>
-          <li>Quên mật khẩu: liên hệ quản trị viên để được đặt lại về <b>Abcd@1234</b>, lần đăng nhập sau sẽ phải đổi lại mật khẩu mới.</li>
+          <li>Quên mật khẩu: liên hệ cán bộ IT/quản trị viên để được cấp <b>mật khẩu tạm mới</b>, lần đăng nhập sau sẽ phải đổi lại mật khẩu mới.</li>
           <li>Nếu tài khoản đã bật <b>Xác thực 2 lớp</b>, sau bước mật khẩu sẽ có thêm bước nhập mã 6 chữ số trong ứng dụng Authenticator.</li>
         </ul>
       </>
@@ -311,7 +311,7 @@ const CAC_MUC: MucHuongDan[] = [
           { th: 'Lỡ thoát ra khi đang thi', xl: 'Đăng nhập lại, bấm "Tiếp tục làm bài". Lưu ý thời gian vẫn chạy trong lúc bạn thoát ra.' },
           { th: 'Báo "Bài làm đã thay đổi ở một nơi khác"', xl: 'Bạn đang mở cùng bài trên 2 thiết bị. Đóng bớt một cái rồi tải lại trang.' },
           { th: 'Đang thi bị hiện hộp thoại vi phạm và nộp bài', xl: 'Bộ đề có ngưỡng tự nộp và bạn đã chạm ngưỡng. Bấm "Đã hiểu" để xem điểm; liên hệ đơn vị nếu cho rằng bị oan.' },
-          { th: 'Quên mật khẩu / tài khoản bị khoá lâu', xl: 'Liên hệ quản trị viên để đặt lại mật khẩu về Abcd@1234 hoặc mở khoá.' },
+          { th: 'Quên mật khẩu / tài khoản bị khoá lâu', xl: 'Liên hệ cán bộ IT/quản trị viên để được cấp mật khẩu tạm mới hoặc mở khoá.' },
         ]}
       />
     ),

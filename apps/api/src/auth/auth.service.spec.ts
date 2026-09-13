@@ -229,7 +229,7 @@ describe('AuthService — bảo mật đăng nhập (việc 15/16/17)', () => {
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
-  it('disableTotp: sai mật khẩu → không tắt được', async () => {
+  it('disableTotp: sai mật khẩu → không tắt được, chỉ tăng bộ đếm khóa tài khoản', async () => {
     const prisma = buildPrismaMock(
       await buildUser({ totpEnabled: true, totpSecret: generateTotpSecret() }),
     );
@@ -238,7 +238,74 @@ describe('AuthService — bảo mật đăng nhập (việc 15/16/17)', () => {
     await expect(service.disableTotp('user-1', 'sai-mat-khau')).rejects.toThrow(
       UnauthorizedException,
     );
+    // Route chỉ cần JWT hợp lệ nên sai mật khẩu ở đây cũng phải tính vào ngưỡng
+    // khóa (chặn token bị lộ dò mật khẩu không giới hạn) — nhưng KHÔNG được
+    // đụng tới totpSecret/totpEnabled.
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { failedLoginCount: { increment: 1 } },
+      }),
+    );
+  });
+
+  it('disableTotp: mật khẩu rỗng → BadRequest, không so bcrypt, không tăng bộ đếm', async () => {
+    const prisma = buildPrismaMock(
+      await buildUser({ totpEnabled: true, totpSecret: generateTotpSecret() }),
+    );
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await expect(service.disableTotp('user-1', '   ')).rejects.toThrow(
+      BadRequestException,
+    );
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('disableTotp: tài khoản đang bị khóa → Forbidden, không so mật khẩu', async () => {
+    const prisma = buildPrismaMock(
+      await buildUser({
+        totpEnabled: true,
+        totpSecret: generateTotpSecret(),
+        lockedUntil: new Date(Date.now() + 10 * 60_000),
+      }),
+    );
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await expect(service.disableTotp('user-1', PASSWORD)).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('changePassword: sai mật khẩu cũ → tăng bộ đếm khóa, không đổi hash', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await expect(
+      service.changePassword('user-1', 'sai-mat-khau', 'MatKhauMoi123'),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { failedLoginCount: { increment: 1 } },
+      }),
+    );
+  });
+
+  it('changePassword: đúng mật khẩu cũ → xoá bộ đếm, ghi hash mới và xoá initialPassword', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await service.changePassword('user-1', PASSWORD, 'MatKhauMoi123');
+
+    const lastCall = prisma.user.update.mock.calls.at(-1)?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(lastCall.data.mustChangePassword).toBe(false);
+    expect(lastCall.data.initialPassword).toBeNull();
+    expect(typeof lastCall.data.passwordHash).toBe('string');
+    // Không bao giờ lưu mật khẩu mới dạng chữ rõ
+    expect(lastCall.data.passwordHash).not.toBe('MatKhauMoi123');
   });
 
   it('setupTotp: đã bật 2FA rồi → yêu cầu tắt trước', async () => {

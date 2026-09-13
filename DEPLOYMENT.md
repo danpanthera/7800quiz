@@ -830,3 +830,66 @@ Rồi mở thử 1 bộ đề `instantFeedback`, bật công tắc giọng đọ
 - [ ] Đã chép `assets/giong-doc/` qua USB vào `/opt/7800quiz/assets/giong-doc` trên PROD
 - [ ] `curl -I .../giong-doc/manifest.json` trả 200, file không tồn tại trả đúng 404
 - [ ] Thử bật công tắc giọng đọc trên trình duyệt thật, nghe được tiếng
+
+## Phụ lục F — Việc làm tại PROD lần tới: cập nhật mã nguồn, triển khai giọng đọc (lần đầu), dò cổng LDAP trên RODC
+
+Gộp 3 việc độc lập vào cùng một lượt lên máy ảo PROD vì cả ba đều cần vào console/SSH máy ảo. Làm đúng theo thứ tự F.1 → F.2 → F.3 — F.2 cần mã nguồn mới nhất từ F.1 (khối cấu hình audio trong `nginx.conf`/`docker-compose.prod.yml`), F.3 độc lập hoàn toàn, để sau cùng vì chỉ là dò/đọc, không sửa gì.
+
+### F.1. Cập nhật mã nguồn
+
+```bash
+cd /opt/7800quiz
+git pull
+```
+
+Bản mới nhất mang theo: script `scripts/kiem-tra-ldap-rodc.sh` (dùng ở F.3), và khối cấu hình phục vụ audio giọng đọc trong `docker-compose.prod.yml`/`apps/web/nginx.conf` (thêm ở commit `5065d0c` — nếu PROD chưa từng `git pull` từ sau commit đó thì đây là **lần đầu** tính năng giọng đọc lên PROD, áp dụng đúng cảnh báo build lại image ở mục F.2 bên dưới).
+
+### F.2. Triển khai giọng đọc thuyết minh (lần đầu trên PROD)
+
+Vì `nginx.conf` được đóng gói **lúc build** image `web` (không phải lúc chạy), chỉ `git pull` xong `docker compose up -d` là **chưa đủ** — bắt buộc build lại image `web` trước, đúng cảnh báo ở mục E.3:
+
+```bash
+cd /opt/7800quiz
+sudo docker compose -f docker-compose.prod.yml build web
+sudo docker compose -f docker-compose.prod.yml up -d web
+```
+
+Sau đó chép audio qua USB đúng quy trình Phụ lục E (mục E.3) — tính tới hôm nay (13/09/2026), thư mục `assets/giong-doc/` trên máy dev đang có **~332MB, khoảng 15.250 file `.mp3`** (kèm `manifest.json`), số này sẽ còn tăng nếu sinh thêm trước ngày đi:
+
+```powershell
+# Trên máy Windows, sau khi copy assets/giong-doc từ USB vào D:\quiz\giong-doc
+scp -r D:\quiz\giong-doc <username>@<IP-máy-ảo>:/tmp/giong-doc
+```
+
+```bash
+# Trong máy ảo Ubuntu
+sudo mkdir -p /opt/7800quiz/assets/giong-doc
+sudo rsync -a --info=progress2 /tmp/giong-doc/ /opt/7800quiz/assets/giong-doc/
+rm -rf /tmp/giong-doc
+```
+
+Không cần restart thêm gì nữa — bind-mount (`./assets/giong-doc:/usr/share/nginx/html/giong-doc:ro`) phục vụ file mới ngay khi xuất hiện trên đĩa. Kiểm tra lại theo đúng mục E.4 (`curl -I .../giong-doc/manifest.json` → 200; file không tồn tại → đúng 404; mở thử 1 bộ đề `instantFeedback`, bật công tắc, nghe thử).
+
+### F.3. Dò cổng LDAP trên RODC (10.58.0.11)
+
+Chuẩn bị cho tính năng đăng nhập bằng tài khoản AD (đang khảo sát riêng, chưa có quyết định triển khai) — chỉ dò, **không sửa gì**, chạy bao nhiêu lần cũng an toàn:
+
+```bash
+bash scripts/kiem-tra-ldap-rodc.sh
+```
+
+Script tự dò cả 4 cổng (389/636/3268/3269) từ máy ảo lẫn từ trong container `quiz7800_api` (nằm sau NAT của Docker — phép thử có ý nghĩa thật), kiểm tra DNS có phân giải được `corp.agribank.com.vn`/`7800-RODC-01.corp.agribank.com.vn` không, và nếu cổng 636 mở thì đọc luôn chứng chỉ LDAPS (issuer + `subjectAltName` + hạn dùng). Gửi lại toàn bộ kết quả in ra — 4 điều cần biết trước khi bàn tiếp tính năng AD:
+
+1. Cổng **636 (LDAPS)** có mở không — chỉ có 389 thì mật khẩu domain sẽ đi chữ rõ trên dây, không dùng được.
+2. Container API có tới được RODC không (khác với máy ảo tới được — container đi qua NAT riêng).
+3. DNS máy ảo có phân giải được tên miền AD không — quyết định dùng IP hay FQDN khi cấu hình sau này.
+4. Nếu có LDAPS: chứng chỉ do CA nào cấp, tên trên chứng chỉ (`subjectAltName`) là gì, còn hạn tới bao lâu.
+
+> ⚠ Cổng mở chỉ chứng minh đường mạng thông, **chưa** chứng minh bind (đăng nhập) được — việc đó còn phải chờ tài khoản test do quản trị AD cấp, xem khảo sát LDAP riêng.
+
+### ✅ Checklist Phụ lục F
+- [ ] `git pull` xong trên `/opt/7800quiz`, không báo lỗi conflict
+- [ ] Đã `docker compose build web` rồi `up -d web` (bắt buộc nếu đây là lần đầu đưa giọng đọc lên PROD)
+- [ ] Đã chép `assets/giong-doc/` qua USB vào `/opt/7800quiz/assets/giong-doc`, `curl -I .../manifest.json` trả 200
+- [ ] Đã thử bật công tắc giọng đọc trên trình duyệt thật, nghe được tiếng
+- [ ] Đã chạy `bash scripts/kiem-tra-ldap-rodc.sh`, đã gửi lại toàn bộ kết quả (cổng nào mở, DNS, chứng chỉ nếu có)

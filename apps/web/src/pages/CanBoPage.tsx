@@ -45,6 +45,9 @@ interface CanBoItem {
   department?: { id: string; name: string; code: string; parent?: { id: string; name: string; code: string } | null };
   position?: string; isPartyMember: boolean; isUnionMember: boolean;
   isYouthUnionMember: boolean; isItStaff: boolean; isActive: boolean;
+  // Mật khẩu tạm còn hiệu lực (chưa đăng nhập đổi mật khẩu lần nào) — null nếu
+  // đã đổi. Chỉ API trả về cho ADMIN/Cán bộ IT, xem admin.service.ts:getCanBo.
+  initialPassword?: string | null;
 }
 // Dữ liệu form thêm/sửa cán bộ — bỏ các field server tự sinh (id, username, department object)
 type CanBoFormValues = Omit<CanBoItem, 'id' | 'username' | 'department'>
@@ -71,7 +74,7 @@ export default function CanBoPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [pageSize, setPageSize] = useState(50)
   const [resetResultOpen, setResetResultOpen] = useState(false)
-  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean }[] } | null>(null)
+  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean; initialPassword?: string }[] } | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importResult, setImportResult] = useState<{
     created: number; updated: number; skipped: number; errors: string[];
@@ -255,8 +258,8 @@ export default function CanBoPage() {
     <Space>
       {laAdmin && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />}
       <Popconfirm
-        title={`Reset MK về "Abcd@1234"?`}
-        description="Mật khẩu mới = Abcd@1234 (mặc định)"
+        title="Reset mật khẩu?"
+        description="Sinh mật khẩu tạm mới, ngẫu nhiên — xem lại ở cột &quot;Mật khẩu tạm&quot; để đọc cho cán bộ"
         onConfirm={() => resetMut.mutate([record.id])}
         okText="Reset" cancelText="Hủy"
       >
@@ -315,6 +318,12 @@ export default function CanBoPage() {
       ),
     },
     { title: 'UserAD', dataIndex: 'userAD', width: 130 },
+    {
+      title: 'Mật khẩu tạm', dataIndex: 'initialPassword', width: 150,
+      render: (v: string | null | undefined) => v
+        ? <Typography.Text code copyable={{ text: v }}>{v}</Typography.Text>
+        : <span style={{ color: '#bbb' }}>đã đổi</span>,
+    },
     { title: 'Phòng ban', dataIndex: ['department', 'name'], width: 200,
       render: (_: unknown, r: CanBoItem) => r.department
         ? <span>{r.department.name}</span>
@@ -347,7 +356,7 @@ export default function CanBoPage() {
           showIcon
           style={{ marginBottom: 16 }}
           message="Quyền của Cán bộ IT trong trang này"
-          description="Chỉ được reset mật khẩu cán bộ về mặc định Abcd@1234 (từng người hoặc tích chọn nhiều người rồi bấm Reset MK). Việc thêm, sửa, xoá, import và các thao tác khác thuộc quyền Quản trị viên."
+          description="Chỉ được reset mật khẩu cán bộ (từng người hoặc tích chọn nhiều người rồi bấm Reset MK) — mỗi lần reset sinh 1 mật khẩu tạm ngẫu nhiên riêng, xem ở cột &quot;Mật khẩu tạm&quot; để đọc lại cho cán bộ. Việc thêm, sửa, xoá, import và các thao tác khác thuộc quyền Quản trị viên."
         />
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -394,7 +403,7 @@ export default function CanBoPage() {
             <>
               <Popconfirm
                 title={`Reset mật khẩu ${selectedRowKeys.length} cán bộ?`}
-                description="Mật khẩu mới của mỗi người = Abcd@1234 (mặc định)"
+                description="Mỗi người được sinh 1 mật khẩu tạm ngẫu nhiên riêng, xem ở bảng kết quả sau khi reset"
                 onConfirm={() => resetMut.mutate(selectedRowKeys as string[])}
                 okText="Reset" cancelText="Hủy"
               >
@@ -593,7 +602,7 @@ export default function CanBoPage() {
               ✅ Reset thành công: <strong>{resetResult.reset}</strong> tài khoản{' '}
               {resetResult.noAccount > 0 && <>| ⚠️ Không có tài khoản: <strong>{resetResult.noAccount}</strong></>}
             </p>
-            <p style={{ color: '#888', fontSize: 12 }}>Mật khẩu mới = Abcd@1234 (mặc định) — cán bộ sẽ phải đổi mật khẩu sau lần đăng nhập tiếp theo</p>
+            <p style={{ color: '#888', fontSize: 12 }}>Mỗi người 1 mật khẩu tạm ngẫu nhiên riêng — đọc/copy ở cột bên dưới cho cán bộ, sẽ phải đổi lại sau lần đăng nhập đầu tiên. Nếu lỡ đóng bảng này, vẫn xem lại được ở cột "Mật khẩu tạm" trong danh sách cán bộ.</p>
             <Table
               size="small"
               rowKey="cbCode"
@@ -601,6 +610,12 @@ export default function CanBoPage() {
               columns={[
                 { title: 'Họ tên', dataIndex: 'fullName' },
                 { title: 'Mã CB', dataIndex: 'cbCode' },
+                {
+                  title: 'Mật khẩu tạm', dataIndex: 'initialPassword',
+                  render: (v?: string) => v
+                    ? <Typography.Text code copyable={{ text: v }}>{v}</Typography.Text>
+                    : '-',
+                },
                 {
                   title: 'Kết quả', dataIndex: 'ok', width: 120,
                   render: (ok: boolean) => ok

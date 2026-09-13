@@ -25,6 +25,13 @@ model User {
   role               UserRole  @default(STAFF)
   isActive           Boolean   @default(true) @map("is_active")
   mustChangePassword Boolean   @default(true) @map("must_change_password")
+  // Mật khẩu tạm sinh NGẪU NHIÊN (không còn dùng hằng số Abcd@1234 chung cho
+  // mọi người — biết trước userAD của ai là đăng nhập được ngay vào tài khoản
+  // đó) mỗi khi tạo/reset tài khoản, lưu dạng chữ rõ CHỈ để cán bộ IT đọc lại
+  // cho người dùng ở trang Quản lý cán bộ. Tự xoá về null ngay khi người dùng
+  // đổi mật khẩu thành công (changePassword) — không tồn tại lâu hơn mức cần
+  // thiết. Xem generate-password.util.ts.
+  initialPassword    String?   @map("initial_password")
   // Khóa tài khoản tạm sau nhiều lần đăng nhập sai liên tiếp — xem
   // auth.service.ts (ngưỡng khóa, thời gian khóa). Reset về 0/null khi đăng
   // nhập thành công hoặc hết thời gian khóa.

@@ -10,10 +10,17 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Sai mật khẩu / sai mã xác thực 2 lớp lúc đăng nhập cũng trả về 401 nhưng KHÔNG
+// phải hết phiên — để nguyên cho onError của trang đăng nhập tự hiển thị thông
+// báo, tránh bị điều hướng lại /login (tải lại trang) xoá mất thông báo lỗi
+// trước khi người dùng kịp đọc.
+const LOGIN_URLS = ['/auth/login', '/auth/login/verify-totp']
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const isLoginRequest = LOGIN_URLS.includes(err.config?.url)
+    if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token')
       window.location.href = '/login'
     }

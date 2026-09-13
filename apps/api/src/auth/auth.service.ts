@@ -15,8 +15,7 @@ import * as bcrypt from 'bcrypt';
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { AVATARS_DIR, AVATARS_URL_PREFIX } from '../common/uploads-dir';
-
-const DEFAULT_PASSWORD = 'Abcd@1234';
+import { sinhMatKhauTam } from '../common/mat-khau-tam.util';
 
 // Việc 15 — khóa tài khoản tạm: sai mật khẩu (hoặc sai mã 2 lớp) liên tiếp đủ
 // ngưỡng thì khóa trong LOCK_MINUTES phút. Bổ sung cho giới hạn tốc độ theo IP
@@ -76,7 +75,12 @@ export class AuthService {
         include: { department: { include: { parent: true } } },
       });
       if (canBo) {
-        const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+        // Mật khẩu tạm sinh RIÊNG cho người này (không còn hằng số chung) —
+        // lưu dạng chữ rõ ở initialPassword để cán bộ IT đọc lại được ở trang
+        // Quản lý cán bộ; người vừa gõ ở request này chưa thể biết mật khẩu
+        // này nên KHÔNG đăng nhập được ngay, phải chờ IT cấp lại.
+        const initialPassword = sinhMatKhauTam();
+        const passwordHash = await bcrypt.hash(initialPassword, 10);
         const username = canBo.userAD?.trim() || canBo.cbCode;
         user = await this.prisma.user.create({
           data: {
@@ -84,6 +88,7 @@ export class AuthService {
             fullName: canBo.fullName,
             email: canBo.email ?? undefined,
             passwordHash,
+            initialPassword,
             role: 'STAFF',
             isActive: true,
             mustChangePassword: true,
@@ -325,8 +330,20 @@ export class AuthService {
       where: { id: userId },
     });
 
+    // Route này chỉ cần JWT hợp lệ để gọi (JwtAuthGuard), không đi qua
+    // LoginThrottlerGuard theo IP như /auth/login — nếu không tự khóa tạm ở
+    // đây thì một token bị lộ có thể dò mật khẩu cũ không giới hạn số lần.
+    this.assertNotLocked(user.lockedUntil);
+
+    if (!oldPassword?.trim())
+      throw new BadRequestException('Vui lòng nhập mật khẩu cũ');
+
     const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!isMatch) throw new UnauthorizedException('Mật khẩu cũ không đúng');
+    if (!isMatch) {
+      await this.registerFailedAttempt(userId);
+      throw new UnauthorizedException('Mật khẩu cũ không đúng');
+    }
+    await this.clearFailedAttempts(userId);
 
     if (newPassword.length < 6)
       throw new BadRequestException('Mật khẩu mới phải tối thiểu 6 ký tự');
@@ -334,7 +351,11 @@ export class AuthService {
     const newHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { passwordHash: newHash, mustChangePassword: false },
+      data: {
+        passwordHash: newHash,
+        mustChangePassword: false,
+        initialPassword: null,
+      },
     });
 
     return { message: 'Đổi mật khẩu thành công' };
@@ -465,10 +486,22 @@ export class AuthService {
   async disableTotp(userId: string, password: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { passwordHash: true },
+      select: { passwordHash: true, lockedUntil: true },
     });
+
+    // Cùng lý do với changePassword: route chỉ cần JWT hợp lệ, phải tự khóa
+    // tạm ở đây để token bị lộ không dò được mật khẩu không giới hạn số lần.
+    this.assertNotLocked(user.lockedUntil);
+
+    if (!password?.trim())
+      throw new BadRequestException('Vui lòng nhập mật khẩu');
+
     const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) throw new UnauthorizedException('Mật khẩu không đúng');
+    if (!isMatch) {
+      await this.registerFailedAttempt(userId);
+      throw new UnauthorizedException('Mật khẩu không đúng');
+    }
+    await this.clearFailedAttempts(userId);
 
     await this.prisma.user.update({
       where: { id: userId },

@@ -16,6 +16,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
+import { sinhMatKhauTam } from '../common/mat-khau-tam.util';
 
 // Xem getAtRiskStaff() (nhóm staleAttempts) — không có lần lưu nào trong ngần
 // này phút được coi là "bài đang treo" đáng ngờ.
@@ -280,12 +281,14 @@ export class AdminService {
     }
 
     if (!user) {
+      const initialPassword = sinhMatKhauTam();
       await tx.user.create({
         data: {
           username,
           fullName: canBo.fullName,
           email: canBo.email ?? undefined,
-          passwordHash: await bcrypt.hash('Abcd@1234', 10),
+          passwordHash: await bcrypt.hash(initialPassword, 10),
+          initialPassword,
           role: 'STAFF',
           isActive: canBo.isActive,
           mustChangePassword: true,
@@ -2382,7 +2385,7 @@ export class AdminService {
       deptIds = [departmentId];
     }
 
-    return this.prisma.canBo.findMany({
+    const canBoList = await this.prisma.canBo.findMany({
       where: {
         ...(deptIds ? { departmentId: { in: deptIds } } : {}),
         ...(search
@@ -2408,6 +2411,29 @@ export class AdminService {
       },
       orderBy: { cbCode: 'asc' },
     });
+
+    // Ghép mật khẩu tạm (nếu còn) từ User — CanBo và User không có quan hệ
+    // khoá ngoại, chỉ khớp qua username đăng nhập (getLoginUsername). Chỉ cán
+    // bộ CHƯA đăng nhập đổi mật khẩu lần nào mới còn initialPassword khác null
+    // (xem changePassword() tự xoá về null ngay khi đổi thành công).
+    const loginUsernames = canBoList.map((cb) =>
+      this.getLoginUsername(cb.cbCode, cb.userAD),
+    );
+    const users = await this.prisma.user.findMany({
+      where: { username: { in: loginUsernames } },
+      select: { username: true, initialPassword: true },
+    });
+    const initialPasswordByUsername = new Map(
+      users.map((u) => [u.username, u.initialPassword]),
+    );
+
+    return canBoList.map((cb) => ({
+      ...cb,
+      initialPassword:
+        initialPasswordByUsername.get(
+          this.getLoginUsername(cb.cbCode, cb.userAD),
+        ) ?? null,
+    }));
   }
 
   async createCanBo(data: {
@@ -2527,9 +2553,16 @@ export class AdminService {
 
     let reset = 0;
     const noAccount: string[] = [];
-    const details: { fullName: string; cbCode: string; ok: boolean }[] = [];
-
-    const hash = await bcrypt.hash('Abcd@1234', 10);
+    // Mỗi người 1 mật khẩu tạm RIÊNG (không còn hằng số chung) — trả kèm
+    // trong response để cán bộ IT đọc ngay cho người dùng; đồng thời lưu vào
+    // initialPassword để còn xem lại sau ở trang Quản lý cán bộ nếu lỡ đóng
+    // modal trước khi kịp đọc/copy.
+    const details: {
+      fullName: string;
+      cbCode: string;
+      ok: boolean;
+      initialPassword?: string;
+    }[] = [];
 
     for (const cb of canBoList) {
       const user = await this.prisma.user.findUnique({
@@ -2540,12 +2573,22 @@ export class AdminService {
         details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: false });
         continue;
       }
+      const initialPassword = sinhMatKhauTam();
       await this.prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash: hash, mustChangePassword: true },
+        data: {
+          passwordHash: await bcrypt.hash(initialPassword, 10),
+          initialPassword,
+          mustChangePassword: true,
+        },
       });
       reset++;
-      details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: true });
+      details.push({
+        fullName: cb.fullName,
+        cbCode: cb.cbCode,
+        ok: true,
+        initialPassword,
+      });
     }
 
     await this.prisma.auditLog.create({
@@ -2997,17 +3040,21 @@ export class AdminService {
           });
         }
 
-        // Tạo / cập nhật User tương ứng (username = EMPNO, mk mặc định Abcd@1234)
+        // Tạo / cập nhật User tương ứng (username = EMPNO, mật khẩu tạm sinh
+        // ngẫu nhiên riêng cho từng người — xem initialPassword ở trang Quản
+        // lý cán bộ, sau khi import xong)
         const existingUser = await this.prisma.user.findFirst({
           where: { username: loginUsername },
         });
         if (!existingUser) {
-          const passwordHash = await bcrypt.hash('Abcd@1234', 10);
+          const initialPassword = sinhMatKhauTam();
+          const passwordHash = await bcrypt.hash(initialPassword, 10);
           await this.prisma.user.create({
             data: {
               username: loginUsername,
               fullName: resolvedFullName,
               passwordHash,
+              initialPassword,
               role: 'STAFF',
               isActive: true,
               mustChangePassword: true,

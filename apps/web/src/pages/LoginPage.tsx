@@ -131,7 +131,7 @@ export default function LoginPage() {
             >
               <Input.Password
                 prefix={<LockOutlined />}
-                placeholder="Mật khẩu vào máy/mail Agribank"
+                placeholder="Mật khẩu này độc lập với mật khẩu vào máy"
                 autoComplete="current-password"
               />
             </Form.Item>

@@ -71,7 +71,7 @@ const CAC_MUC: MucHuongDan[] = [
           <li><b>Mã CB</b> bắt buộc và phải đúng <b>9 chữ số</b>; <b>Họ tên</b> bắt buộc.</li>
           <li><b>User AD</b> là tên đăng nhập của cán bộ. Bỏ trống thì hệ thống lấy mã CB làm tên đăng nhập.</li>
           <li>Không chọn phòng ban cụ thể thì cán bộ được gắn thẳng vào chi nhánh.</li>
-          <li>Tài khoản đăng nhập được tạo kèm với mật khẩu mặc định <b>Abcd@1234</b> và bắt buộc đổi ở lần đăng nhập đầu.</li>
+          <li>Tài khoản đăng nhập được tạo kèm một <b>mật khẩu tạm ngẫu nhiên riêng</b> cho từng người (không còn mật khẩu mặc định dùng chung), hiện ở cột <b>Mật khẩu tạm</b> trong danh sách để đọc cho cán bộ; bắt buộc đổi ở lần đăng nhập đầu, đổi xong cột này tự trống.</li>
         </ul>
 
         <Title level={5}>Import GAHR26 (nhập hàng loạt)</Title>
@@ -83,7 +83,7 @@ const CAC_MUC: MucHuongDan[] = [
 
         <Title level={5}>Reset mật khẩu và xoá cán bộ</Title>
         <ul>
-          <li><b>Reset mật khẩu</b> (từng người hoặc tích chọn nhiều người): đưa về <b>Abcd@1234</b>, cán bộ bắt buộc đổi ở lần đăng nhập kế tiếp. Bảng kết quả phân biệt <i>Đã reset</i> và <i>Chưa có TK</i>.</li>
+          <li><b>Reset mật khẩu</b> (từng người hoặc tích chọn nhiều người): sinh <b>mật khẩu tạm ngẫu nhiên mới</b> cho từng người, hiện ngay trong bảng kết quả (có nút copy) và vẫn xem lại được ở cột <b>Mật khẩu tạm</b>; cán bộ bắt buộc đổi ở lần đăng nhập kế tiếp. Bảng kết quả phân biệt <i>Đã reset</i> và <i>Chưa có TK</i>.</li>
           <li><b>Reset cứng huy hiệu/cấp độ</b> (trong nút <b>…</b>): đưa XP, cấp độ, huy hiệu về mốc ban đầu nhưng <b>giữ nguyên</b> bài nộp và lượt thi.</li>
           <li><b>Xoá thường</b> sẽ thất bại nếu cán bộ đã có lịch sử làm bài — đây là chốt chặn cố ý.</li>
         </ul>
@@ -359,7 +359,7 @@ const CAC_MUC: MucHuongDan[] = [
         <BangNho
           cot={[{ title: 'Nội dung', dataIndex: 'nd' }, { title: 'Giá trị', dataIndex: 'gt' }]}
           dong={[
-            { nd: 'Mật khẩu mặc định khi tạo/reset', gt: 'Abcd@1234, bắt buộc đổi ở lần đăng nhập kế tiếp' },
+            { nd: 'Mật khẩu tạm khi tạo/reset', gt: 'Sinh ngẫu nhiên riêng từng người (10 ký tự), xem ở cột "Mật khẩu tạm"; bắt buộc đổi ở lần đăng nhập kế tiếp' },
             { nd: 'Độ dài mật khẩu tối thiểu', gt: '6 ký tự (không bắt buộc chữ hoa/số/ký tự đặc biệt)' },
             { nd: 'Khoá tạm tài khoản', gt: 'Sai 5 lần liên tiếp → khoá 15 phút, tự mở' },
             { nd: 'Chặn dò mật khẩu theo IP', gt: 'Tối đa 5 lần đăng nhập/60 giây' },
