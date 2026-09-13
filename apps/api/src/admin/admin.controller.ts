@@ -19,6 +19,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { AttemptViolationType, UserRole } from '@prisma/client';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { VaiTroHoacCanBoIt } from '../auth/can-bo-it.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdminService } from './admin.service';
@@ -569,8 +570,10 @@ export class AdminController {
   }
 
   // ── Departments ───────────────────────────────────────────────────────
+  // Cán bộ IT xem được để lọc danh sách cán bộ theo chi nhánh/phòng ban khi đi
+  // reset mật khẩu — chỉ đọc, không kèm quyền sửa/xoá đơn vị bên dưới.
   @Get('departments')
-  @Roles(...TRAINING_ROLES)
+  @VaiTroHoacCanBoIt(UserRole.ADMIN, UserRole.TRAINER)
   getDepartments() {
     return this.adminService.getDepartments();
   }
@@ -597,7 +600,7 @@ export class AdminController {
 
   // ── Cán bộ ────────────────────────────────────────────────────────────
   @Get('can-bo')
-  @Roles(...TRAINING_ROLES)
+  @VaiTroHoacCanBoIt(UserRole.ADMIN, UserRole.TRAINER)
   getCanBo(
     @Query('search') search?: string,
     @Query('departmentId') departmentId?: string,
@@ -606,7 +609,11 @@ export class AdminController {
     return this.adminService.getCanBo(search, departmentId, unitId);
   }
 
+  // Quyền DUY NHẤT được uỷ cho Cán bộ IT trong khối Quản lý cán bộ. Mọi thao
+  // tác còn lại (tạo/sửa/xoá/import/hard-reset/super-delete) vẫn chỉ ADMIN,
+  // theo @Roles(ADMIN) ở cấp lớp.
   @Post('can-bo/reset-passwords')
+  @VaiTroHoacCanBoIt(UserRole.ADMIN)
   resetCanBoPasswords(
     @Body() body: { ids: string[] },
     @Request() req: { user: { id: string } },

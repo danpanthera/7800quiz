@@ -10,6 +10,7 @@ import dayjs from 'dayjs'
 import ManageTable from '../components/ManageTable'
 import api, { getErrorMessage } from '../lib/api'
 import { positionRank } from '../lib/position'
+import { useAuth } from '../lib/useAuth'
 
 interface Department { id: string; name: string; code: string; parentId?: string | null; parent?: { id: string; name: string; code: string } | null; _count?: { children: number; canBo: number } }
 
@@ -56,6 +57,10 @@ interface SuperDeleteResult {
 export default function CanBoPage() {
   const qc = useQueryClient()
   const { message } = App.useApp()
+  const { user } = useAuth()
+  // Cán bộ IT vào được trang này nhưng CHỈ để reset mật khẩu — mọi thao tác còn
+  // lại ẩn đi ở đây và chặn luôn ở API (can-bo-it.guard.ts), không chỉ ẩn nút.
+  const laAdmin = user?.role === 'ADMIN'
   const [form] = Form.useForm()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<CanBoItem | null>(null)
@@ -248,7 +253,7 @@ export default function CanBoPage() {
 
   const renderCanBoActions = (record: CanBoItem) => (
     <Space>
-      <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+      {laAdmin && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />}
       <Popconfirm
         title={`Reset MK về "Abcd@1234"?`}
         description="Mật khẩu mới = Abcd@1234 (mặc định)"
@@ -257,6 +262,8 @@ export default function CanBoPage() {
       >
         <Button size="small" icon={<LockOutlined />} title="Reset mật khẩu" />
       </Popconfirm>
+      {!laAdmin ? null : (
+        <>
       <Popconfirm title="Xác nhận xóa cán bộ này?" onConfirm={() => deleteMut.mutate(record.id)} okText="Xóa" cancelText="Hủy">
         <Button size="small" danger icon={<DeleteOutlined />} />
       </Popconfirm>
@@ -290,6 +297,8 @@ export default function CanBoPage() {
       >
         <Button size="small" icon={<MoreOutlined />} title="Thao tác khác" />
       </Dropdown>
+        </>
+      )}
     </Space>
   )
 
@@ -324,13 +333,23 @@ export default function CanBoPage() {
       render: (v: boolean) => <Tag color={v ? 'green' : 'red'}>{v ? 'Hoạt động' : 'Nghỉ'}</Tag>,
     },
     {
-      title: 'Thao tác', width: 190, fixed: 'right' as const,
+      // Cán bộ IT chỉ còn đúng 1 nút reset nên không cần chừa chỗ cho 4 nút
+      title: 'Thao tác', width: laAdmin ? 190 : 90, fixed: 'right' as const,
       render: (_: unknown, record: CanBoItem) => renderCanBoActions(record),
     },
   ]
 
   return (
     <div>
+      {!laAdmin && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Quyền của Cán bộ IT trong trang này"
+          description="Chỉ được reset mật khẩu cán bộ về mặc định Abcd@1234 (từng người hoặc tích chọn nhiều người rồi bấm Reset MK). Việc thêm, sửa, xoá, import và các thao tác khác thuộc quyền Quản trị viên."
+        />
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <Typography.Title level={4} style={{ margin: 0 }}><IdcardOutlined /> Quản lý cán bộ</Typography.Title>
         <Space wrap>
@@ -365,8 +384,12 @@ export default function CanBoPage() {
             onChange={e => !e.target.value && setSearch('')}
             style={{ width: 240 }}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>Thêm cán bộ</Button>
-          <Button icon={<UploadOutlined />} onClick={() => { setImportResult(null); setImportOpen(true) }}>Import GAHR26</Button>
+          {laAdmin && (
+            <>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>Thêm cán bộ</Button>
+              <Button icon={<UploadOutlined />} onClick={() => { setImportResult(null); setImportOpen(true) }}>Import GAHR26</Button>
+            </>
+          )}
           {selectedRowKeys.length > 0 && (
             <>
               <Popconfirm
@@ -379,23 +402,25 @@ export default function CanBoPage() {
                   Reset MK ({selectedRowKeys.length})
                 </Button>
               </Popconfirm>
-              <Popconfirm
-                title={`Xóa ${selectedRowKeys.length} cán bộ đã chọn?`}
-                description="Hành động này không thể hoàn tác. Tài khoản đăng nhập liên kết cũng sẽ bị xóa."
-                onConfirm={() => bulkDeleteMut.mutate(selectedRowKeys as string[])}
-                okText="Xóa" okButtonProps={{ danger: true }}
-                cancelText="Hủy"
-                icon={<DeleteOutlined style={{ color: '#E53935' }} />}
-              >
-                <Button
-                  icon={<DeleteOutlined />}
-                  loading={bulkDeleteMut.isPending}
-                  danger
-                  type="primary"
+              {laAdmin && (
+                <Popconfirm
+                  title={`Xóa ${selectedRowKeys.length} cán bộ đã chọn?`}
+                  description="Hành động này không thể hoàn tác. Tài khoản đăng nhập liên kết cũng sẽ bị xóa."
+                  onConfirm={() => bulkDeleteMut.mutate(selectedRowKeys as string[])}
+                  okText="Xóa" okButtonProps={{ danger: true }}
+                  cancelText="Hủy"
+                  icon={<DeleteOutlined style={{ color: '#E53935' }} />}
                 >
-                  Xóa đã chọn ({selectedRowKeys.length})
-                </Button>
-              </Popconfirm>
+                  <Button
+                    icon={<DeleteOutlined />}
+                    loading={bulkDeleteMut.isPending}
+                    danger
+                    type="primary"
+                  >
+                    Xóa đã chọn ({selectedRowKeys.length})
+                  </Button>
+                </Popconfirm>
+              )}
             </>
           )}
         </Space>

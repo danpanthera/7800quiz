@@ -632,7 +632,18 @@ describe('AttemptsService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(0),
       },
-      attemptViolation: { create: jest.fn().mockResolvedValue({}) },
+      attemptViolation: {
+        create: jest.fn().mockResolvedValue({}),
+        // Dùng để dựng danh sách lý do hiện trong popup "Bạn đã vi phạm quá số
+        // lần được phép" ở màn làm bài
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { type: 'TAB_HIDDEN' },
+            { type: 'WINDOW_BLUR' },
+            { type: 'TAB_HIDDEN' },
+          ]),
+      },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
       submission: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -672,6 +683,10 @@ describe('AttemptsService', () => {
       violationLimit: 3,
       autoSubmitted: true,
       submissionId: attemptId,
+      violationBreakdown: [
+        { type: 'TAB_HIDDEN', count: 2 },
+        { type: 'WINDOW_BLUR', count: 1 },
+      ],
     });
     expect(gamification.awardXp).not.toHaveBeenCalled();
     expect(gamification.incrementSubmissionStats).not.toHaveBeenCalled();

@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { AdminController } from '../admin/admin.controller';
 import { ArenaController } from '../arena/arena.controller';
 import { GamificationController } from '../gamification/gamification.controller';
+import { CanBoItGuard, VAI_TRO_CHO_PHEP_KEY } from './can-bo-it.guard';
 import { ROLES_KEY } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
 
@@ -31,8 +32,6 @@ describe('Ma trận phân quyền API', () => {
     'getReports',
     'getExamSessions',
     'createExamSession',
-    'getDepartments',
-    'getCanBo',
   ])('cho TRAINER dùng nghiệp vụ %s', (methodName) => {
     expect(getRoles(AdminController.prototype, methodName)).toEqual([
       UserRole.ADMIN,
@@ -44,10 +43,54 @@ describe('Ma trận phân quyền API', () => {
     'createAcademicYear',
     'createClass',
     'addClassMember',
-    'resetCanBoPasswords',
     'importCanBo',
+    'createCanBo',
+    'updateCanBo',
+    'deleteCanBo',
+    'bulkDeleteCanBo',
+    'superDeleteCanBo',
+    'hardResetCanBo',
   ])('giữ nghiệp vụ %s ở quyền ADMIN', (methodName) => {
     expect(getRoles(AdminController.prototype, methodName)).toBeUndefined();
+  });
+
+  // 3 nghiệp vụ dưới đây cố tình nới @Roles cho mọi vai trò đi qua RolesGuard;
+  // quyết định thật sự nằm ở CanBoItGuard (vai trò chỉ định HOẶC cán bộ có cờ
+  // isItStaff). Khoá lại đúng cặp "vai trò được phép + có gắn CanBoItGuard".
+  it.each([
+    ['getDepartments', [UserRole.ADMIN, UserRole.TRAINER]],
+    ['getCanBo', [UserRole.ADMIN, UserRole.TRAINER]],
+    ['resetCanBoPasswords', [UserRole.ADMIN]],
+  ] as [string, UserRole[]][])(
+    'uỷ quyền %s cho Cán bộ IT, ngoài ra chỉ %s',
+    (methodName, vaiTroChoPhep) => {
+      const method = (
+        AdminController.prototype as unknown as Record<string, unknown>
+      )[methodName] as object;
+      expect(Reflect.getMetadata(VAI_TRO_CHO_PHEP_KEY, method)).toEqual(
+        vaiTroChoPhep,
+      );
+      expect(Reflect.getMetadata(GUARDS_METADATA, method)).toContain(
+        CanBoItGuard,
+      );
+    },
+  );
+
+  it('không mở endpoint quản trị nào cho STAFF mà quên gắn CanBoItGuard', () => {
+    const proto = AdminController.prototype as unknown as Record<
+      string,
+      unknown
+    >;
+    const moChoStaff = Object.getOwnPropertyNames(proto)
+      .filter((ten) => ten !== 'constructor')
+      .filter((ten) => getRoles(proto, ten)?.includes(UserRole.STAFF));
+
+    expect(moChoStaff.length).toBeGreaterThan(0);
+    for (const ten of moChoStaff) {
+      expect(
+        Reflect.getMetadata(GUARDS_METADATA, proto[ten] as object),
+      ).toContain(CanBoItGuard);
+    }
   });
 
   it('cho TRAINER điều hành Arena nhưng không gắn quyền vào route join công khai', () => {
