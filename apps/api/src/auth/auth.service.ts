@@ -40,6 +40,7 @@ interface UserForSession {
   mustChangePassword: boolean;
   avatarEmoji: string | null;
   avatarUrl: string | null;
+  nickname: string | null;
   department: {
     id: string;
     name: string;
@@ -190,7 +191,10 @@ export class AuthService {
     await this.prisma.$transaction(
       activeAttempts.flatMap((a) => [
         this.prisma.attemptViolation.create({
-          data: { attemptId: a.id, type: AttemptViolationType.MULTI_SESSION_LOGIN },
+          data: {
+            attemptId: a.id,
+            type: AttemptViolationType.MULTI_SESSION_LOGIN,
+          },
         }),
         this.prisma.quizAttempt.update({
           where: { id: a.id },
@@ -306,6 +310,7 @@ export class AuthService {
         mustChangePassword: user.mustChangePassword,
         avatarEmoji: user.avatarEmoji,
         avatarUrl: user.avatarUrl,
+        nickname: user.nickname,
         position: canBo?.position ?? null,
         // Cán bộ IT: được xem thêm hướng dẫn quản trị và vài chức năng kỹ thuật,
         // nhưng KHÔNG phải quyền quản trị — mọi trang /manage vẫn chặn theo role.
@@ -402,6 +407,18 @@ export class AuthService {
       where: { id: userId },
       data: { avatarEmoji: null, avatarUrl: null },
       select: { avatarEmoji: true, avatarUrl: true },
+    });
+  }
+
+  // ─── Biệt danh ────────────────────────────────────────────────────────
+  // Chỉ đổi cách hiển thị ở Bảng xếp hạng/Đấu trường (xem ten-hien-thi.util.ts)
+  // — không đụng tới fullName thật, mọi nơi khác không bị ảnh hưởng.
+  async setNickname(userId: string, nickname: string) {
+    const trimmed = nickname.trim();
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { nickname: trimmed || null },
+      select: { nickname: true },
     });
   }
 

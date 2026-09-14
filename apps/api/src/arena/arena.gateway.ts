@@ -17,9 +17,24 @@ import { ArenaLatencyService } from './arena-latency.service';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
 import { getCorsOrigin } from '../cors-origin';
+import { tenHienThi } from '../common/ten-hien-thi.util';
 import type { ArenaOutgoing } from './arena.types';
 
 const ARENA_HOST_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.TRAINER];
+
+// Danh sách thành viên đội phát ra cho CẢ PHÒNG (người chơi + host cùng nhận
+// chung 1 sự kiện — kiến trúc chỉ có 1 điểm phát socket, xem Tài liệu kỹ
+// thuật) trong lúc đang tổ chức trận — hiện biệt danh nếu có thay tên thật.
+// KHÔNG áp dụng cho listSessions/getSessionDetail (trang quản lý Đấu trường
+// xem lại sau khi kết thúc) — 2 chỗ đó vẫn dùng thẳng fullName thật.
+function anDanhThanhVien<
+  T extends { userId: string; fullName: string; nickname?: string | null },
+>(members: T[]): { userId: string; fullName: string }[] {
+  return members.map((m) => ({
+    userId: m.userId,
+    fullName: tenHienThi(m.nickname, m.fullName),
+  }));
+}
 // Chu kỳ đo RTT nền cho mọi socket đang trong phòng Đấu trường — bổ sung cho
 // mẫu đo lúc connect/host/join/ngay-sau-khi-phát-câu-hỏi, giữ ước lượng luôn
 // tươi kể cả khi người chơi ngồi im không thao tác gì lâu.
@@ -286,10 +301,13 @@ export class ArenaGateway
           id: team.id,
           name: team.name,
           color: team.color,
-          members: team.members.map((m) => ({
-            userId: m.userId,
-            fullName: m.user.fullName,
-          })),
+          members: anDanhThanhVien(
+            team.members.map((m) => ({
+              userId: m.userId,
+              fullName: m.user.fullName,
+              nickname: m.user.nickname,
+            })),
+          ),
         },
       });
 
@@ -363,7 +381,12 @@ export class ArenaGateway
       // Báo cho cả phòng (host + các đội khác) để cập nhật danh sách
       this.server
         .to(this.getRoomName(data.sessionId))
-        .emit('arena.teams_updated', { teams: result.allTeams });
+        .emit('arena.teams_updated', {
+          teams: result.allTeams.map((t) => ({
+            ...t,
+            members: anDanhThanhVien(t.members),
+          })),
+        });
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -392,7 +415,12 @@ export class ArenaGateway
         .emit('arena.you_were_kicked', { teamName: undefined });
       this.server
         .to(this.getRoomName(data.sessionId))
-        .emit('arena.teams_updated', { teams: result.allTeams });
+        .emit('arena.teams_updated', {
+          teams: result.allTeams.map((t) => ({
+            ...t,
+            members: anDanhThanhVien(t.members),
+          })),
+        });
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -433,7 +461,12 @@ export class ArenaGateway
       });
       this.server
         .to(this.getRoomName(data.sessionId))
-        .emit('arena.teams_updated', { teams: result.allTeams });
+        .emit('arena.teams_updated', {
+          teams: result.allTeams.map((t) => ({
+            ...t,
+            members: anDanhThanhVien(t.members),
+          })),
+        });
       return { ok: true };
     } catch (err) {
       return { error: err.message };
@@ -472,7 +505,12 @@ export class ArenaGateway
       });
       this.server
         .to(this.getRoomName(data.sessionId))
-        .emit('arena.teams_updated', { teams: result.allTeams });
+        .emit('arena.teams_updated', {
+          teams: result.allTeams.map((t) => ({
+            ...t,
+            members: anDanhThanhVien(t.members),
+          })),
+        });
       return { ok: true };
     } catch (err) {
       return { error: err.message };

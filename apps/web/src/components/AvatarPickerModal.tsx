@@ -1,9 +1,12 @@
 import { useState } from 'react'
-import { Modal, Upload, Button, message } from 'antd'
-import { UploadOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Modal, Upload, Button, Input, Typography, message } from 'antd'
+import { UploadOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons'
 import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
 import UserAvatar from './UserAvatar'
+
+const { Text } = Typography
+const NICKNAME_MAX = 30
 
 // Bộ biểu tượng ngộ nghĩnh cho người dùng chọn nhanh, chia theo nhóm chủ đề —
 // không cần backend biết trước danh sách này (chỉ giới hạn độ dài chuỗi), nên
@@ -45,11 +48,27 @@ const MAX_AVATAR_BYTES = 5 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png']
 
 export default function AvatarPickerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user, updateAvatar } = useAuth()
+  const { user, updateAvatar, updateNickname } = useAuth()
   const [savingEmoji, setSavingEmoji] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [nicknameDraft, setNicknameDraft] = useState(user?.nickname ?? '')
+  const [savingNickname, setSavingNickname] = useState(false)
 
   if (!user) return null
+
+  async function saveNickname() {
+    setSavingNickname(true)
+    try {
+      const { data } = await api.patch('/auth/me/nickname', { nickname: nicknameDraft.trim() })
+      updateNickname(data.nickname)
+      setNicknameDraft(data.nickname ?? '')
+      message.success(data.nickname ? 'Đã lưu biệt danh' : 'Đã bỏ biệt danh, hiện lại tên thật')
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Không lưu được biệt danh'))
+    } finally {
+      setSavingNickname(false)
+    }
+  }
 
   async function pickEmoji(emoji: string) {
     setSavingEmoji(emoji)
@@ -99,9 +118,24 @@ export default function AvatarPickerModal({ open, onClose }: { open: boolean; on
   }
 
   return (
-    <Modal title="Đổi ảnh đại diện" open={open} onCancel={onClose} footer={null} width={480} destroyOnHidden>
+    <Modal title="Hồ sơ cá nhân" open={open} onCancel={onClose} footer={null} width={480} destroyOnHidden>
       <div className="avatar-picker-preview">
         <UserAvatar avatarEmoji={user.avatarEmoji} avatarUrl={user.avatarUrl} size={72} />
+      </div>
+
+      <div className="profile-nickname-section">
+        <Text strong>Biệt danh</Text>
+        <Text type="secondary" className="profile-nickname-hint">
+          Hiện thay tên thật ở Bảng xếp hạng và sảnh chờ Đấu trường — để trống thì hiện tên thật như cũ.
+        </Text>
+        <Input.Search
+          value={nicknameDraft}
+          onChange={(e) => setNicknameDraft(e.target.value)}
+          onSearch={saveNickname}
+          placeholder={user.fullName}
+          maxLength={NICKNAME_MAX}
+          enterButton={<Button icon={<SaveOutlined />} loading={savingNickname}>Lưu</Button>}
+        />
       </div>
 
       <div className="avatar-picker-groups">

@@ -390,10 +390,7 @@ describe('AuthService — bảo mật đăng nhập (việc 15/16/17)', () => {
     prisma.quizAttempt.findMany.mockResolvedValue([{ id: 'attempt-1' }]);
     const service = new AuthService(prisma as never, jwtMock as never);
 
-    await service.login(
-      { username: 'nhanvien01', password: PASSWORD },
-      {},
-    );
+    await service.login({ username: 'nhanvien01', password: PASSWORD }, {});
 
     expect(prisma.quizAttempt.findMany).toHaveBeenCalledWith({
       where: { userId: 'user-1', status: 'IN_PROGRESS' },
@@ -412,10 +409,7 @@ describe('AuthService — bảo mật đăng nhập (việc 15/16/17)', () => {
     const prisma = buildPrismaMock(await buildUser());
     const service = new AuthService(prisma as never, jwtMock as never);
 
-    await service.login(
-      { username: 'nhanvien01', password: PASSWORD },
-      {},
-    );
+    await service.login({ username: 'nhanvien01', password: PASSWORD }, {});
 
     expect(prisma.attemptViolation.create).not.toHaveBeenCalled();
   });
@@ -431,5 +425,33 @@ describe('AuthService — bảo mật đăng nhập (việc 15/16/17)', () => {
     );
 
     expect(result).toHaveProperty('accessToken');
+  });
+});
+
+describe('AuthService — biệt danh', () => {
+  it('đặt biệt danh mới → lưu chuỗi đã trim', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await service.setNickname('user-1', '  Cú Đêm Bí Ẩn  ');
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { nickname: 'Cú Đêm Bí Ẩn' },
+      select: { nickname: true },
+    });
+  });
+
+  it('gửi chuỗi rỗng/chỉ khoảng trắng → xoá biệt danh (về null, hiện lại tên thật)', async () => {
+    const prisma = buildPrismaMock(await buildUser());
+    const service = new AuthService(prisma as never, jwtMock as never);
+
+    await service.setNickname('user-1', '   ');
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { nickname: null },
+      select: { nickname: true },
+    });
   });
 });

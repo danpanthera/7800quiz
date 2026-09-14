@@ -39,6 +39,7 @@ function getStoredUser(): AuthUser | null {
       department,
       avatarEmoji: typeof value.avatarEmoji === 'string' ? value.avatarEmoji : null,
       avatarUrl: typeof value.avatarUrl === 'string' ? value.avatarUrl : null,
+      nickname: typeof value.nickname === 'string' ? value.nickname : null,
     }
   } catch {
     localStorage.removeItem('user')
@@ -74,6 +75,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updatedUser)
   }
 
+  // Gọi sau khi lưu biệt danh thành công — cập nhật ngay state + localStorage,
+  // không cần đăng nhập lại. nickname = null nghĩa là đã bỏ biệt danh.
+  function updateNickname(nickname: string | null) {
+    if (!user) return
+    const updatedUser = { ...user, nickname }
+    localStorage.setItem('user', JSON.stringify(updatedUser))
+    setUser(updatedUser)
+  }
+
   function logout() {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -82,7 +92,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, markPasswordChanged, updateAvatar, logout }}>
+    <AuthContext.Provider
+      value={{ user, token, login, markPasswordChanged, updateAvatar, updateNickname, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

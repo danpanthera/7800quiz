@@ -15,6 +15,13 @@ model User {
   passwordHash       String    @map("password_hash")
   fullName           String    @map("full_name")
   email              String?
+  // Biệt danh tự đặt — CHỈ thay tên thật ở 2 nơi hiển thị công khai cho người
+  // khác xem (Bảng xếp hạng, danh sách thành viên đội trong sảnh chờ Đấu
+  // trường). Không ảnh hưởng tới bất kỳ đâu khác: bài nộp, báo cáo, nhật ký
+  // quản trị, trang quản lý Đấu trường (TRAINER/ADMIN) luôn hiện tên thật — vì
+  // đây là hệ thống thi cử cần truy vết đúng người. Null/rỗng thì hiện fullName
+  // như cũ. Xem ten-hien-thi.util.ts.
+  nickname           String?   @map("nickname")
   // Ảnh đại diện — 2 kiểu loại trừ nhau (chọn kiểu này thì service tự xoá kiểu
   // kia): avatarEmoji là emoji người dùng chọn từ bảng biểu tượng có sẵn, còn
   // avatarUrl là đường dẫn ảnh tự tải lên (/api/uploads/avatars/...). Cả 2 đều

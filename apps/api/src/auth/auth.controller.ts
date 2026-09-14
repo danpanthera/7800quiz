@@ -17,6 +17,7 @@ import type { Request as ExpressRequest } from 'express';
 import { AuthService, type LoginMeta } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SetAvatarEmojiDto } from './dto/set-avatar-emoji.dto';
+import { SetNicknameDto } from './dto/set-nickname.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { LoginThrottlerGuard } from './login-throttler.guard';
 
@@ -117,5 +118,15 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   clearAvatar(@Request() req: { user: { id: string } }) {
     return this.authService.clearAvatar(req.user.id);
+  }
+
+  // ─── Biệt danh ───────────────────────────────────────────────────────────
+  @Patch('me/nickname')
+  @UseGuards(JwtAuthGuard)
+  setNickname(
+    @Request() req: { user: { id: string } },
+    @Body() dto: SetNicknameDto,
+  ) {
+    return this.authService.setNickname(req.user.id, dto.nickname);
   }
 }

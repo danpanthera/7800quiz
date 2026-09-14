@@ -25,6 +25,9 @@ export interface AuthUser {
   // Cả 2 null/undefined thì hiện icon người dùng mặc định.
   avatarEmoji?: string | null
   avatarUrl?: string | null
+  // Biệt danh tự đặt — CHỈ thay tên thật ở Bảng xếp hạng và Đấu trường (xem
+  // ten-hien-thi.util.ts phía API). Null/rỗng = chưa đặt, hiện fullName như cũ.
+  nickname?: string | null
 }
 
 export interface AvatarUpdate {
@@ -38,6 +41,7 @@ export interface AuthContextType {
   login: (token: string, user: AuthUser) => void
   markPasswordChanged: () => void
   updateAvatar: (avatar: AvatarUpdate) => void
+  updateNickname: (nickname: string | null) => void
   logout: () => void
 }
 

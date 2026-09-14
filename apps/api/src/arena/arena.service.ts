@@ -315,15 +315,20 @@ export class ArenaService {
     return quiz.id;
   }
 
-  // Danh sách đội đã làm phẳng members về {userId, fullName} — dùng lại cho
-  // các thao tác thay đổi roster (kick/merge/move) để trả cùng 1 shape
+  // Danh sách đội đã làm phẳng members về {userId, fullName, nickname} — dùng
+  // lại cho các thao tác thay đổi roster (kick/merge/move) để trả cùng 1 shape.
+  // Giữ NGUYÊN fullName thật ở đây (dùng cho listSessions/getSessionDetail —
+  // màn quản trị) — việc đổi sang biệt danh cho người chơi trong phòng làm ở
+  // arena.gateway.ts ngay trước lúc phát socket, xem tenHienThi().
   private async getTeamsFlat(sessionId: string) {
     const teams = await this.prisma.arenaTeam.findMany({
       where: { arenaSessionId: sessionId },
       orderBy: { joinedAt: 'asc' },
       include: {
         members: {
-          include: { user: { select: { id: true, fullName: true } } },
+          include: {
+            user: { select: { id: true, fullName: true, nickname: true } },
+          },
         },
       },
     });
@@ -332,6 +337,7 @@ export class ArenaService {
       members: t.members.map((m) => ({
         userId: m.userId,
         fullName: m.user.fullName,
+        nickname: m.user.nickname,
       })),
     }));
   }
@@ -508,7 +514,9 @@ export class ArenaService {
         arenaTeam: {
           include: {
             members: {
-              include: { user: { select: { id: true, fullName: true } } },
+              include: {
+                user: { select: { id: true, fullName: true, nickname: true } },
+              },
             },
           },
         },
@@ -558,7 +566,9 @@ export class ArenaService {
         where: { id: target.id },
         include: {
           members: {
-            include: { user: { select: { id: true, fullName: true } } },
+            include: {
+              user: { select: { id: true, fullName: true, nickname: true } },
+            },
           },
         },
       });
@@ -588,7 +598,9 @@ export class ArenaService {
       },
       include: {
         members: {
-          include: { user: { select: { id: true, fullName: true } } },
+          include: {
+            user: { select: { id: true, fullName: true, nickname: true } },
+          },
         },
       },
     });

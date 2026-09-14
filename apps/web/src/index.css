@@ -547,6 +547,18 @@ select {
   justify-content: center;
 }
 
+.profile-nickname-section {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-nickname-hint {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 /* Cuộn riêng vùng biểu tượng — bộ icon ngày càng nhiều nhóm/nhiều icon, không để
    cả Modal cao vọt quá màn hình (đặc biệt trên phone) mà cuộn mất tiêu đề. */
 .avatar-picker-groups {
