@@ -8,21 +8,26 @@ import UserAvatar from './UserAvatar'
 // Bộ biểu tượng ngộ nghĩnh cho người dùng chọn nhanh, chia theo nhóm chủ đề —
 // không cần backend biết trước danh sách này (chỉ giới hạn độ dài chuỗi), nên
 // thêm/bớt icon hoặc cả nhóm mới ở đây là đủ.
+//
+// Cố tình CHỈ dùng con vật/nhân vật (không dùng icon đồ vật) — nhóm "Võ lâm &
+// giang hồ" lấy cảm hứng từ Kung Fu Panda (Ngũ Đại Cao Thủ: hổ/khỉ/rắn/báo,
+// Sư phụ rùa) và Dragon Ball (rồng thần, khỉ/Đại Náo Thiên Cung của Tôn Ngộ
+// Không), cộng Ngũ hình quyền (hổ/báo/rắn/rồng) và vài nhân vật mặt nạ giang hồ.
 const EMOJI_GROUPS: { title: string; emojis: string[] }[] = [
   {
-    title: 'Thú vui & may mắn',
+    title: 'Muông thú đáng yêu',
     emojis: [
       '🦊', '🐼', '🐨', '🦁', '🐯', '🐸', '🐵', '🐧',
       '🦉', '🦄', '🐝', '🐢', '🦋', '🐳', '🐙', '🦖',
-      '🚀', '⭐', '🎯', '🏆', '💡', '🎨', '🎮', '🍀',
-      '⚡', '🌈', '🎉', '🧠', '🔥', '🌙', '☀️',
+      '🐰', '🐱', '🐶', '🦝', '🦥', '🦦', '🐹', '🦒',
+      '🐘', '🦓',
     ],
   },
   {
     title: 'Võ lâm & giang hồ',
     emojis: [
-      '⚔️', '🗡️', '🥋', '🐉', '🏹', '🛡️', '👊', '🤺',
-      '🏮', '📜', '⛩️', '🍶', '🎭', '🪶', '🐺', '🦅', '🥷',
+      '🐉', '🐍', '🦂', '🕷️', '🐆', '🦇', '🐺', '🦅',
+      '🦍', '🐒', '🤺', '🥷', '👹', '👺',
     ],
   },
 ]
