@@ -102,6 +102,11 @@ services:
       MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-587}
       MAIL_SMTP_SECURE: ${MAIL_SMTP_SECURE:-false}
       MAIL_DOMAIN: ${MAIL_DOMAIN:-agribank.com.vn}
+      # smtp.agribank.com.vn dùng chứng chỉ do CA nội bộ ngân hàng cấp (CA-AD,
+      # domain corp.agribank.com.vn) — Node mặc định không biết CA này (khác máy
+      # Windows join domain, tự nhận qua GPO). Rỗng thì Node bỏ qua, không lỗi.
+      # Xem DEPLOYMENT.md Phụ lục G để lấy & đặt file chứng chỉ vào ./certs.
+      NODE_EXTRA_CA_CERTS: ${MAIL_CA_CERT_PATH:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,6 +114,10 @@ services:
       # Ảnh đại diện người dùng tự tải lên (uploads-dir.ts) — named volume để
       # sống sót qua rebuild/redeploy image, không mất khi `docker compose up -d --build`.
       - api_uploads:/app/uploads
+      # Chứng chỉ CA gốc nội bộ ngân hàng (vd CA-AD) để container tin cậy khi
+      # gửi mail qua smtp.agribank.com.vn — thư mục rỗng vẫn mount được, không
+      # bắt buộc phải có file nếu chưa dùng tính năng gửi mail.
+      - ./certs:/app/certs:ro
     healthcheck:
       # node:22-alpine không có curl; Node 22 đã có sẵn fetch() toàn cục.
       test:

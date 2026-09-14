@@ -929,6 +929,35 @@ bash scripts/kiem-tra-mail-agribank.sh <username-cua-ban> <email-nhan-thu-nghiem
 
 Script tự dò DNS → cổng TCP 587 → hỏi mật khẩu tại chỗ (ẩn, không lưu) → thử đăng nhập + gửi 1 email thử. Mỗi admin/cán bộ IT nên tự chạy thử bằng đúng tài khoản của mình trước khi dựa vào tính năng này.
 
+### G.2b. Lỗi chứng chỉ TLS (`certificate verify failed: unable to get local issuer certificate`)
+
+Nếu bước 3 của script báo lỗi này — DNS và cổng 587 đã qua, KHÔNG phải sai mật khẩu — nguyên nhân là `smtp.agribank.com.vn` dùng chứng chỉ do CA nội bộ ngân hàng cấp. Đã xác nhận thật trên PROD:
+
+```bash
+echo | openssl s_client -connect smtp.agribank.com.vn:587 -starttls smtp 2>/dev/null | openssl x509 -noout -issuer -subject
+# issuer=DC=vn, DC=com, DC=agribank, DC=corp, CN=CA-AD
+# subject=CN=HANHQ-MBX02.corp.agribank.com.vn
+```
+
+`CA-AD` là CA nội bộ tích hợp AD của domain `corp.agribank.com.vn` (cùng domain với RODC — xem Phụ lục F). Máy Windows đã join domain tự tin cậy CA này qua GPO; máy ảo Ubuntu và container `api` thì không, nên phải nạp thủ công:
+
+1. **Xuất chứng chỉ gốc từ 1 máy Windows đã join domain** (máy nào cũng được, không cần đúng máy chủ mail): `mmc.exe` → *Add snap-in* → **Certificates (Computer account)** → *Trusted Root Certification Authorities* → *Certificates* → tìm `CA-AD` → chuột phải → *All Tasks* → *Export* → chọn **Base-64 encoded X.509 (.CER)** → lưu file, VD `ca-ad.cer`.
+2. **Chép sang máy ảo PROD**, đặt đúng thư mục `certs/` ở gốc dự án (thư mục này đã bị `.gitignore` chặn, không lên git):
+   ```bash
+   scp ca-ad.cer admindt@10.58.0.20:/opt/7800quiz/certs/agribank-ca-ad.crt
+   ```
+3. **Tin cậy cho chính máy ảo** (để script `kiem-tra-mail-agribank.sh` chạy qua được bước 3):
+   ```bash
+   sudo cp /opt/7800quiz/certs/agribank-ca-ad.crt /usr/local/share/ca-certificates/agribank-ca-ad.crt
+   sudo update-ca-certificates
+   ```
+4. **Tin cậy cho container `api`** (để tính năng gửi mail thật hoạt động) — thêm vào `.env.prod`:
+   ```bash
+   grep -q '^MAIL_CA_CERT_PATH=' .env.prod || echo 'MAIL_CA_CERT_PATH=/app/certs/agribank-ca-ad.crt' >> .env.prod
+   ```
+   rồi `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api` (container tự đọc file qua volume `./certs:/app/certs:ro` đã khai báo sẵn trong `docker-compose.prod.yml`, không cần build lại).
+5. Chạy lại `scripts/kiem-tra-mail-agribank.sh` để xác nhận qua hết bước 3.
+
 ### G.3. Triển khai lên PROD
 
 `nodemailer` là dependency MỚI → bắt buộc build lại image `api` (giống mọi lần thêm thư viện mới, xem Phụ lục A/D — cần Internet tạm hoặc chuyển ảnh qua USB):
@@ -948,6 +977,7 @@ Rồi thêm 4 dòng `MAIL_*` vào `.env.prod` (copy từ `.env.prod.example`, gi
 - [ ] Đã thêm 4 biến `MAIL_SMTP_HOST/PORT/SECURE`, `MAIL_DOMAIN` vào `.env.prod`
 - [ ] Đã `docker compose build api` (bắt buộc — dependency mới) rồi `up -d api`
 - [ ] Đã chạy `scripts/kiem-tra-mail-agribank.sh` bằng tài khoản mail thật, nhận được thư thử nghiệm
+- [ ] Nếu gặp lỗi `certificate verify failed` — đã nạp CA `CA-AD` cho cả máy ảo lẫn container `api` (xem G.2b)
 - [ ] Đã thử Reset MK 1 cán bộ có email thật, xác nhận nhận được mail đúng mật khẩu tạm
 - [ ] Đã thử Reset MK 1 cán bộ CHƯA có email, xác nhận mail gửi tới đúng `<userAD>@agribank.com.vn`
 - [ ] Đã đổi mật khẩu hộp mail nếu từng gõ ra ngoài kênh an toàn lúc thử nghiệm
