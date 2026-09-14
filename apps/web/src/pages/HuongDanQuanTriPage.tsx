@@ -85,7 +85,7 @@ const CAC_MUC: MucHuongDan[] = [
         <ul>
           <li><b>Reset mật khẩu</b> (từng người hoặc tích chọn nhiều người): sinh <b>mật khẩu tạm ngẫu nhiên mới</b> cho từng người, hiện ngay trong bảng kết quả (có nút copy) và vẫn xem lại được ở cột <b>Mật khẩu tạm</b>; cán bộ bắt buộc đổi ở lần đăng nhập kế tiếp. Bảng kết quả phân biệt <i>Đã reset</i> và <i>Chưa có TK</i>.</li>
           <li><b>Reset cứng huy hiệu/cấp độ</b> (trong nút <b>…</b>): đưa XP, cấp độ, huy hiệu về mốc ban đầu nhưng <b>giữ nguyên</b> bài nộp và lượt thi.</li>
-          <li><b>Xoá thường</b> sẽ thất bại nếu cán bộ đã có lịch sử làm bài — đây là chốt chặn cố ý.</li>
+          <li><b>Xoá thường</b> sẽ thất bại nếu cán bộ đã có lịch sử làm bài — hệ thống cố tình chặn lại như vậy để tránh mất dữ liệu, không phải lỗi.</li>
         </ul>
         <Alert
           type="error"
@@ -145,8 +145,8 @@ const CAC_MUC: MucHuongDan[] = [
             { ts: 'Điểm đạt (%)', md: '70', yn: 'Ngưỡng đạt. Để trống thì hệ thống dùng 60.' },
             { ts: 'Số lần thi tối đa', md: '1', yn: '0 = không giới hạn. Chỉ đếm các lượt đã chấm trong cùng một phân công.' },
             { ts: 'Phản hồi tức thì', md: 'Tắt', yn: 'Bật = hiện đáp án đúng ngay sau mỗi câu. CHỈ dùng cho đề luyện tập.' },
-            { ts: 'Tự nộp bài khi vi phạm', md: '0 (tắt)', yn: 'Số lần vi phạm cứng tối đa; chạm ngưỡng là hệ thống tự nộp bài.' },
-            { ts: 'Chế độ giám sát nghiêm ngặt', md: 'Tắt', yn: 'Bật = bắt buộc làm bài ở chế độ toàn màn hình.' },
+            { ts: 'Chế độ giám sát nghiêm ngặt', md: 'Tắt', yn: 'Công tắc TỔNG: bắt buộc toàn màn hình + ghi nhận rời tab/chuyển cửa sổ/sao chép đề/chặn chuột phải. Tắt = bỏ qua toàn bộ, kể cả khi có đặt ngưỡng vi phạm bên dưới.' },
+            { ts: 'Tự nộp bài khi vi phạm', md: '0 (tắt)', yn: 'Chỉ có tác dụng khi đã bật giám sát nghiêm ngặt ở trên. Số lần vi phạm cứng tối đa; chạm ngưỡng là hệ thống tự nộp bài.' },
           ]}
         />
 
@@ -272,23 +272,23 @@ const CAC_MUC: MucHuongDan[] = [
       <>
         <Title level={5}>Hai công tắc cấu hình trên từng bộ đề</Title>
         <ul>
-          <li><b>Tự nộp bài khi vi phạm</b> = 0 là tắt (chỉ ghi nhận để đối chiếu). Đặt <b>từ 3 trở lên</b> cho kỳ thi nghiêm túc — đặt 1–2 rất dễ oan do thông báo tự bật của Outlook/Zalo.</li>
-          <li><b>Chế độ giám sát nghiêm ngặt</b>: bắt buộc toàn màn hình. Chỉ nên bật cho thi tập trung tại hội trường/phòng máy, không nên bật cho đề tự học.</li>
-          <li>Hai công tắc này độc lập nhau và <b>kỳ thi kế thừa cấu hình của bộ đề</b>, không có công tắc riêng ở kỳ thi.</li>
+          <li><b>Chế độ giám sát nghiêm ngặt</b> là công tắc TỔNG: bắt buộc toàn màn hình, đồng thời bật toàn bộ các kiểm tra ở bảng bên dưới. <b>Tắt</b> (mặc định cho đề luyện tập/thi thử) = không kiểm tra gì cả, cán bộ được rời tab, chuyển cửa sổ, sao chép đề, bấm chuột phải thoải mái. Chỉ nên bật cho thi tập trung tại hội trường/phòng máy.</li>
+          <li><b>Tự nộp bài khi vi phạm</b> = 0 là tắt (chỉ ghi nhận để đối chiếu). Đặt <b>từ 3 trở lên</b> cho kỳ thi nghiêm túc — đặt 1–2 rất dễ oan do thông báo tự bật của Outlook/Zalo. <b>Chỉ có tác dụng khi đã bật giám sát nghiêm ngặt</b> — nếu tắt giám sát, đặt ngưỡng này cũng vô nghĩa vì không có gì được ghi nhận để đếm.</li>
+          <li><b>Kỳ thi tự dùng đúng cấu hình chống gian lận của bộ đề</b>, không có công tắc riêng cho kỳ thi.</li>
         </ul>
 
         <Title level={5}>Các loại vi phạm hệ thống ghi nhận được</Title>
         <BangNho
-          cot={[{ title: 'Loại', dataIndex: 'loai' }, { title: 'Tính vào ngưỡng?', dataIndex: 'tinh' }]}
+          cot={[{ title: 'Loại', dataIndex: 'loai' }, { title: 'Điều kiện áp dụng', dataIndex: 'ap' }, { title: 'Tính vào ngưỡng?', dataIndex: 'tinh' }]}
           dong={[
-            { loai: 'Rời tab / thu nhỏ cửa sổ', tinh: 'Có (vi phạm cứng)' },
-            { loai: 'Chuyển sang cửa sổ khác (quá 3 giây)', tinh: 'Có' },
-            { loai: 'Cố sao chép đề bài', tinh: 'Có' },
-            { loai: 'Thoát toàn màn hình', tinh: 'Có (đề bật giám sát nghiêm ngặt)' },
-            { loai: 'Vắng mặt bất thường (không thao tác 3 phút)', tinh: 'Có' },
-            { loai: 'Đăng nhập thêm nơi khác khi đang thi', tinh: 'Có (xử lý trễ tối đa 1 phút)' },
-            { loai: 'Nghi vấn mở công cụ lập trình', tinh: 'Không — độ tin cậy thấp, chỉ ghi log' },
-            { loai: 'Nghi vấn chụp màn hình', tinh: 'Không — độ tin cậy thấp, chỉ ghi log' },
+            { loai: 'Rời tab / thu nhỏ cửa sổ', ap: 'Đã bật giám sát', tinh: 'Có (vi phạm cứng)' },
+            { loai: 'Chuyển sang cửa sổ khác (quá 3 giây)', ap: 'Đã bật giám sát', tinh: 'Có' },
+            { loai: 'Cố sao chép đề bài', ap: 'Đã bật giám sát', tinh: 'Có' },
+            { loai: 'Thoát toàn màn hình', ap: 'Đã bật giám sát', tinh: 'Có' },
+            { loai: 'Vắng mặt bất thường (không thao tác 3 phút)', ap: 'Đã bật giám sát', tinh: 'Có' },
+            { loai: 'Nghi vấn mở công cụ lập trình', ap: 'Đã bật giám sát', tinh: 'Không — dễ báo nhầm, chỉ lưu lại để xem' },
+            { loai: 'Nghi vấn chụp màn hình', ap: 'Đã bật giám sát', tinh: 'Không — dễ báo nhầm, chỉ lưu lại để xem' },
+            { loai: 'Đăng nhập thêm nơi khác khi đang thi', ap: 'MỌI bộ đề, không phụ thuộc công tắc giám sát', tinh: 'Có (xử lý trễ tối đa 1 phút)' },
           ]}
         />
 
@@ -325,7 +325,7 @@ const CAC_MUC: MucHuongDan[] = [
           <li><b>Xu hướng điểm</b> — diễn biến theo tuần/tháng, dùng cho báo cáo định kỳ.</li>
           <li><b>So sánh chi nhánh</b> — xếp đơn vị điểm thấp lên đầu, gắn nhãn "Cần chú ý" cho đơn vị dưới 60%.</li>
           <li><b>Cảnh báo nguy cơ</b> — 4 nhóm cần can thiệp: sắp hết hạn chưa nộp, trượt bài trong 30 ngày, vi phạm nhiều, và bài đang treo bất thường (im lặng quá 20 phút).</li>
-          <li><b>Phân tích câu hỏi</b> — tỷ lệ đúng và độ phân biệt từng câu; câu bị gắn <i>Quá khó</i>, <i>Quá dễ</i> hay <i>Cần xem lại</i> nên được soạn lại.</li>
+          <li><b>Phân tích câu hỏi</b> — tỷ lệ trả lời đúng và mức chênh lệch giữa người giỏi/người kém khi làm câu đó; câu bị gắn <i>Quá khó</i>, <i>Quá dễ</i> hay <i>Cần xem lại</i> nên được soạn lại.</li>
         </ul>
         <Alert
           type="error"

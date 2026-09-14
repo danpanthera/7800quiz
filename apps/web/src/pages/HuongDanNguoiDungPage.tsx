@@ -130,21 +130,24 @@ const CAC_MUC: MucHuongDan[] = [
         </ul>
 
         <Title level={5}>Hệ thống ghi nhận những hành vi nào</Title>
-        <Paragraph>Trong lúc làm bài, hệ thống tự động ghi lại các hành vi sau:</Paragraph>
+        <Paragraph>
+          Các kiểm tra dưới đây <b>chỉ hoạt động với đề có bật "Giám sát nghiêm ngặt (audit)"</b> (xem thẻ bài thi hoặc phân công), trừ dòng "Đăng nhập thêm nơi khác" luôn áp dụng cho mọi đề.
+          Đề không bật giám sát (đa số đề luyện tập/thi thử) thì không kiểm tra rời tab/đổi cửa sổ/sao chép/chuột phải — thoải mái làm bài.
+        </Paragraph>
         <BangNho
           cot={[{ title: 'Hành vi', dataIndex: 'hv' }, { title: 'Khi nào bị ghi nhận', dataIndex: 'khi' }]}
           dong={[
-            { hv: 'Rời tab / thu nhỏ cửa sổ', khi: 'Chuyển sang tab khác hoặc thu nhỏ trình duyệt' },
-            { hv: 'Chuyển sang cửa sổ khác', khi: 'Bấm sang ứng dụng khác quá 3 giây' },
-            { hv: 'Cố sao chép đề bài', khi: 'Bôi đen rồi nhấn Ctrl+C' },
-            { hv: 'Thoát toàn màn hình', khi: 'Chỉ với đề bật chế độ giám sát nghiêm ngặt' },
-            { hv: 'Vắng mặt bất thường', khi: 'Không chạm chuột/bàn phím quá 3 phút' },
-            { hv: 'Đăng nhập thêm nơi khác', khi: 'Tài khoản của bạn đăng nhập ở máy khác khi bài đang dở' },
+            { hv: 'Rời tab / thu nhỏ cửa sổ', khi: 'Chuyển sang tab khác hoặc thu nhỏ trình duyệt (đề bật giám sát)' },
+            { hv: 'Chuyển sang cửa sổ khác', khi: 'Bấm sang ứng dụng khác quá 3 giây (đề bật giám sát)' },
+            { hv: 'Cố sao chép đề bài', khi: 'Bôi đen rồi nhấn Ctrl+C (đề bật giám sát)' },
+            { hv: 'Thoát toàn màn hình', khi: 'Nhấn Esc hoặc thoát ra giữa lúc đang làm bài (đề bật giám sát)' },
+            { hv: 'Vắng mặt bất thường', khi: 'Không chạm chuột/bàn phím quá 3 phút (đề bật giám sát)' },
+            { hv: 'Đăng nhập thêm nơi khác', khi: 'Tài khoản của bạn đăng nhập ở máy khác khi bài đang dở — áp dụng cho MỌI đề' },
           ]}
         />
         <Paragraph>
-          Ngoài ra hệ thống còn ghi nhận <i>nghi vấn mở công cụ lập trình</i> và <i>nghi vấn chụp màn hình</i> — hai loại này chỉ lưu để đối chiếu, <b>không</b> cộng vào số lần vi phạm.
-          Bấm chuột phải bị chặn nhưng <b>không</b> tính là vi phạm.
+          Ngoài ra với đề bật giám sát, hệ thống còn ghi nhận <i>nghi vấn mở công cụ lập trình</i> và <i>nghi vấn chụp màn hình</i> — hai loại này chỉ lưu để đối chiếu, <b>không</b> cộng vào số lần vi phạm.
+          Bấm chuột phải bị chặn (chỉ khi đề bật giám sát) nhưng <b>không</b> tính là vi phạm.
         </Paragraph>
 
         <Title level={5}>Hậu quả</Title>
@@ -225,7 +228,7 @@ const CAC_MUC: MucHuongDan[] = [
           <li>Điểm tính theo <b>thứ hạng trả lời đúng</b>, không phải theo số giây còn lại: đội đúng nhanh nhất được nhiều điểm nhất, rồi giảm dần (mặc định <b>10 – 7 – 5 – 3 – 2 – 2 …</b>).</li>
           <li>Trả lời <b>sai</b> hoặc <b>không kịp trả lời</b>: 0 điểm (một số phiên có cấu hình trừ điểm khi sai, người tổ chức sẽ thông báo trước).</li>
           <li>Đồng điểm thì xếp theo: nhiều câu đúng hơn → tổng thời gian trả lời các câu đúng ngắn hơn → vào phòng sớm hơn.</li>
-          <li>Hệ thống có <b>bù độ trễ đường truyền</b> nên mạng chậm hơn một chút không bị thiệt oan.</li>
+          <li>Mạng nhà bạn chậm hơn người khác một chút cũng không bị thiệt — hệ thống <b>tự trừ hao phần đó</b> khi tính điểm.</li>
           <li>Kết thúc phiên: mỗi người tham gia được <b>+10 XP</b>, thành viên đội vô địch được thêm <b>+30 XP</b>.</li>
         </ul>
         <Title level={5}>Mất mạng giữa chừng</Title>
