@@ -79,6 +79,9 @@ export default function CanBoPage() {
   // đúng 1 lần để gửi, KHÔNG lưu lại — xem admin.service.ts:resetCanBoPasswords)
   const [resetTarget, setResetTarget] = useState<string[] | null>(null)
   const [resetMailForm] = Form.useForm()
+  // Để trống mật khẩu hộp mail = reset nhưng KHÔNG gửi mail (phòng khi hệ
+  // thống mail nội bộ hỏng) — theo dõi để đổi chữ trên nút OK cho rõ ý.
+  const resetMailPasswordValue: string | undefined = Form.useWatch('mailPassword', resetMailForm)
   const [importOpen, setImportOpen] = useState(false)
   const [importResult, setImportResult] = useState<{
     created: number; updated: number; skipped: number; errors: string[];
@@ -639,13 +642,15 @@ export default function CanBoPage() {
         )}
       </Modal>
 
-      {/* Modal: Nhập mật khẩu hộp mail để reset + tự động gửi thông báo cho cán bộ */}
+      {/* Modal: Reset mật khẩu — nhập mật khẩu hộp mail để tự gửi thông báo,
+          hoặc để trống khi hệ thống mail đang gặp sự cố (mật khẩu tạm vẫn
+          hiển thị/copy được ngay ở Modal kết quả và cột "Mật khẩu tạm"). */}
       <Modal
         title={`Reset mật khẩu${resetTarget && resetTarget.length > 1 ? ` ${resetTarget.length} cán bộ` : ''}`}
         open={!!resetTarget}
         onCancel={() => { setResetTarget(null); resetMailForm.resetFields() }}
         onOk={() => resetMailForm.submit()}
-        okText="Reset & Gửi mail"
+        okText={resetMailPasswordValue ? 'Reset & Gửi mail' : 'Reset (không gửi mail)'}
         cancelText="Hủy"
         confirmLoading={resetMut.isPending}
       >
@@ -658,20 +663,21 @@ export default function CanBoPage() {
             <>
               Sinh 1 mật khẩu tạm ngẫu nhiên riêng cho mỗi người, rồi tự gửi mail thông báo — tới địa chỉ email đã khai báo, nếu cán bộ chưa có email thì tự dùng <code>UserAD@agribank.com.vn</code>.
               {' '}Mật khẩu hộp mail của bạn nhập bên dưới chỉ dùng ngay lúc này để đăng nhập gửi mail, không lưu vào hệ thống.
+              {' '}Hệ thống mail đang hỏng? Để trống ô bên dưới — vẫn reset bình thường, chỉ bỏ qua bước gửi mail.
             </>
           }
         />
         <Form
           form={resetMailForm}
           layout="vertical"
-          onFinish={(values: { mailPassword: string }) => {
-            if (resetTarget) resetMut.mutate({ ids: resetTarget, mailPassword: values.mailPassword })
+          onFinish={(values: { mailPassword?: string }) => {
+            if (resetTarget) resetMut.mutate({ ids: resetTarget, mailPassword: values.mailPassword || undefined })
           }}
         >
           <Form.Item
             name="mailPassword"
             label="Mật khẩu hộp mail của bạn"
-            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hộp mail' }]}
+            extra="Để trống nếu hệ thống mail đang gặp sự cố — mật khẩu tạm vẫn hiện ngay trên màn hình để copy, chỉ là sẽ không có email gửi đi. Nhớ tự báo cho cán bộ qua kênh khác (điện thoại, nội bộ...)."
           >
             <Input.Password autoComplete="current-password" autoFocus />
           </Form.Item>
