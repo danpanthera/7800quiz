@@ -353,6 +353,37 @@ export class AdminController {
     });
   }
 
+  @Get('audit-logs/export')
+  async exportAuditLogs(
+    @Query()
+    query: { action?: string; userId?: string; from?: string; to?: string },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { buffer, filename } = await this.adminService.exportAuditLogs(query);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  @Delete('audit-logs')
+  clearAuditLogs(
+    @Body()
+    body: {
+      ids?: string[];
+      action?: string;
+      userId?: string;
+      from?: string;
+      to?: string;
+      excludeAdmin?: boolean;
+    },
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.adminService.clearAuditLogs(req.user.id, body);
+  }
+
   @Get('attempt-violations')
   @Roles(...TRAINING_ROLES)
   getAttemptViolations(

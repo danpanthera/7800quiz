@@ -9,6 +9,7 @@ import {
   AttemptViolationType,
   Prisma,
   QuestionType,
+  UserRole,
   XpSource,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1472,6 +1473,32 @@ export class AdminService {
   }
 
   // ── Nhật ký quản trị (Audit Log) ───────────────────────────────────────
+  // excludeAdmin: loại các dòng do chính tài khoản ADMIN thực hiện — dùng khi
+  // xóa/dọn nhật ký để không tự xóa mất dấu vết hành động của quản trị viên.
+  // Log hệ thống (userId null) không bị loại vì không gắn với ADMIN nào.
+  private buildAuditLogWhere(filters: {
+    action?: string;
+    userId?: string;
+    from?: string;
+    to?: string;
+    excludeAdmin?: boolean;
+  }): Prisma.AuditLogWhereInput {
+    const { action, userId, from, to, excludeAdmin } = filters;
+    return {
+      ...(action ? { action } : {}),
+      ...(userId ? { userId } : {}),
+      ...(from || to
+        ? {
+            createdAt: {
+              ...(from ? { gte: new Date(from) } : {}),
+              ...(to ? { lte: new Date(to) } : {}),
+            },
+          }
+        : {}),
+      ...(excludeAdmin ? { NOT: { user: { role: UserRole.ADMIN } } } : {}),
+    };
+  }
+
   async getAuditLogs(
     filters: {
       action?: string;
@@ -1481,20 +1508,9 @@ export class AdminService {
       limit?: number;
     } = {},
   ) {
-    const { action, userId, from, to, limit = 200 } = filters;
+    const { limit = 200, ...where } = filters;
     const rows = await this.prisma.auditLog.findMany({
-      where: {
-        ...(action ? { action } : {}),
-        ...(userId ? { userId } : {}),
-        ...(from || to
-          ? {
-              createdAt: {
-                ...(from ? { gte: new Date(from) } : {}),
-                ...(to ? { lte: new Date(to) } : {}),
-              },
-            }
-          : {}),
-      },
+      where: this.buildAuditLogWhere(where),
       include: { user: { select: { fullName: true, username: true } } },
       orderBy: { createdAt: 'desc' },
       take: Math.min(limit, 500),
@@ -1510,6 +1526,96 @@ export class AdminService {
       ipAddress: r.ipAddress,
       createdAt: r.createdAt,
     }));
+  }
+
+  async exportAuditLogs(filters: {
+    action?: string;
+    userId?: string;
+    from?: string;
+    to?: string;
+  }): Promise<{ buffer: Buffer; filename: string }> {
+    const rows = await this.prisma.auditLog.findMany({
+      where: this.buildAuditLogWhere(filters),
+      include: { user: { select: { fullName: true, username: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 20_000,
+    });
+
+    const sheetRows = rows.map((r, idx) => ({
+      STT: idx + 1,
+      'Thời gian': new Date(r.createdAt).toLocaleString('vi-VN'),
+      'Người thực hiện': r.user?.fullName ?? r.user?.username ?? 'Hệ thống',
+      'Tên đăng nhập': r.user?.username ?? '',
+      'Hành động': r.action,
+      'Đối tượng': r.entityId ?? '',
+      'Chi tiết': r.meta ? JSON.stringify(r.meta) : '',
+      IP: r.ipAddress ?? '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(sheetRows);
+    ws['!cols'] = [
+      { wch: 5 },
+      { wch: 18 },
+      { wch: 26 },
+      { wch: 16 },
+      { wch: 26 },
+      { wch: 24 },
+      { wch: 50 },
+      { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Nhật ký quản trị');
+
+    const excelBuffer = XLSX.write(wb, {
+      type: 'buffer',
+      bookType: 'xlsx',
+    }) as Buffer;
+    const stamp = new Date().toISOString().slice(0, 10);
+    return { buffer: excelBuffer, filename: `NhatKyQuanTri_${stamp}.xlsx` };
+  }
+
+  // Xóa nhật ký theo id đã chọn, hoặc theo bộ lọc hiện tại khi không truyền ids
+  // (= "xóa toàn bộ nhật ký đang lọc"). Đây là ngoại lệ có chủ đích với ghi chú
+  // ở deleteReports() (nhật ký "phải" bất biến) — Sếp yêu cầu cho ADMIN được
+  // dọn nhật ký, nên tự ghi lại một dòng CLEAR_AUDIT_LOGS ngay sau khi xóa để
+  // ít nhất còn biết "ai đã dọn, dọn bao nhiêu, dọn theo điều kiện gì".
+  async clearAuditLogs(
+    actorUserId: string,
+    filters: {
+      ids?: string[];
+      action?: string;
+      userId?: string;
+      from?: string;
+      to?: string;
+      excludeAdmin?: boolean;
+    },
+  ): Promise<{ deleted: number }> {
+    const { ids, excludeAdmin, ...rest } = filters;
+    const where: Prisma.AuditLogWhereInput =
+      ids && ids.length > 0
+        ? {
+            id: { in: ids },
+            ...(excludeAdmin
+              ? { NOT: { user: { role: UserRole.ADMIN } } }
+              : {}),
+          }
+        : this.buildAuditLogWhere({ ...rest, excludeAdmin });
+
+    const { count } = await this.prisma.auditLog.deleteMany({ where });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorUserId,
+        action: 'CLEAR_AUDIT_LOGS',
+        meta: {
+          count,
+          ids: ids && ids.length > 0 ? ids : undefined,
+          filter: ids && ids.length > 0 ? undefined : rest,
+          excludeAdmin: !!excludeAdmin,
+        },
+      },
+    });
+
+    return { deleted: count };
   }
 
   // ── Giám sát vi phạm khi làm bài (Attempt Violations) ───────────────────
