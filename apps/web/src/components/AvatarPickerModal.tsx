@@ -30,6 +30,15 @@ const EMOJI_GROUPS: { title: string; emojis: string[] }[] = [
       '🦍', '🐒', '🤺', '🥷', '👹', '👺',
     ],
   },
+  {
+    // Lấy cảm hứng từ dàn nhân vật Avengers: 🤖 Iron Man/Ultron/Vision, 🧙 Doctor
+    // Strange, 🧑‍🚀 Captain Marvel/Guardians of the Galaxy, 👽 Thanos/người ngoài
+    // hành tinh, 🐜 Ant-Man, 🕵️ điệp viên Black Widow/Nick Fury, 🦾 cánh tay máy
+    // Winter Soldier/War Machine — không dùng icon vũ khí (khiên/búa) để nhất
+    // quán với chủ trương chỉ nhân vật/con vật, không đồ vật.
+    title: 'Siêu anh hùng Avengers',
+    emojis: ['🦸‍♂️', '🦸‍♀️', '🦹‍♂️', '🦹‍♀️', '🤖', '🧙', '🧑‍🚀', '👽', '🐜', '🕵️', '🦾'],
+  },
 ]
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024
