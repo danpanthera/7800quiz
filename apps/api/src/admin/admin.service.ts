@@ -17,6 +17,8 @@ import { ImportBankQuestionRowDto } from './dto/import-bank-questions.dto';
 import * as XLSX from 'xlsx';
 import * as bcrypt from 'bcrypt';
 import { sinhMatKhauTam } from '../common/mat-khau-tam.util';
+import { giaiQuyetEmail } from '../common/giai-quyet-email.util';
+import { MailService } from '../mail/mail.service';
 
 // Xem getAtRiskStaff() (nhóm staleAttempts) — không có lần lưu nào trong ngần
 // này phút được coi là "bài đang treo" đáng ngờ.
@@ -96,6 +98,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private gamification: GamificationService,
+    private mailService: MailService,
   ) {}
 
   // Danh sách field cán bộ được phép ghi từ client — chặn các field hệ thống
@@ -839,6 +842,7 @@ export class AdminService {
     maxAttempts?: number;
     violationLimit?: number;
     auditMode?: boolean;
+    shuffleQuestions?: boolean;
   }) {
     return this.prisma.quiz.create({ data });
   }
@@ -856,6 +860,7 @@ export class AdminService {
       maxAttempts?: number;
       violationLimit?: number;
       auditMode?: boolean;
+      shuffleQuestions?: boolean;
     },
   ) {
     return this.prisma.quiz.update({ where: { id }, data });
@@ -886,6 +891,7 @@ export class AdminService {
         maxAttempts: original.maxAttempts,
         violationLimit: original.violationLimit,
         auditMode: original.auditMode,
+        shuffleQuestions: original.shuffleQuestions,
         isActive: false,
         questions: {
           create: original.questions.map((q) => ({
@@ -2545,11 +2551,55 @@ export class AdminService {
     return { deleted: result.count };
   }
 
-  async resetCanBoPasswords(ids: string[], actorUserId?: string) {
+  async resetCanBoPasswords(
+    ids: string[],
+    actorUserId?: string,
+    mailPassword?: string,
+  ) {
     const canBoList = await this.prisma.canBo.findMany({
       where: { id: { in: ids } },
-      select: { id: true, cbCode: true, fullName: true, userAD: true },
+      select: { id: true, cbCode: true, fullName: true, userAD: true, email: true },
     });
+
+    // Chuẩn bị đường gửi mail TRƯỚC vòng lặp — xác minh đăng nhập ĐÚNG 1 LẦN.
+    // Máy chủ mail nội bộ dùng chung mật khẩu AD: nếu để mỗi cán bộ trong danh
+    // sách reset hàng loạt tự thử đăng nhập lại thì một mật khẩu gõ sai sẽ bị
+    // tính SAI NHIỀU LẦN trên AD (bằng đúng số người được chọn), có thể tự
+    // khoá luôn tài khoản Windows của chính admin/cán bộ IT đang thao tác.
+    let transporter: ReturnType<MailService['taoTransporter']> = null;
+    let emailNguoiGui: string | null = null;
+    let loiKetNoiMail: string | undefined;
+    if (mailPassword) {
+      const nguoiGui = actorUserId
+        ? await this.prisma.user.findUnique({
+            where: { id: actorUserId },
+            select: { username: true, email: true },
+          })
+        : null;
+      if (!nguoiGui) {
+        loiKetNoiMail =
+          'Không xác định được tài khoản đang thao tác để lấy email người gửi';
+      } else {
+        emailNguoiGui = giaiQuyetEmail(nguoiGui.email, nguoiGui.username);
+        // Đăng nhập SMTP bằng username THUẦN (nguoiGui.username = userAD/mã CB),
+        // KHÔNG kèm đuôi @agribank.com.vn — khác với emailNguoiGui chỉ dùng để
+        // hiện ở "From:". Xem MailService.taoTransporter().
+        transporter = this.mailService.taoTransporter(
+          nguoiGui.username,
+          mailPassword,
+        );
+        if (!transporter) {
+          loiKetNoiMail =
+            'Chưa cấu hình máy chủ mail (MAIL_SMTP_HOST) — liên hệ quản trị hệ thống';
+        } else {
+          const xacMinh = await this.mailService.xacMinhKetNoi(transporter);
+          if (!xacMinh.ok) {
+            loiKetNoiMail = xacMinh.loi;
+            transporter = null;
+          }
+        }
+      }
+    }
 
     let reset = 0;
     const noAccount: string[] = [];
@@ -2562,6 +2612,8 @@ export class AdminService {
       cbCode: string;
       ok: boolean;
       initialPassword?: string;
+      mailSent?: boolean;
+      mailError?: string;
     }[] = [];
 
     for (const cb of canBoList) {
@@ -2583,13 +2635,42 @@ export class AdminService {
         },
       });
       reset++;
+
+      let mailSent: boolean | undefined;
+      let mailError: string | undefined;
+      if (mailPassword) {
+        if (transporter && emailNguoiGui) {
+          const ketQua = await this.mailService.guiMatKhauTam(
+            transporter,
+            emailNguoiGui,
+            {
+              nguoiNhanEmail: giaiQuyetEmail(
+                cb.email,
+                cb.userAD?.trim() || cb.cbCode,
+              ),
+              tenNguoiNhan: cb.fullName,
+              matKhauTam: initialPassword,
+            },
+          );
+          mailSent = ketQua.ok;
+          if (!ketQua.ok) mailError = ketQua.loi;
+        } else {
+          mailSent = false;
+          mailError = loiKetNoiMail ?? 'Không gửi được mail';
+        }
+      }
+
       details.push({
         fullName: cb.fullName,
         cbCode: cb.cbCode,
         ok: true,
         initialPassword,
+        mailSent,
+        mailError,
       });
     }
+
+    transporter?.close();
 
     await this.prisma.auditLog.create({
       data: {

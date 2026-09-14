@@ -47,7 +47,7 @@ describe('AdminService.duplicateQuiz', () => {
           ),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.duplicateQuiz('quiz-1');
 
@@ -99,7 +99,7 @@ describe('AdminService.deleteReportsBulk', () => {
     const gamification = {
       recomputeUserProgress: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new AdminService(prisma as never, gamification as never);
+    const service = new AdminService(prisma as never, gamification as never, {} as never);
 
     const result = await service.deleteReportsBulk(['sub-1'], 'admin-1');
 
@@ -130,7 +130,7 @@ describe('AdminService.getAuditLogs', () => {
       },
     ]);
     const prisma = { auditLog: { findMany } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAuditLogs({
       action: 'DELETE_CAN_BO',
@@ -167,7 +167,7 @@ describe('AdminService.getAuditLogs', () => {
   it('không lọc gì → where rỗng, take mặc định 200', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const prisma = { auditLog: { findMany } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.getAuditLogs();
 
@@ -186,7 +186,7 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
       canBo: { delete: jest.fn().mockResolvedValue({ id: 'canbo-1' }) },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.deleteCanBo('canbo-1', 'admin-1');
 
@@ -200,7 +200,7 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
       canBo: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.bulkDeleteCanBo(['c1', 'c2'], 'admin-1');
 
@@ -232,7 +232,7 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
       },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.resetCanBoPasswords(['c1'], 'admin-1');
 
@@ -243,6 +243,109 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
         meta: { canBoIds: ['c1'], reset: 1, noAccount: 0 },
       },
     });
+  });
+
+  it('resetCanBoPasswords kèm mailPassword: gửi mail cho từng người, email rơi về userAD@agribank.com.vn khi CanBo chưa có email', async () => {
+    const prisma = {
+      canBo: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'c1', cbCode: 'CB001', fullName: 'Nguyễn Văn A', userAD: 'nguyenvana', email: null },
+          { id: 'c2', cbCode: 'CB002', fullName: 'Trần Thị B', userAD: null, email: 'tranthib@congty.vn' },
+        ]),
+      },
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ username: 'admindt', email: null }) // tra người gửi
+          .mockResolvedValueOnce({ id: 'user-1' }) // tra tài khoản c1
+          .mockResolvedValueOnce({ id: 'user-2' }), // tra tài khoản c2
+        update: jest.fn().mockResolvedValue({}),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const transporterGia = { close: jest.fn() };
+    const mailService = {
+      taoTransporter: jest.fn().mockReturnValue(transporterGia),
+      xacMinhKetNoi: jest.fn().mockResolvedValue({ ok: true }),
+      guiMatKhauTam: jest.fn().mockResolvedValue({ ok: true }),
+    };
+    const service = new AdminService(
+      prisma as never,
+      {} as never,
+      mailService as never,
+    );
+
+    const result = await service.resetCanBoPasswords(
+      ['c1', 'c2'],
+      'admin-1',
+      'mat-khau-mail-that',
+    );
+
+    // Xác thực ĐÚNG 1 LẦN cho cả đợt reset — không phải mỗi cán bộ 1 lần.
+    expect(mailService.taoTransporter).toHaveBeenCalledTimes(1);
+    expect(mailService.taoTransporter).toHaveBeenCalledWith(
+      'admindt', // username thuần dùng để đăng nhập SMTP, không kèm đuôi @agribank.com.vn
+      'mat-khau-mail-that',
+    );
+    expect(mailService.xacMinhKetNoi).toHaveBeenCalledTimes(1);
+    expect(mailService.guiMatKhauTam).toHaveBeenCalledTimes(2);
+    expect(mailService.guiMatKhauTam).toHaveBeenCalledWith(
+      transporterGia,
+      'admindt@agribank.com.vn',
+      expect.objectContaining({ nguoiNhanEmail: 'nguyenvana@agribank.com.vn' }),
+    );
+    expect(mailService.guiMatKhauTam).toHaveBeenCalledWith(
+      transporterGia,
+      'admindt@agribank.com.vn',
+      expect.objectContaining({ nguoiNhanEmail: 'tranthib@congty.vn' }),
+    );
+    expect(transporterGia.close).toHaveBeenCalledTimes(1);
+    expect(result.details.every((d) => d.mailSent === true)).toBe(true);
+  });
+
+  it('resetCanBoPasswords kèm mailPassword sai: chỉ xác thực thất bại 1 lần, KHÔNG thử gửi từng người (tránh khoá tài khoản AD của người thao tác)', async () => {
+    const prisma = {
+      canBo: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'c1', cbCode: 'CB001', fullName: 'Nguyễn Văn A', userAD: 'nguyenvana', email: null },
+          { id: 'c2', cbCode: 'CB002', fullName: 'Trần Thị B', userAD: 'tranthib', email: null },
+        ]),
+      },
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ username: 'admindt', email: null })
+          .mockResolvedValueOnce({ id: 'user-1' })
+          .mockResolvedValueOnce({ id: 'user-2' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const transporterGia = { close: jest.fn() };
+    const mailService = {
+      taoTransporter: jest.fn().mockReturnValue(transporterGia),
+      xacMinhKetNoi: jest
+        .fn()
+        .mockResolvedValue({ ok: false, loi: 'Không đăng nhập được vào hộp mail — kiểm tra lại mật khẩu hoặc thử lại sau.' }),
+      guiMatKhauTam: jest.fn(),
+    };
+    const service = new AdminService(
+      prisma as never,
+      {} as never,
+      mailService as never,
+    );
+
+    const result = await service.resetCanBoPasswords(
+      ['c1', 'c2'],
+      'admin-1',
+      'mat-khau-sai',
+    );
+
+    expect(mailService.xacMinhKetNoi).toHaveBeenCalledTimes(1);
+    expect(mailService.guiMatKhauTam).not.toHaveBeenCalled();
+    expect(result.reset).toBe(2); // reset mật khẩu vẫn thành công dù gửi mail lỗi
+    expect(result.details.every((d) => d.mailSent === false)).toBe(true);
+    expect(result.details[0].mailError).toMatch(/Không đăng nhập được/);
   });
 });
 
@@ -267,7 +370,7 @@ describe('AdminService.getAttemptViolations', () => {
       },
     ]);
     const prisma = { attemptViolation: { findMany } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAttemptViolations({
       type: 'TAB_HIDDEN' as never,
@@ -318,7 +421,7 @@ describe('AdminService.getAttemptViolations', () => {
   it('không lọc gì → where rỗng ngoài phần attempt, take mặc định 200', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const prisma = { attemptViolation: { findMany } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.getAttemptViolations();
 
@@ -356,7 +459,7 @@ describe('AdminService.getReportTrends', () => {
       }, // score null → bỏ qua
     ]);
     const prisma = { submission: { findMany } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getReportTrends();
 
@@ -392,7 +495,7 @@ describe('AdminService.getReportTrends', () => {
       },
     ]);
     const prisma = { submission: { findMany } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getReportTrends('month');
 
@@ -406,7 +509,7 @@ describe('AdminService.getReportTrends', () => {
     const prisma = {
       submission: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     expect(await service.getReportTrends()).toEqual([]);
   });
@@ -449,7 +552,7 @@ describe('AdminService.getQuestionAnalytics', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getQuestionAnalytics();
 
@@ -470,7 +573,7 @@ describe('AdminService.getQuestionAnalytics', () => {
       question: { findMany: jest.fn().mockResolvedValue([baseQuestion]) },
       submissionAnswer: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     expect(await service.getQuestionAnalytics()).toEqual([]);
   });
@@ -503,7 +606,7 @@ describe('AdminService.getQuestionAnalytics', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getQuestionAnalytics();
 
@@ -517,7 +620,7 @@ describe('AdminService.getQuestionAnalytics', () => {
       question: { findMany },
       submissionAnswer: { findMany: jest.fn() },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.getQuestionAnalytics({
       quizId: 'quiz-1',
@@ -538,7 +641,7 @@ describe('AdminService.getQuestionAnalytics', () => {
 describe('AdminService.extendAssignmentsByFilter', () => {
   it('không truyền quizId lẫn departmentId → báo lỗi, không gọi updateMany', async () => {
     const prisma = { assignment: { updateMany: jest.fn() } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await expect(
       service.extendAssignmentsByFilter('2026-12-31'),
@@ -552,7 +655,7 @@ describe('AdminService.extendAssignmentsByFilter', () => {
     const prisma = {
       assignment: { updateMany: jest.fn().mockResolvedValue({ count: 5 }) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.extendAssignmentsByFilter(
       '2026-12-31',
@@ -573,7 +676,7 @@ describe('AdminService.extendAssignmentsByFilter', () => {
       },
       assignment: { updateMany: jest.fn().mockResolvedValue({ count: 3 }) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await service.extendAssignmentsByFilter('2026-12-31', undefined, 'dept-1');
 
@@ -606,7 +709,7 @@ describe('AdminService.importAssignmentsFromExcel', () => {
       },
       assignment: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.importAssignmentsFromExcel(buffer, 'quiz-1');
 
@@ -623,7 +726,7 @@ describe('AdminService.importAssignmentsFromExcel', () => {
   it('file không có dòng dữ liệu → báo lỗi, không truy vấn CanBo', async () => {
     const buffer = buildExcelBuffer([]);
     const prisma = { canBo: { findMany: jest.fn() } };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     await expect(
       service.importAssignmentsFromExcel(buffer, 'quiz-1'),
@@ -637,7 +740,7 @@ describe('AdminService.importAssignmentsFromExcel', () => {
       canBo: { findMany: jest.fn().mockResolvedValue([]) },
       assignment: { createMany: jest.fn() },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.importAssignmentsFromExcel(buffer, 'quiz-1');
 
@@ -664,7 +767,7 @@ describe('AdminService.getDepartmentPerformance', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getDepartmentPerformance();
 
@@ -741,7 +844,7 @@ describe('AdminService.getAtRiskStaff', () => {
         }),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAtRiskStaff();
 
@@ -814,7 +917,7 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const [row] = await service.getReports();
 
@@ -836,7 +939,7 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const [row] = await service.getReports();
 
@@ -857,7 +960,7 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const [row] = await service.getReports();
 
@@ -878,7 +981,7 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const [row] = await service.getReports();
 
@@ -922,7 +1025,7 @@ describe('AdminService.getAnswerCollusion', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAnswerCollusion('quiz-1');
 
@@ -954,7 +1057,7 @@ describe('AdminService.getAnswerCollusion', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAnswerCollusion('quiz-1');
 
@@ -979,7 +1082,7 @@ describe('AdminService.getAnswerCollusion', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAnswerCollusion('quiz-1');
 
@@ -1013,7 +1116,7 @@ describe('AdminService.getAnswerCollusion', () => {
         ]),
       },
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const service = new AdminService(prisma as never, {} as never, {} as never);
 
     const result = await service.getAnswerCollusion('quiz-1');
 

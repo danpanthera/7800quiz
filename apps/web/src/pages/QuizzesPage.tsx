@@ -13,7 +13,7 @@ import api, { getErrorMessage } from '../lib/api'
 interface Quiz {
   id: string; title: string; description?: string; topic?: string
   durationMin: number; passScore?: number; isActive: boolean; instantFeedback?: boolean
-  maxAttempts?: number; violationLimit?: number; auditMode?: boolean
+  maxAttempts?: number; violationLimit?: number; auditMode?: boolean; shuffleQuestions?: boolean
   _count: { questions: number; assignments: number }
 }
 interface Subject { id: string; name: string; _count?: { questions: number } }
@@ -165,7 +165,7 @@ export default function QuizzesPage() {
     quizForm.resetFields()
     quizForm.setFieldsValue({
       durationMin: 30, passScore: 70, isActive: true, instantFeedback: false, maxAttempts: 1, violationLimit: 0, auditMode: false,
-      autoPickEnabled: false, subjectRatios: [{ percent: 100 }],
+      shuffleQuestions: false, autoPickEnabled: false, subjectRatios: [{ percent: 100 }],
     })
     setQuizModalOpen(true)
   }
@@ -309,6 +309,7 @@ export default function QuizzesPage() {
           { label: 'Số lần thi', render: (quiz) => (quiz.maxAttempts === 0 ? 'Không giới hạn' : `${quiz.maxAttempts ?? 1} lần`) },
           { label: 'Tự nộp khi vi phạm', render: (quiz) => (!quiz.violationLimit ? 'Tắt' : `Sau ${quiz.violationLimit} lần`) },
           { label: 'Giám sát nghiêm ngặt (audit)', render: (quiz) => (quiz.auditMode ? 'Bật' : 'Tắt') },
+          { label: 'Xáo trộn thứ tự câu hỏi', render: (quiz) => (quiz.shuffleQuestions ? 'Bật' : 'Tắt') },
           { label: 'Câu hỏi', render: (quiz) => quiz._count.questions },
           { label: 'Phân công', render: (quiz) => quiz._count.assignments },
         ]}
@@ -376,6 +377,15 @@ export default function QuizzesPage() {
             valuePropName="checked"
             tooltip="Bật: bắt buộc ở chế độ toàn màn hình trong suốt lúc thi — thoát toàn màn hình bị tính là 1 lần vi phạm (cộng dồn chung với ngưỡng tự nộp ở trên). Dùng cho kỳ thi chính thức."
             extra="Mặc định TẮT cho đề luyện tập/thi thử."
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="shuffleQuestions"
+            label="Xáo trộn thứ tự câu hỏi khi thi"
+            valuePropName="checked"
+            tooltip="Bật: mỗi cán bộ nhận một thứ tự câu hỏi RIÊNG, trộn lẫn giữa các lĩnh vực (không còn cảnh câu 1-75 luôn là CNTT rồi mới tới lĩnh vực khác) — cùng một người mở lại bài đang làm dở hoặc xem lại bài đã nộp vẫn thấy đúng thứ tự cũ. Khác với 'Trộn câu hỏi theo tỷ lệ lĩnh vực' bên dưới — đó là chọn CÂU NÀO vào đề, còn đây là thứ tự HIỂN THỊ câu đã chọn."
+            extra="Không đổi thứ tự gốc lúc soạn đề — chỉ đổi thứ tự lúc cán bộ nhìn thấy."
           >
             <Switch />
           </Form.Item>

@@ -893,3 +893,61 @@ Script tự dò cả 4 cổng (389/636/3268/3269) từ máy ảo lẫn từ tron
 - [ ] Đã chép `assets/giong-doc/` qua USB vào `/opt/7800quiz/assets/giong-doc`, `curl -I .../manifest.json` trả 200
 - [ ] Đã thử bật công tắc giọng đọc trên trình duyệt thật, nghe được tiếng
 - [ ] Đã chạy `bash scripts/kiem-tra-ldap-rodc.sh`, đã gửi lại toàn bộ kết quả (cổng nào mở, DNS, chứng chỉ nếu có)
+
+## Phụ lục G — Gửi mail tự động khi Reset MK (mật khẩu tạm gửi qua SMTP Agribank)
+
+Trang Quản lý cán bộ: khi admin/cán bộ IT bấm "Reset MK", hệ thống sinh mật khẩu tạm ngẫu nhiên VÀ tự gửi mail báo cho cán bộ đó — gửi tới `CanBo.email` nếu có, không thì tự ghép `<userAD hoặc mã CB>@agribank.com.vn`.
+
+### G.0. Vì sao KHÔNG có ô cấu hình mật khẩu mail trong hệ thống
+
+Máy chủ mail nội bộ Agribank dùng **cùng mật khẩu** với tài khoản Windows/AD của từng người. Lưu mật khẩu này vào CSDL sẽ tương đương lưu mật khẩu AD thật — đúng điều đã cấm với cán bộ thường (xem khảo sát LDAP/RODC) và còn nghiêm trọng hơn vì đây là tài khoản admin/cán bộ IT. Vì vậy: **mật khẩu hộp mail KHÔNG BAO GIỜ được lưu** — mỗi lần bấm Reset MK, người thao tác tự gõ lại mật khẩu mail của chính họ ngay trong hộp thoại, dùng đúng 1 lần để gửi rồi bỏ.
+
+Hệ quả: nếu chưa cấu hình `MAIL_SMTP_HOST` trên server, hoặc gõ sai mật khẩu, hoặc máy chủ mail không kết nối được — **việc RESET MẬT KHẨU vẫn luôn thành công** (không phụ thuộc email), chỉ riêng phần gửi mail báo lỗi (xem cột "Gửi mail" trong bảng kết quả).
+
+### G.1. Cấu hình đã biết (Agribank)
+
+Theo đúng cấu hình POP/SMTP của một hộp mail `@agribank.com.vn` đã xác nhận:
+
+| Thông số | Giá trị |
+|---|---|
+| Máy chủ SMTP (gửi đi) | `smtp.agribank.com.vn` |
+| Cổng | `587` |
+| Mã hoá | STARTTLS (không phải TLS ngầm định như cổng 465) |
+| Tài khoản đăng nhập | username **thuần** (VD `datnguyentien2`, KHÔNG kèm đuôi `@agribank.com.vn`) |
+| Địa chỉ hiển thị "From:" | `<username>@agribank.com.vn` |
+
+Đã điền sẵn 4 biến này vào `.env.prod.example` (`MAIL_SMTP_HOST`, `MAIL_SMTP_PORT`, `MAIL_SMTP_SECURE`, `MAIL_DOMAIN`) — copy sang `.env.prod` là dùng được ngay, không cần tự dò như Phụ lục F đã làm với LDAP.
+
+> ⚠️ Máy chủ này chỉ phân giải được **từ bên trong mạng ngân hàng** — không test được từ máy ngoài Internet (đã thử, báo lỗi DNS `ENOTFOUND`). Phải kiểm tra đúng từ máy ảo PROD hoặc máy khác trong cùng mạng nội bộ.
+
+### G.2. Kiểm tra trước khi dùng thật
+
+```bash
+bash scripts/kiem-tra-mail-agribank.sh <username-cua-ban> <email-nhan-thu-nghiem>
+# VD: bash scripts/kiem-tra-mail-agribank.sh datnguyentien2 datpanthera@gmail.com
+```
+
+Script tự dò DNS → cổng TCP 587 → hỏi mật khẩu tại chỗ (ẩn, không lưu) → thử đăng nhập + gửi 1 email thử. Mỗi admin/cán bộ IT nên tự chạy thử bằng đúng tài khoản của mình trước khi dựa vào tính năng này.
+
+### G.3. Triển khai lên PROD
+
+`nodemailer` là dependency MỚI → bắt buộc build lại image `api` (giống mọi lần thêm thư viện mới, xem Phụ lục A/D — cần Internet tạm hoặc chuyển ảnh qua USB):
+
+```bash
+cd /opt/7800quiz
+git pull
+sudo docker compose -f docker-compose.prod.yml --env-file .env.prod build api
+sudo docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api
+```
+
+Rồi thêm 4 dòng `MAIL_*` vào `.env.prod` (copy từ `.env.prod.example`, giá trị đã điền sẵn ở mục G.1) trước khi `up -d`.
+
+> ⚠️ Mật khẩu hộp mail Agribank vừa dùng để thử nghiệm tính năng này (nếu đã từng gõ ra ngoài kênh an toàn — ví dụ dán vào cửa sổ chat, ghi ra file) nên được **đổi ngay** trên hệ thống mail thật, dù kết quả thử nghiệm thành công hay thất bại.
+
+### ✅ Checklist Phụ lục G
+- [ ] Đã thêm 4 biến `MAIL_SMTP_HOST/PORT/SECURE`, `MAIL_DOMAIN` vào `.env.prod`
+- [ ] Đã `docker compose build api` (bắt buộc — dependency mới) rồi `up -d api`
+- [ ] Đã chạy `scripts/kiem-tra-mail-agribank.sh` bằng tài khoản mail thật, nhận được thư thử nghiệm
+- [ ] Đã thử Reset MK 1 cán bộ có email thật, xác nhận nhận được mail đúng mật khẩu tạm
+- [ ] Đã thử Reset MK 1 cán bộ CHƯA có email, xác nhận mail gửi tới đúng `<userAD>@agribank.com.vn`
+- [ ] Đã đổi mật khẩu hộp mail nếu từng gõ ra ngoài kênh an toàn lúc thử nghiệm

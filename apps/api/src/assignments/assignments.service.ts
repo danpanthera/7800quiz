@@ -54,6 +54,7 @@ export class AssignmentsService {
             maxAttempts: true,
             violationLimit: true,
             auditMode: true,
+            shuffleQuestions: true,
           },
         },
         // Toàn bộ lần làm bài của chính user (chặn take:1 cũ) — để trang chủ vừa

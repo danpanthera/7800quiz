@@ -2,7 +2,7 @@ import { useState } from 'react'
 import React from 'react'
 import {
   App, Button, Checkbox, Table, Space, Modal, Form, Input, Select, Popconfirm,
-  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert, Dropdown,
+  Typography, Switch, DatePicker, Tag, Row, Col, Divider, Upload, Alert, Dropdown, Tooltip,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, IdcardOutlined, LockOutlined, UploadOutlined, MoreOutlined, UndoOutlined, ClearOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -74,7 +74,11 @@ export default function CanBoPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [pageSize, setPageSize] = useState(50)
   const [resetResultOpen, setResetResultOpen] = useState(false)
-  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean; initialPassword?: string }[] } | null>(null)
+  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean; initialPassword?: string; mailSent?: boolean; mailError?: string }[] } | null>(null)
+  // ids đang chờ reset — khác null thì mở modal nhập mật khẩu hộp mail (dùng
+  // đúng 1 lần để gửi, KHÔNG lưu lại — xem admin.service.ts:resetCanBoPasswords)
+  const [resetTarget, setResetTarget] = useState<string[] | null>(null)
+  const [resetMailForm] = Form.useForm()
   const [importOpen, setImportOpen] = useState(false)
   const [importResult, setImportResult] = useState<{
     created: number; updated: number; skipped: number; errors: string[];
@@ -119,9 +123,12 @@ export default function CanBoPage() {
   })
 
   const resetMut = useMutation({
-    mutationFn: (ids: string[]) => api.post('/admin/can-bo/reset-passwords', { ids }).then(r => r.data),
+    mutationFn: (payload: { ids: string[]; mailPassword: string }) =>
+      api.post('/admin/can-bo/reset-passwords', payload).then(r => r.data),
     onSuccess: (data) => {
       setSelectedRowKeys([])
+      setResetTarget(null)
+      resetMailForm.resetFields()
       setResetResult(data)
       setResetResultOpen(true)
     },
@@ -257,14 +264,12 @@ export default function CanBoPage() {
   const renderCanBoActions = (record: CanBoItem) => (
     <Space>
       {laAdmin && <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />}
-      <Popconfirm
-        title="Reset mật khẩu?"
-        description="Sinh mật khẩu tạm mới, ngẫu nhiên — xem lại ở cột &quot;Mật khẩu tạm&quot; để đọc cho cán bộ"
-        onConfirm={() => resetMut.mutate([record.id])}
-        okText="Reset" cancelText="Hủy"
-      >
-        <Button size="small" icon={<LockOutlined />} title="Reset mật khẩu" />
-      </Popconfirm>
+      <Button
+        size="small"
+        icon={<LockOutlined />}
+        title="Reset mật khẩu"
+        onClick={() => setResetTarget([record.id])}
+      />
       {!laAdmin ? null : (
         <>
       <Popconfirm title="Xác nhận xóa cán bộ này?" onConfirm={() => deleteMut.mutate(record.id)} okText="Xóa" cancelText="Hủy">
@@ -401,16 +406,13 @@ export default function CanBoPage() {
           )}
           {selectedRowKeys.length > 0 && (
             <>
-              <Popconfirm
-                title={`Reset mật khẩu ${selectedRowKeys.length} cán bộ?`}
-                description="Mỗi người được sinh 1 mật khẩu tạm ngẫu nhiên riêng, xem ở bảng kết quả sau khi reset"
-                onConfirm={() => resetMut.mutate(selectedRowKeys as string[])}
-                okText="Reset" cancelText="Hủy"
+              <Button
+                icon={<LockOutlined />}
+                danger
+                onClick={() => setResetTarget(selectedRowKeys as string[])}
               >
-                <Button icon={<LockOutlined />} loading={resetMut.isPending} danger>
-                  Reset MK ({selectedRowKeys.length})
-                </Button>
-              </Popconfirm>
+                Reset MK ({selectedRowKeys.length})
+              </Button>
               {laAdmin && (
                 <Popconfirm
                   title={`Xóa ${selectedRowKeys.length} cán bộ đã chọn?`}
@@ -622,11 +624,58 @@ export default function CanBoPage() {
                     ? <Tag color="green">Đã reset</Tag>
                     : <Tag color="orange">Chưa có TK</Tag>,
                 },
+                {
+                  title: 'Gửi mail', dataIndex: 'mailSent', width: 160,
+                  render: (v: boolean | undefined, r) => v === undefined
+                    ? '-'
+                    : v
+                      ? <Tag color="blue">Đã gửi</Tag>
+                      : <Tooltip title={r.mailError}><Tag color="red">Gửi lỗi</Tag></Tooltip>,
+                },
               ]}
               pagination={false}
             />
           </>
         )}
+      </Modal>
+
+      {/* Modal: Nhập mật khẩu hộp mail để reset + tự động gửi thông báo cho cán bộ */}
+      <Modal
+        title={`Reset mật khẩu${resetTarget && resetTarget.length > 1 ? ` ${resetTarget.length} cán bộ` : ''}`}
+        open={!!resetTarget}
+        onCancel={() => { setResetTarget(null); resetMailForm.resetFields() }}
+        onOk={() => resetMailForm.submit()}
+        okText="Reset & Gửi mail"
+        cancelText="Hủy"
+        confirmLoading={resetMut.isPending}
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Mật khẩu hộp mail chỉ dùng đúng 1 lần để gửi, KHÔNG được lưu lại"
+          description={
+            <>
+              Sinh 1 mật khẩu tạm ngẫu nhiên riêng cho mỗi người, rồi tự gửi mail thông báo — tới địa chỉ email đã khai báo, nếu cán bộ chưa có email thì tự dùng <code>UserAD@agribank.com.vn</code>.
+              {' '}Mật khẩu hộp mail của bạn nhập bên dưới chỉ dùng ngay lúc này để đăng nhập gửi mail, không lưu vào hệ thống.
+            </>
+          }
+        />
+        <Form
+          form={resetMailForm}
+          layout="vertical"
+          onFinish={(values: { mailPassword: string }) => {
+            if (resetTarget) resetMut.mutate({ ids: resetTarget, mailPassword: values.mailPassword })
+          }}
+        >
+          <Form.Item
+            name="mailPassword"
+            label="Mật khẩu hộp mail của bạn"
+            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hộp mail' }]}
+          >
+            <Input.Password autoComplete="current-password" autoFocus />
+          </Form.Item>
+        </Form>
       </Modal>
 
       {/* Modal: Xác nhận Super Delete — phải gõ đúng mã CB mới bấm được */}

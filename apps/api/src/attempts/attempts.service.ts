@@ -203,6 +203,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       Boolean(assignment.quiz?.instantFeedback),
       assignment.quiz?.violationLimit ?? 0,
       Boolean(assignment.quiz?.auditMode),
+      Boolean(assignment.quiz?.shuffleQuestions),
     );
   }
 
@@ -226,6 +227,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       attempt.quizVersion.quiz.instantFeedback,
       attempt.quizVersion.quiz.violationLimit,
       attempt.quizVersion.quiz.auditMode,
+      attempt.quizVersion.quiz.shuffleQuestions,
     );
   }
 
@@ -693,6 +695,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
                 instantFeedback: true,
                 violationLimit: true,
                 auditMode: true,
+                shuffleQuestions: true,
               },
             },
           },
@@ -830,10 +833,20 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     instantFeedback = false,
     violationLimit = 0,
     auditMode = false,
+    shuffleQuestions = false,
   ) {
     const questionsById = new Map(
       snapshot.questions.map((question) => [question.id, question]),
     );
+    // Xáo theo stableShuffle(seed=attempt.id) — mỗi attempt (mỗi lượt thi của
+    // từng người) ra một thứ tự riêng, nhưng luôn ra LẠI ĐÚNG thứ tự đó ở mọi
+    // lần gọi (mở lại bài đang làm dở, xem lại bài đã nộp) vì cùng seed. Không
+    // cần lưu thứ tự riêng vào DB. Chỉ đổi thứ tự HIỂN THỊ — orderIndex gốc
+    // trong DB/snapshot giữ nguyên nên chấm điểm (khớp theo questionId) không
+    // bị ảnh hưởng.
+    const displayQuestions = shuffleQuestions
+      ? this.stableShuffle(snapshot.questions, attempt.id)
+      : snapshot.questions;
     return {
       attempt: {
         id: attempt.id,
@@ -855,7 +868,7 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         instantFeedback,
         violationLimit,
         auditMode,
-        questions: snapshot.questions.map((question) => ({
+        questions: displayQuestions.map((question) => ({
           id: question.id,
           content: question.content,
           imageUrl: question.imageUrl ?? null,

@@ -192,6 +192,7 @@ export class AdminController {
       maxAttempts?: number;
       violationLimit?: number;
       auditMode?: boolean;
+      shuffleQuestions?: boolean;
     },
   ) {
     return this.adminService.createQuiz(body);
@@ -615,10 +616,14 @@ export class AdminController {
   @Post('can-bo/reset-passwords')
   @VaiTroHoacCanBoIt(UserRole.ADMIN)
   resetCanBoPasswords(
-    @Body() body: { ids: string[] },
+    @Body() body: { ids: string[]; mailPassword?: string },
     @Request() req: { user: { id: string } },
   ) {
-    return this.adminService.resetCanBoPasswords(body.ids, req.user.id);
+    return this.adminService.resetCanBoPasswords(
+      body.ids,
+      req.user.id,
+      body.mailPassword,
+    );
   }
 
   @Delete('can-bo/bulk')

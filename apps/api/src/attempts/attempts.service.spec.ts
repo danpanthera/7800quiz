@@ -45,6 +45,48 @@ const snapshotCuThieuLinhVuc = {
   ],
 };
 
+// Mô phỏng đúng bộ đề trong báo cáo của Sếp: các câu cùng lĩnh vực đứng liền
+// khối (3 câu CNTT rồi mới tới 2 câu Kiến thức chung) — dùng để kiểm tra tính
+// năng "Xáo trộn thứ tự câu hỏi khi thi" (Quiz.shuffleQuestions).
+const snapshotNhieuCau = {
+  quiz: snapshot.quiz,
+  questions: ['cntt-1', 'cntt-2', 'cntt-3', 'kt-chung-1', 'kt-chung-2'].map(
+    (id, i) => ({
+      id,
+      content: `Câu ${id}`,
+      questionType: 'SINGLE',
+      orderIndex: i + 1,
+      points: 10,
+      subjectId: id.startsWith('cntt') ? 'subject-cntt' : 'subject-kt-chung',
+      subjectName: id.startsWith('cntt') ? 'CNTT' : 'Kiến thức chung',
+      options: [
+        { id: `${id}-a`, content: 'Đúng', isCorrect: true, orderIndex: 1 },
+        { id: `${id}-b`, content: 'Sai', isCorrect: false, orderIndex: 2 },
+      ],
+    }),
+  ),
+};
+
+// Cùng thuật toán với AttemptsService.stableShuffle()/hashString() (private,
+// không gọi thẳng được từ test) — dùng để tính trước thứ tự kỳ vọng, tránh
+// assertion đoán mò/không ổn định. Đổi thuật toán bên service thì sửa lại đây.
+function stableShuffleGiongHetService<T extends { id: string }>(
+  items: T[],
+  seed: string,
+): T[] {
+  const hashString = (input: string): number => {
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      hash = (hash * 31 + input.charCodeAt(i)) | 0;
+    }
+    return hash;
+  };
+  return items
+    .map((item) => ({ item, key: hashString(seed + item.id) }))
+    .sort((a, b) => a.key - b.key)
+    .map((entry) => entry.item);
+}
+
 describe('AttemptsService', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -256,6 +298,141 @@ describe('AttemptsService', () => {
 
     expect(result.quiz.questions[0].subjectName).toBeNull();
     expect(findMany).not.toHaveBeenCalled();
+  });
+
+  describe('Quiz.shuffleQuestions — xáo trộn thứ tự câu hỏi', () => {
+    it('mặc định TẮT: giữ nguyên thứ tự gốc (các câu cùng lĩnh vực vẫn đứng liền khối)', async () => {
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest.fn().mockResolvedValue(null),
+          count: jest.fn().mockResolvedValue(0),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'version-1',
+            version: 1,
+            snapshot: snapshotNhieuCau,
+          }),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, shuffleQuestions: false },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      const result = await service.start('user-1', {
+        id: attemptId,
+        assignmentId,
+      });
+
+      expect(result.quiz.questions.map((q) => q.id)).toEqual(
+        snapshotNhieuCau.questions.map((q) => q.id),
+      );
+    });
+
+    it('BẬT: mỗi attempt ra 1 thứ tự riêng (đúng thuật toán stableShuffle), không còn xếp theo khối lĩnh vực', async () => {
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest.fn().mockResolvedValue(null),
+          count: jest.fn().mockResolvedValue(0),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'version-1',
+            version: 1,
+            snapshot: snapshotNhieuCau,
+          }),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, shuffleQuestions: true },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      // Seed riêng cho test này (khác hằng số attemptId dùng chung cả file) —
+      // đã kiểm tra trước: với đúng 5 câu hỏi của snapshotNhieuCau, seed này ra
+      // thứ tự THỰC SỰ khác thứ tự gốc, chứng minh được việc xáo trộn có xảy ra.
+      const attemptIdRieng = 'attempt-khac-1';
+      const result = await service.start('user-1', {
+        id: attemptIdRieng,
+        assignmentId,
+      });
+
+      const expected = stableShuffleGiongHetService(
+        snapshotNhieuCau.questions,
+        attemptIdRieng,
+      ).map((q) => q.id);
+      expect(result.quiz.questions.map((q) => q.id)).toEqual(expected);
+      // Đúng là có xáo (không trùng thứ tự gốc).
+      expect(result.quiz.questions.map((q) => q.id)).not.toEqual(
+        snapshotNhieuCau.questions.map((q) => q.id),
+      );
+      // Không mất/thêm câu nào — chỉ đổi thứ tự.
+      expect(new Set(result.quiz.questions.map((q) => q.id))).toEqual(
+        new Set(snapshotNhieuCau.questions.map((q) => q.id)),
+      );
+    });
+
+    it('BẬT: mở lại bài đang làm dở (get) vẫn ra ĐÚNG thứ tự đã thấy lúc bắt đầu (cùng seed = attempt.id)', async () => {
+      const prisma = {
+        quizAttempt: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: attemptId,
+            status: AttemptStatus.IN_PROGRESS,
+            deadlineAt: new Date('2026-09-03T08:30:00.000Z'),
+            answerRevision: 0,
+            quizVersion: {
+              snapshot: snapshotNhieuCau,
+              quiz: { instantFeedback: false, shuffleQuestions: true },
+            },
+            answers: [],
+          }),
+        },
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        {} as never,
+        {} as never,
+      );
+
+      const result = await service.get('user-1', attemptId);
+
+      const expected = stableShuffleGiongHetService(
+        snapshotNhieuCau.questions,
+        attemptId,
+      ).map((q) => q.id);
+      expect(result.quiz.questions.map((q) => q.id)).toEqual(expected);
+    });
   });
 
   it('chốt đáp án trả kết quả + đáp án đúng, và chốt lại không đổi được lựa chọn', async () => {

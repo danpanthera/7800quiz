@@ -84,29 +84,35 @@ model Department {
 }
 
 model Quiz {
-  id              String   @id @default(uuid())
-  title           String
-  description     String?
-  topic           String?
-  durationMin     Int      @map("duration_min") // thời gian làm bài (phút)
-  passScore       Int?     @map("pass_score") // điểm đạt
-  isActive        Boolean  @default(true) @map("is_active")
+  id               String   @id @default(uuid())
+  title            String
+  description      String?
+  topic            String?
+  durationMin      Int      @map("duration_min") // thời gian làm bài (phút)
+  passScore        Int?     @map("pass_score") // điểm đạt
+  isActive         Boolean  @default(true) @map("is_active")
   // Kiểu Quizizz: hiện đúng/sai ngay sau mỗi câu rồi tự sang câu kế, đáp án đã
   // chọn bị khoá. Mặc định TẮT — chế độ này lộ đáp án ngay trong lúc làm bài nên
   // chỉ bật thủ công cho đề luyện tập, không dùng cho kỳ thi chính thức.
-  instantFeedback Boolean  @default(false) @map("instant_feedback")
+  instantFeedback  Boolean  @default(false) @map("instant_feedback")
   // Số lần được phép làm bài (tính theo Submission đã chấm) cho mỗi lượt giao
   // bài (Assignment). Mặc định 1 để giữ đúng hành vi cũ; 0 = không giới hạn.
-  maxAttempts     Int      @default(1) @map("max_attempts")
+  maxAttempts      Int      @default(1) @map("max_attempts")
   // Chế tài vi phạm khi làm bài: tới lần vi phạm thứ N (rời tab, chuyển cửa sổ,
   // cố sao chép đề) thì server tự nộp bài. 0 = tắt, chỉ ghi nhận để admin đối chiếu.
-  violationLimit  Int      @default(0) @map("violation_limit")
+  violationLimit   Int      @default(0) @map("violation_limit")
   // Chế độ giám sát nghiêm ngặt (audit): bắt buộc toàn màn hình trong lúc thi —
   // thoát toàn màn hình bị tính 1 lần vi phạm (FULLSCREEN_EXIT), cộng dồn chung
   // với violationLimit ở trên. Mặc định TẮT cho đề luyện tập/thi thử.
-  auditMode       Boolean  @default(false) @map("audit_mode")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  auditMode        Boolean  @default(false) @map("audit_mode")
+  // Xáo trộn THỨ TỰ hiển thị câu hỏi khi làm bài (khác hẳn "trộn câu hỏi theo tỷ
+  // lệ lĩnh vực" lúc TẠO đề — đó là chọn CÂU NÀO vào đề, cái này là thứ tự HIỆN
+  // câu đã chọn). Không đụng tới orderIndex lưu trong DB (đó vẫn là thứ tự gốc
+  // để admin sửa đề) — chỉ đảo thứ tự lúc trả về cho từng attempt, xem
+  // AttemptsService.stableShuffle(). Mặc định TẮT để không đổi hành vi đề cũ.
+  shuffleQuestions Boolean  @default(false) @map("shuffle_questions")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   versions            QuizVersion[]
   assignments         Assignment[]
@@ -266,24 +272,24 @@ enum SubmissionStatus {
 }
 
 model QuizAttempt {
-  id             String        @id // UUID do web client tạo để bảo toàn idempotency
-  userId         String        @map("user_id")
-  assignmentId   String        @map("assignment_id")
-  quizId         String        @map("quiz_id")
-  quizVersionId  String        @map("quiz_version_id")
-  submissionId   String?       @unique @map("submission_id")
-  status         AttemptStatus @default(IN_PROGRESS)
-  startedAt      DateTime      @map("started_at") @db.Timestamptz(3)
-  deadlineAt     DateTime      @map("deadline_at") @db.Timestamptz(3)
-  lastSavedAt    DateTime?     @map("last_saved_at") @db.Timestamptz(3)
-  answerRevision Int           @default(0) @map("answer_revision")
-  finalizedAt    DateTime?     @map("finalized_at") @db.Timestamptz(3)
-  timedOut       Boolean       @default(false) @map("timed_out")
-  violationCount Int           @default(0) @map("violation_count") // số lần phát hiện rời màn hình/dán nội dung khi đang làm bài
+  id                 String        @id // UUID do web client tạo để bảo toàn idempotency
+  userId             String        @map("user_id")
+  assignmentId       String        @map("assignment_id")
+  quizId             String        @map("quiz_id")
+  quizVersionId      String        @map("quiz_version_id")
+  submissionId       String?       @unique @map("submission_id")
+  status             AttemptStatus @default(IN_PROGRESS)
+  startedAt          DateTime      @map("started_at") @db.Timestamptz(3)
+  deadlineAt         DateTime      @map("deadline_at") @db.Timestamptz(3)
+  lastSavedAt        DateTime?     @map("last_saved_at") @db.Timestamptz(3)
+  answerRevision     Int           @default(0) @map("answer_revision")
+  finalizedAt        DateTime?     @map("finalized_at") @db.Timestamptz(3)
+  timedOut           Boolean       @default(false) @map("timed_out")
+  violationCount     Int           @default(0) @map("violation_count") // số lần phát hiện rời màn hình/dán nội dung khi đang làm bài
   // true = bài bị server tự nộp vì chạm Quiz.violationLimit (không cộng XP).
-  violationSubmitted Boolean   @default(false) @map("violation_submitted")
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  violationSubmitted Boolean       @default(false) @map("violation_submitted")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user        User                @relation(fields: [userId], references: [id])
   assignment  Assignment          @relation(fields: [assignmentId], references: [id])
