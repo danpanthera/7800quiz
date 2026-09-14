@@ -3086,3 +3086,227 @@ p {
 [data-theme="dark"] .login-support.ant-typography {
   color: var(--text-secondary);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * LEVEL UP — hiệu ứng lên cấp kiểu RPG (LevelUpOverlay.tsx)
+ * ══════════════════════════════════════════════════════════════════════════
+ * Cố tình LUÔN nền tối, không theo [data-theme] — đây là màn "sân khấu" ăn
+ * mừng riêng (giống Arena/InstantQuizPlayer), không phải nội dung portal
+ * thường nên không cần ghi đè theo Sáng/Tối.
+ */
+.levelup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.levelup-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 6, 8, 0.82);
+  backdrop-filter: blur(6px);
+  animation: levelup-fade-in 0.3s ease both;
+}
+
+.levelup-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 420px;
+  text-align: center;
+}
+
+/* Tia sáng toả tròn phía sau huy hiệu — repeating-conic-gradient thay vì vẽ
+   từng tia bằng tay, xoay chậm liên tục cho cảm giác "hào quang sống động". */
+.levelup-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 640px;
+  height: 640px;
+  transform: translate(-50%, -50%);
+  background: repeating-conic-gradient(rgba(255, 179, 0, 0.22) 0deg 4deg, transparent 4deg 20deg);
+  border-radius: 50%;
+  filter: blur(1px);
+  animation: levelup-burst-spin 14s linear infinite, levelup-fade-in 0.6s ease both;
+  pointer-events: none;
+}
+
+@keyframes levelup-burst-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.levelup-eyebrow {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(248, 244, 236, 0.7);
+  animation: levelup-slide-up 0.5s ease 0.05s both;
+}
+
+.levelup-badge-wrap {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  margin: 14px 0 4px;
+  display: grid;
+  place-items: center;
+}
+
+.levelup-ring {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 179, 0, 0.5);
+  animation: levelup-ring-pulse 1.8s ease-out infinite;
+}
+
+.levelup-ring-delay {
+  animation-delay: 0.6s;
+}
+
+@keyframes levelup-ring-pulse {
+  0%   { transform: scale(0.9); opacity: 0.9; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.levelup-badge {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: radial-gradient(circle at 35% 30%, var(--agribank-red-light) 0%, var(--agribank-red) 55%, var(--agribank-red-dark) 100%);
+  border: 4px solid var(--gold);
+  color: var(--pearl-white);
+  animation: levelup-badge-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 0.15s both, levelup-badge-glow 2.2s ease-in-out 0.8s infinite;
+}
+
+.levelup-badge-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+
+.levelup-badge-number {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes levelup-badge-pop {
+  0%   { transform: scale(0.3); opacity: 0; }
+  60%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes levelup-badge-glow {
+  0%, 100% { box-shadow: 0 0 0 6px rgba(255, 179, 0, 0.18), 0 12px 40px rgba(0, 0, 0, 0.5); }
+  50%      { box-shadow: 0 0 0 10px rgba(255, 179, 0, 0.3), 0 12px 50px rgba(0, 0, 0, 0.55); }
+}
+
+.levelup-title {
+  margin-top: 10px;
+  font-size: clamp(32px, 6vw, 48px);
+  font-weight: 800;
+  letter-spacing: 1px;
+  background: linear-gradient(180deg, #FFF6DB 0%, var(--gold) 60%, #C97F00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 4px 24px rgba(255, 179, 0, 0.35);
+  animation: levelup-slide-up 0.5s ease 0.35s both;
+}
+
+.levelup-name {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--pearl-white);
+  animation: levelup-slide-up 0.5s ease 0.55s both;
+}
+
+.levelup-badges {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  animation: levelup-slide-up 0.5s ease 0.7s both;
+}
+
+.levelup-badge-chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 179, 0, 0.14);
+  border: 1px solid rgba(255, 179, 0, 0.4);
+  color: var(--pearl-white);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.levelup-continue.ant-btn {
+  margin-top: 28px;
+  min-width: 180px;
+  height: 46px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--agribank-red-dark);
+  box-shadow: 0 10px 28px rgba(255, 179, 0, 0.35) !important;
+  animation: levelup-slide-up 0.5s ease 0.85s both;
+}
+
+.levelup-continue.ant-btn:hover {
+  background: #FFC933 !important;
+  border-color: #FFC933 !important;
+  color: var(--agribank-red-dark) !important;
+}
+
+@keyframes levelup-slide-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes levelup-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (max-width: 575px) {
+  .levelup-burst { width: 420px; height: 420px; }
+  .levelup-badge-wrap,
+  .levelup-badge { width: 116px; height: 116px; }
+  .levelup-badge-number { font-size: 38px; }
+  .levelup-title { margin-top: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .levelup-backdrop,
+  .levelup-burst,
+  .levelup-ring,
+  .levelup-badge,
+  .levelup-eyebrow,
+  .levelup-title,
+  .levelup-name,
+  .levelup-badges,
+  .levelup-continue.ant-btn {
+    animation: none;
+  }
+}

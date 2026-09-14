@@ -18,6 +18,7 @@ import { useArenaCountdownSound } from '../hooks/useArenaCountdownSound'
 import { ArenaCountdownRing } from '../components/ArenaCountdownRing'
 import { ArenaRevealBoard } from '../components/ArenaRevealBoard'
 import { ArenaLeaderboard } from '../components/ArenaLeaderboard'
+import LevelUpOverlay from '../components/LevelUpOverlay'
 import { formatResponseTime } from '../lib/arena-format'
 import {
   playCorrectSound, playWrongSound, playWinSound, playFastestSound,
@@ -77,6 +78,7 @@ export default function ArenaPlayerPage() {
   const [revealData, setRevealData] = useState<ArenaRevealPayload | null>(null)
   const [finalRanking, setFinalRanking] = useState<ArenaLeaderboardRow[]>([])
   const [myXp, setMyXp] = useState<ArenaXpResult | null>(null)
+  const [levelUpOpen, setLevelUpOpen] = useState(false)
   const [prepare, setPrepare] = useState<ArenaPreparePayload | null>(null)
   const [socket, setSocket] = useState<Socket | null>(null)
   const socketRef = useRef<Socket | null>(null)
@@ -269,10 +271,15 @@ export default function ArenaPlayerPage() {
     s.on('arena.ended', ({ ranking, xpResults }: { ranking: ArenaLeaderboardRow[]; xpResults?: Record<string, ArenaXpResult> }) => {
       setPrepare(null)
       setFinalRanking(ranking)
-      if (user && xpResults?.[user.id]) setMyXp(xpResults[user.id])
+      const myXpResult = user ? xpResults?.[user.id] : undefined
+      if (myXpResult) setMyXp(myXpResult)
       setView('result')
       const mine = ranking.find((t) => t.teamId === myTeamIdRef.current)
-      if (mine?.rank === 1) {
+      // Có lên cấp thì nhường hẳn sân khấu cho LevelUpOverlay (fanfare/pháo giấy
+      // riêng) — tránh 2 hiệu ứng âm thanh/pháo giấy chồng lên nhau cùng lúc.
+      if (myXpResult?.levelUp) {
+        setLevelUpOpen(true)
+      } else if (mine?.rank === 1) {
         void playWinSound()
         void fireConfettiBurst()
       }
@@ -607,12 +614,14 @@ export default function ArenaPlayerPage() {
               </div>
             </div>
           )}
-          {myXp && (
+          {/* Lên cấp đã có LevelUpOverlay lo trọn (cả huy hiệu mới nếu có) — Alert
+              này chỉ còn hiện khi CHƯA lên cấp (chỉ cộng điểm/mở huy hiệu thường). */}
+          {myXp && !myXp.levelUp && (
             <Alert
               style={{ marginTop: 8, textAlign: 'left' }}
-              type={myXp.levelUp ? 'success' : 'info'}
+              type="info"
               showIcon
-              message={myXp.levelUp ? `🎉 Lên cấp ${myXp.newLevel}!` : 'Đã cộng điểm kinh nghiệm'}
+              message="Đã cộng điểm kinh nghiệm"
               description={myXp.newBadges.length > 0 ? `Mở khóa huy hiệu: ${myXp.newBadges.map((b) => b.name).join(', ')}` : undefined}
             />
           )}
@@ -656,6 +665,12 @@ export default function ArenaPlayerPage() {
 
   return (
     <div className="arena-player-shell arena-stage">
+      <LevelUpOverlay
+        open={levelUpOpen}
+        newLevel={myXp?.newLevel ?? 1}
+        newBadges={myXp?.newBadges}
+        onClose={() => setLevelUpOpen(false)}
+      />
       <header className="arena-player-topbar">
         <span className="arena-player-brand"><BankOutlined /> 7800Quiz</span>
         <Button size="small" type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')}>Thoát</Button>

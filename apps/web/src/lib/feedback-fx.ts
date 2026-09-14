@@ -74,6 +74,16 @@ export function playFastestSound() {
   beep(1318, 120, 120)
 }
 
+// Fanfare "thăng cấp" — dài và hân hoan hơn playWinSound (dùng riêng cho
+// LevelUpOverlay): 3 nốt đi lên rồi ngân ở nốt cao nhất, hoà thêm quãng 5.
+export function playLevelUpFanfare() {
+  beep(523, 110, 0) // Đô
+  beep(659, 110, 100) // Mi
+  beep(784, 110, 200) // Sol
+  beep(1046, 340, 300) // Đô cao — nốt ngân dài
+  beep(1318, 420, 340, 'sine', 0.1) // quãng 5 hoà thêm cho dày tiếng
+}
+
 export async function fireConfetti() {
   const confetti = (await import('canvas-confetti')).default
   confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } })
@@ -103,4 +113,20 @@ export async function fireGoldSparkle() {
     origin: { y: 0.4 },
     colors: ['#FFB300', '#E0B44C', '#F8F4EC'],
   })
+}
+
+// Pháo giấy "lên cấp" — dày và tưng bừng hơn fireConfettiBurst (dùng riêng cho
+// LevelUpOverlay): 1 phát nổ trung tâm to bằng vàng kim, cộng 2 dải bên hông
+// bắn liên tục 900ms như fireConfettiBurst. Không dùng chung với burst khác
+// trong cùng 1 khoảnh khắc để tránh rối màn hình.
+export async function fireLevelUpConfetti() {
+  const confetti = (await import('canvas-confetti')).default
+  const colors = ['#FFB300', '#F8F4EC', '#7A1428']
+  confetti({ particleCount: 90, spread: 100, startVelocity: 45, scalar: 1.1, origin: { y: 0.5 }, colors })
+  const end = Date.now() + 900
+  ;(function frame() {
+    confetti({ particleCount: 4, angle: 60, spread: 60, origin: { x: 0, y: 0.7 }, colors })
+    confetti({ particleCount: 4, angle: 120, spread: 60, origin: { x: 1, y: 0.7 }, colors })
+    if (Date.now() < end) requestAnimationFrame(frame)
+  })()
 }

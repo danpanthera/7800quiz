@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Card, Result, Skeleton, Space, Tag, Typography } from 'antd'
-import { CheckCircleOutlined, CloseCircleOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, CloseCircleOutlined, StarFilled } from '@ant-design/icons'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import api from '../lib/api'
 import { fireConfetti } from '../lib/feedback-fx'
+import LevelUpOverlay from '../components/LevelUpOverlay'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -48,6 +49,9 @@ export default function QuizResultPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const xpInfo = (location.state as NavState | null) ?? null
+  // Mở sẵn nếu có lên cấp — LevelUpOverlay tự lo pháo giấy/âm thanh riêng của nó,
+  // không đụng tới fireConfetti() bên dưới (tránh bắn pháo giấy 2 lần cùng lúc).
+  const [levelUpOpen, setLevelUpOpen] = useState(xpInfo?.levelUp === true)
 
   const resultQuery = useQuery<QuizResult>({
     queryKey: ['quiz-result', submissionId],
@@ -57,8 +61,11 @@ export default function QuizResultPage() {
   })
 
   useEffect(() => {
-    if (resultQuery.data?.isPassed === true) void fireConfetti()
-  }, [resultQuery.data?.id, resultQuery.data?.isPassed])
+    // Cố tình đọc thẳng xpInfo (bất biến từ location.state) chứ không phải state
+    // levelUpOpen — nếu không, đóng LevelUpOverlay (levelUpOpen false) sẽ vô tình
+    // kích lại điều kiện này và bắn thêm 1 loạt pháo giấy ngũ sắc không mong muốn.
+    if (resultQuery.data?.isPassed === true && xpInfo?.levelUp !== true) void fireConfetti()
+  }, [resultQuery.data?.id, resultQuery.data?.isPassed, xpInfo?.levelUp])
 
   // Bảng điều hướng có chiều cao thay đổi theo số câu hỏi (wrap nhiều dòng) — đo động
   // để .quiz-review-question tính đúng scroll-margin-top, không bị chính bảng nav (sticky) che khi cuộn tới.
@@ -92,6 +99,13 @@ export default function QuizResultPage() {
 
   return (
     <div className="quiz-result">
+      <LevelUpOverlay
+        open={levelUpOpen}
+        newLevel={xpInfo?.newLevel ?? 1}
+        newBadges={xpInfo?.newBadges}
+        onClose={() => setLevelUpOpen(false)}
+      />
+
       <Result
         icon={isPassed ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
         status={isPassed ? 'success' : 'warning'}
@@ -115,24 +129,16 @@ export default function QuizResultPage() {
         />
       )}
 
-      {xpInfo && (xpInfo.levelUp || (xpInfo.newBadges?.length ?? 0) > 0) && (
+      {/* Lên cấp đã có LevelUpOverlay lo trọn (cả huy hiệu mới nếu có) — Card này
+          chỉ còn hiện khi có huy hiệu mới mà KHÔNG kèm lên cấp. */}
+      {xpInfo && !xpInfo.levelUp && (xpInfo.newBadges?.length ?? 0) > 0 && (
         <Card className="quiz-xp-banner" style={{ maxWidth: 640, margin: '0 auto 24px' }}>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            {xpInfo.levelUp && (
-              <Space>
-                <TrophyOutlined style={{ color: '#faad14', fontSize: 20 }} />
-                <Text strong style={{ fontSize: 16 }}>Chúc mừng, bạn đã lên cấp {xpInfo.newLevel}!</Text>
-              </Space>
-            )}
-            {(xpInfo.newBadges?.length ?? 0) > 0 && (
-              <Space wrap>
-                <StarFilled style={{ color: '#faad14' }} />
-                <Text>Mở khoá huy hiệu mới:</Text>
-                {xpInfo.newBadges!.map((b) => (
-                  <Tag key={b.code} color="gold">{b.name}</Tag>
-                ))}
-              </Space>
-            )}
+          <Space wrap>
+            <StarFilled style={{ color: '#faad14' }} />
+            <Text>Mở khoá huy hiệu mới:</Text>
+            {xpInfo.newBadges!.map((b) => (
+              <Tag key={b.code} color="gold">{b.name}</Tag>
+            ))}
           </Space>
         </Card>
       )}
