@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Button, Card, Checkbox, Empty, InputNumber, Radio, Select, Skeleton, Space, Tag, Typography, message,
@@ -146,7 +146,7 @@ export default function PracticePage() {
                   >
                     <Space direction="vertical">
                       {q.options.map((o) => (
-                        <Radio key={o.id} value={o.id} style={optionStyle(result, o.id)}>{o.content}</Radio>
+                        <Radio key={o.id} value={o.id}>{o.content}{danhDauDapAn(result, answers[q.id] ?? [], o.id)}</Radio>
                       ))}
                     </Space>
                   </Radio.Group>
@@ -161,7 +161,7 @@ export default function PracticePage() {
                   >
                     <Space direction="vertical">
                       {q.options.map((o) => (
-                        <Checkbox key={o.id} value={o.id} style={optionStyle(result, o.id)}>{o.content}</Checkbox>
+                        <Checkbox key={o.id} value={o.id}>{o.content}{danhDauDapAn(result, answers[q.id] ?? [], o.id)}</Checkbox>
                       ))}
                     </Space>
                   </Checkbox.Group>
@@ -177,11 +177,11 @@ export default function PracticePage() {
                         return (
                           <Tag
                             key={o.id}
-                            style={{ cursor: results ? 'default' : 'pointer', padding: '6px 12px', fontSize: 14, ...optionStyle(result, o.id) }}
+                            style={{ cursor: results ? 'default' : 'pointer', padding: '6px 12px', fontSize: 14 }}
                             color={pos >= 0 ? 'processing' : undefined}
                             onClick={() => !results && toggleOrderingOption(q.id, o.id)}
                           >
-                            {pos >= 0 ? `${pos + 1}. ` : ''}{o.content}
+                            {pos >= 0 ? `${pos + 1}. ` : ''}{o.content}{danhDauDapAn(result, seq, o.id)}
                           </Tag>
                         )
                       })}
@@ -189,8 +189,14 @@ export default function PracticePage() {
                   </Space>
                 )}
 
+                {result && !result.isCorrect && (
+                  <Text style={{ display: 'block', marginTop: 12 }}>
+                    <Text strong style={{ color: '#27AE60' }}>Đáp án đúng: </Text>
+                    {q.options.filter((o) => result.correctOptionIds.includes(o.id)).map((o) => o.content).join(', ')}
+                  </Text>
+                )}
                 {result && !result.isCorrect && result.explanation && (
-                  <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+                  <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                     Giải thích: {result.explanation}
                   </Text>
                 )}
@@ -213,9 +219,16 @@ export default function PracticePage() {
   )
 }
 
-// Sau khi có kết quả: viền xanh cho đáp án đúng, đỏ cho đáp án đã chọn nhưng sai
-function optionStyle(result: PracticeGradeItem | undefined, optionId: string): CSSProperties {
-  if (!result) return {}
-  if (result.correctOptionIds.includes(optionId)) return { color: '#27AE60', fontWeight: 600 }
-  return {}
+// Sau khi có kết quả: icon xanh cho đáp án đúng, icon đỏ cho đáp án đã chọn nhưng sai.
+// Dùng ICON thay vì đổi màu chữ qua style — antd tự ép màu chữ xám khi Radio/Checkbox
+// bị disabled (sau khi nộp), đè mất màu inline style, nên chữ tô xanh/đỏ không hiện ra.
+function danhDauDapAn(result: PracticeGradeItem | undefined, daChon: string[], optionId: string) {
+  if (!result) return null
+  if (result.correctOptionIds.includes(optionId)) {
+    return <CheckCircleFilled style={{ color: '#27AE60', marginLeft: 8 }} />
+  }
+  if (daChon.includes(optionId)) {
+    return <CloseCircleFilled style={{ color: '#CF1322', marginLeft: 8 }} />
+  }
+  return null
 }

@@ -126,7 +126,7 @@ export default function CanBoPage() {
   })
 
   const resetMut = useMutation({
-    mutationFn: (payload: { ids: string[]; mailPassword: string }) =>
+    mutationFn: (payload: { ids: string[]; mailPassword?: string }) =>
       api.post('/admin/can-bo/reset-passwords', payload).then(r => r.data),
     onSuccess: (data) => {
       setSelectedRowKeys([])

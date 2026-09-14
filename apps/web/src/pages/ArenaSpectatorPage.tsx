@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Alert, Skeleton, Space, Switch, Tag, Typography } from 'antd'
-import { AudioMutedOutlined, AudioOutlined, EyeOutlined } from '@ant-design/icons'
+import { AudioMutedOutlined, AudioOutlined, CheckCircleOutlined, EyeOutlined } from '@ant-design/icons'
 import type { Socket } from 'socket.io-client'
 import api, { getErrorMessage } from '../lib/api'
 import { createArenaSocket } from '../lib/arena-socket'
@@ -225,6 +225,36 @@ export default function ArenaSpectatorPage() {
       ) : lastReveal ? (
         <>
           <Title level={4}>Câu {lastReveal.order + 1}/{lastReveal.totalRounds} — Đã công bố đáp án</Title>
+          {/* arena.revealed KHÔNG xoá currentQuestion (chỉ arena.prepare/arena.question mới
+              xoá) — tận dụng lại để hiện đề bài + tô xanh đáp án đúng cho cả hội trường xem,
+              trước đây màn khán giả chỉ hiện bảng kết quả từng đội, không ai biết đáp án
+              đúng là phương án nào. */}
+          {currentQuestion && (
+            <>
+              <Title level={3}>{currentQuestion.question.content}</Title>
+              <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>
+                {currentQuestion.question.options.map((o) => {
+                  const dung = lastReveal.correctOptionIds.includes(o.id)
+                  return (
+                    <Tag
+                      key={o.id}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: 16,
+                        background: dung ? '#52c41a' : undefined,
+                        color: dung ? '#fff' : undefined,
+                        border: dung ? '3px solid #fff' : undefined,
+                        fontWeight: dung ? 700 : undefined,
+                      }}
+                    >
+                      {o.content}
+                      {dung && <CheckCircleOutlined style={{ marginLeft: 8 }} />}
+                    </Tag>
+                  )
+                })}
+              </Space>
+            </>
+          )}
           <ArenaRevealBoard results={lastReveal.results} />
           <Title level={5} style={{ marginTop: 24 }}>Bảng xếp hạng</Title>
           <ArenaLeaderboard teams={lastReveal.leaderboard} />
