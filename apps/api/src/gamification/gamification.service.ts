@@ -778,9 +778,163 @@ export class GamificationService {
     }
   }
 
+  // ─── Quà sinh nhật & ngày lễ ─────────────────────────────────────────────
+  // 100 XP cho sinh nhật (riêng từng người, 1 lần/năm) — ngang 1 lần thi đạt
+  // điểm tuyệt đối (EXAM_PASS 50 + EXAM_PERFECT 50), thấp hơn hẳn các mốc đòi
+  // hỏi nỗ lực thật sự (streak 30 ngày = 500, 90 ngày = 1500) vì sinh nhật chỉ
+  // cần đăng nhập đúng ngày, nhưng vẫn đủ "đáng" để cảm thấy được chúc mừng
+  // thật sự chứ không phải cho có.
+  private readonly BIRTHDAY_BONUS_XP = 100;
+
+  // 50 XP mỗi ngày lễ (chung cho toàn bộ nhân viên, tới 6 dịp/năm) — thấp hơn
+  // sinh nhật vì lặp lại nhiều lần trong năm, cộng dồn cả năm (tối đa ~300 XP)
+  // vẫn không vượt quá 1 mốc streak 30 ngày, tránh làm loãng ý nghĩa các
+  // thành tích cần nỗ lực thật.
+  private readonly HOLIDAY_BONUS_XP = 50;
+
+  // Ngày lễ dương lịch CỐ ĐỊNH — lặp lại hằng năm, không cần bảng tra theo năm.
+  private readonly FIXED_HOLIDAYS: {
+    month: number;
+    date: number;
+    label: string;
+  }[] = [
+    { month: 1, date: 1, label: 'Tết Dương lịch' },
+    { month: 4, date: 30, label: 'Ngày Giải phóng miền Nam 30/4' },
+    { month: 5, date: 1, label: 'Ngày Quốc tế Lao động 1/5' },
+    { month: 9, date: 2, label: 'Ngày Quốc khánh 2/9' },
+  ];
+
+  // Giỗ Tổ Hùng Vương (10/3 âm lịch) — ngày dương lịch đổi theo từng năm, cố
+  // tình TRA BẢNG thủ công thay vì tính lịch âm bằng công thức thiên văn: sai
+  // 1 hệ số trong công thức sẽ cho ra ngày sai một cách ÂM THẦM, rất khó phát
+  // hiện, còn tra bảng thì soát lại bằng lịch treo tường là biết đúng/sai ngay.
+  // ⚠ CẦN CÁN BỘ IT BỔ SUNG THÊM NĂM MỚI mỗi khi hết năm trong bảng — thiếu năm
+  // nào thì năm đó lặng lẽ bỏ qua (không lỗi, không thưởng), không ảnh hưởng gì
+  // khác. Các mốc dưới lấy theo lịch vạn niên, NÊN ĐỐI CHIẾU LẠI trước khi dùng
+  // thật trên PROD nếu nghi ngờ.
+  private readonly HUNG_KINGS_FESTIVAL_SOLAR_DATE: Record<
+    number,
+    { month: number; date: number }
+  > = {
+    2025: { month: 4, date: 7 },
+    2026: { month: 4, date: 26 },
+    2027: { month: 4, date: 16 },
+  };
+
+  // "Hôm nay" theo giờ Việt Nam (UTC+7, không có giờ mùa hè) dưới 2 dạng: cặp
+  // (tháng, ngày) để so khớp ngày lễ lặp hằng năm, và khoảng UTC thật của đúng
+  // ngày hôm nay để lọc XpTransaction (chống thưởng trùng nếu mở app nhiều lần
+  // trong ngày) — dùng chung cho cả sinh nhật lẫn ngày lễ bên dưới.
+  private getVietnamToday(): {
+    month: number;
+    date: number;
+    year: number;
+    dayStartUtc: Date;
+    dayEndUtc: Date;
+  } {
+    const nowVn = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const isoDate = nowVn.toISOString().slice(0, 10); // yyyy-mm-dd theo giờ VN
+    const dayStartUtc = new Date(`${isoDate}T00:00:00+07:00`);
+    return {
+      month: nowVn.getUTCMonth(),
+      date: nowVn.getUTCDate(),
+      year: nowVn.getUTCFullYear(),
+      dayStartUtc,
+      dayEndUtc: new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000),
+    };
+  }
+
+  // Kiểm tra mỗi lần gọi getProgress() (trang chủ + LevelUpOverlay đều gọi khi
+  // vào) — không cần cron/lịch riêng, chấp nhận độ trễ tối đa vài phút tới khi
+  // người dùng mở app trong ngày đặc biệt. Không cộng thẳng field xp mà vẫn đi
+  // qua awardXp() như mọi nguồn khác (ghi XpTransaction, tự tính lại cấp độ).
+  private async checkAndAwardBirthdayBonus(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
+    if (!user) return;
+
+    // Ngày sinh chỉ có ở hồ sơ CanBo (đồng bộ từ GAHR26), User không có cột
+    // riêng — nối qua username giống cách lấy "position" ở auth.service.ts.
+    const canBo = await this.prisma.canBo.findFirst({
+      where: { username: user.username },
+      select: { ngaySinh: true },
+    });
+    if (!canBo?.ngaySinh) return;
+
+    // ngaySinh được parse từ chuỗi "YYYY-MM-DD" (admin.service.ts) nên luôn là
+    // mốc UTC 00:00 của đúng ngày — đọc lại bằng getUTC*() cho khớp.
+    const today = this.getVietnamToday();
+    if (
+      today.month !== canBo.ngaySinh.getUTCMonth() ||
+      today.date !== canBo.ngaySinh.getUTCDate()
+    ) {
+      return;
+    }
+
+    const alreadyAwarded = await this.prisma.xpTransaction.findFirst({
+      where: {
+        userId,
+        source: XpSource.BIRTHDAY_BONUS,
+        createdAt: { gte: today.dayStartUtc, lt: today.dayEndUtc },
+      },
+      select: { id: true },
+    });
+    if (alreadyAwarded) return;
+
+    await this.awardXp(
+      userId,
+      this.BIRTHDAY_BONUS_XP,
+      XpSource.BIRTHDAY_BONUS,
+      undefined,
+      'Chúc mừng sinh nhật!',
+    );
+  }
+
+  // Ngày lễ dùng chung cho MỌI người (không cần tra CanBo) — nên rẻ hơn để
+  // check trước, sớm return nếu hôm nay không trùng ngày lễ nào.
+  private async checkAndAwardHolidayBonus(userId: string): Promise<void> {
+    const today = this.getVietnamToday();
+    const hungKings = this.HUNG_KINGS_FESTIVAL_SOLAR_DATE[today.year];
+
+    const label =
+      this.FIXED_HOLIDAYS.find(
+        (h) => h.month === today.month + 1 && h.date === today.date,
+      )?.label ??
+      (hungKings &&
+      hungKings.month === today.month + 1 &&
+      hungKings.date === today.date
+        ? 'Giỗ Tổ Hùng Vương (10/3 âm lịch)'
+        : null);
+    if (!label) return;
+
+    const alreadyAwarded = await this.prisma.xpTransaction.findFirst({
+      where: {
+        userId,
+        source: XpSource.HOLIDAY_BONUS,
+        note: label,
+        createdAt: { gte: today.dayStartUtc, lt: today.dayEndUtc },
+      },
+      select: { id: true },
+    });
+    if (alreadyAwarded) return;
+
+    await this.awardXp(
+      userId,
+      this.HOLIDAY_BONUS_XP,
+      XpSource.HOLIDAY_BONUS,
+      undefined,
+      label,
+    );
+  }
+
   // ─── getProgress ─────────────────────────────────────────────────────────
 
   async getProgress(userId: string) {
+    await this.checkAndAwardBirthdayBonus(userId);
+    await this.checkAndAwardHolidayBonus(userId);
+
     const progress = await this.prisma.userProgress.upsert({
       where: { userId },
       update: {},
@@ -877,6 +1031,7 @@ export class GamificationService {
               select: {
                 id: true,
                 fullName: true,
+                nickname: true,
                 departmentId: true,
                 department: { select: { name: true } },
               },
@@ -895,6 +1050,7 @@ export class GamificationService {
           rank: i + 1,
           userId: r.userId,
           fullName: r.user.fullName,
+          nickname: r.user.nickname,
           department: r.user.department?.name,
           xp: r.xp,
           level: r.level,
@@ -928,6 +1084,7 @@ export class GamificationService {
       select: {
         id: true,
         fullName: true,
+        nickname: true,
         departmentId: true,
         department: { select: { name: true } },
       },
@@ -945,6 +1102,7 @@ export class GamificationService {
           rank: i + 1,
           userId: g.userId,
           fullName: u?.fullName ?? '',
+          nickname: u?.nickname,
           department: u?.department?.name,
           xp: g._sum.amount ?? 0,
         };

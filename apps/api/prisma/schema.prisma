@@ -754,6 +754,14 @@ enum XpSource {
   STREAK_BONUS
   BADGE_BONUS
   DAILY_QUESTION
+  // Quà sinh nhật — cộng đúng 1 lần/năm, xem checkAndAwardBirthdayBonus() trong
+  // gamification.service.ts. Cần CanBo.ngaySinh (nối qua User.username) mới có.
+  BIRTHDAY_BONUS
+  // Quà ngày lễ — Tết Dương lịch, 30/4, 1/5, 2/9, Giỗ Tổ Hùng Vương (10/3 âm
+  // lịch)... 1 nguồn dùng chung cho MỌI ngày lễ (giống cách STREAK_BONUS dùng
+  // chung cho cả 3 mốc 7/30/90 ngày) — phân biệt bằng note. Xem
+  // checkAndAwardHolidayBonus() trong gamification.service.ts.
+  HOLIDAY_BONUS
 
   @@map("xp_source")
 }
