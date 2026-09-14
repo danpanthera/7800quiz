@@ -422,6 +422,26 @@ select {
   white-space: nowrap;
 }
 
+.portal-level-badge {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--agribank-red-dark);
+  background: var(--gold);
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.portal-level-badge-text-short {
+  display: none;
+}
+
 .portal-user-menu {
   min-width: 0;
   border: 1px solid #dfe5ec;
@@ -527,8 +547,29 @@ select {
   justify-content: center;
 }
 
+/* Cuộn riêng vùng biểu tượng — bộ icon ngày càng nhiều nhóm/nhiều icon, không để
+   cả Modal cao vọt quá màn hình (đặc biệt trên phone) mà cuộn mất tiêu đề. */
+.avatar-picker-groups {
+  max-height: 280px;
+  margin-bottom: 14px;
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.avatar-picker-group + .avatar-picker-group {
+  margin-top: 16px;
+}
+
+.avatar-picker-group-title {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
 .avatar-picker-grid {
-  margin-bottom: 18px;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: 8px;
@@ -1321,6 +1362,18 @@ select {
 @media (max-width: 575px) {
   .portal-user-name {
     display: none;
+  }
+
+  .portal-level-badge {
+    padding: 6px 10px;
+  }
+
+  .portal-level-badge-text {
+    display: none;
+  }
+
+  .portal-level-badge-text-short {
+    display: inline;
   }
 
   .portal-content {

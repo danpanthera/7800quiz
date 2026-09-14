@@ -5,13 +5,26 @@ import api, { getErrorMessage } from '../lib/api'
 import { useAuth } from '../lib/useAuth'
 import UserAvatar from './UserAvatar'
 
-// Bộ biểu tượng ngộ nghĩnh cho người dùng chọn nhanh — không cần backend biết
-// trước danh sách này (chỉ giới hạn độ dài chuỗi), nên thêm/bớt icon ở đây là đủ.
-const EMOJI_CHOICES = [
-  '🦊', '🐼', '🐨', '🦁', '🐯', '🐸', '🐵', '🐧',
-  '🦉', '🦄', '🐝', '🐢', '🦋', '🐳', '🐙', '🦖',
-  '🚀', '⭐', '🎯', '🏆', '💡', '🎨', '🎮', '🍀',
-  '⚡', '🌈', '🎉', '🥷', '🧠', '🔥', '🌙', '☀️',
+// Bộ biểu tượng ngộ nghĩnh cho người dùng chọn nhanh, chia theo nhóm chủ đề —
+// không cần backend biết trước danh sách này (chỉ giới hạn độ dài chuỗi), nên
+// thêm/bớt icon hoặc cả nhóm mới ở đây là đủ.
+const EMOJI_GROUPS: { title: string; emojis: string[] }[] = [
+  {
+    title: 'Thú vui & may mắn',
+    emojis: [
+      '🦊', '🐼', '🐨', '🦁', '🐯', '🐸', '🐵', '🐧',
+      '🦉', '🦄', '🐝', '🐢', '🦋', '🐳', '🐙', '🦖',
+      '🚀', '⭐', '🎯', '🏆', '💡', '🎨', '🎮', '🍀',
+      '⚡', '🌈', '🎉', '🧠', '🔥', '🌙', '☀️',
+    ],
+  },
+  {
+    title: 'Võ lâm & giang hồ',
+    emojis: [
+      '⚔️', '🗡️', '🥋', '🐉', '🏹', '🛡️', '👊', '🤺',
+      '🏮', '📜', '⛩️', '🍶', '🎭', '🪶', '🐺', '🦅', '🥷',
+    ],
+  },
 ]
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024
@@ -77,18 +90,25 @@ export default function AvatarPickerModal({ open, onClose }: { open: boolean; on
         <UserAvatar avatarEmoji={user.avatarEmoji} avatarUrl={user.avatarUrl} size={72} />
       </div>
 
-      <div className="avatar-picker-grid">
-        {EMOJI_CHOICES.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            className={`avatar-picker-emoji${user.avatarEmoji === emoji ? ' is-selected' : ''}`}
-            onClick={() => pickEmoji(emoji)}
-            disabled={savingEmoji !== null}
-            aria-label={`Chọn biểu tượng ${emoji}`}
-          >
-            {emoji}
-          </button>
+      <div className="avatar-picker-groups">
+        {EMOJI_GROUPS.map((group) => (
+          <div key={group.title} className="avatar-picker-group">
+            <div className="avatar-picker-group-title">{group.title}</div>
+            <div className="avatar-picker-grid">
+              {group.emojis.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  className={`avatar-picker-emoji${user.avatarEmoji === emoji ? ' is-selected' : ''}`}
+                  onClick={() => pickEmoji(emoji)}
+                  disabled={savingEmoji !== null}
+                  aria-label={`Chọn biểu tượng ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
