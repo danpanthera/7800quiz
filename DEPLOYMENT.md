@@ -942,10 +942,12 @@ echo | openssl s_client -connect smtp.agribank.com.vn:587 -starttls smtp 2>/dev/
 `CA-AD` là CA nội bộ tích hợp AD của domain `corp.agribank.com.vn` (cùng domain với RODC — xem Phụ lục F). Máy Windows đã join domain tự tin cậy CA này qua GPO; máy ảo Ubuntu và container `api` thì không, nên phải nạp thủ công:
 
 1. **Xuất chứng chỉ gốc từ 1 máy Windows đã join domain** (máy nào cũng được, không cần đúng máy chủ mail): `mmc.exe` → *Add snap-in* → **Certificates (Computer account)** → *Trusted Root Certification Authorities* → *Certificates* → tìm `CA-AD` → chuột phải → *All Tasks* → *Export* → chọn **Base-64 encoded X.509 (.CER)** → lưu file, VD `ca-ad.cer`.
-2. **Chép sang máy ảo PROD**, đặt đúng thư mục `certs/` ở gốc dự án (thư mục này đã bị `.gitignore` chặn, không lên git):
-   ```bash
-   scp ca-ad.cer admindt@10.58.0.20:/opt/7800quiz/certs/agribank-ca-ad.crt
+2. **Chép sang máy ảo PROD**, đặt đúng thư mục `certs/` ở gốc dự án. Chạy từ Windows Server (PowerShell/cmd, nơi vừa lưu file xuất ra — VD `D:\quiz\ca-ad.cer`):
+   ```powershell
+   ssh admindt@10.58.0.20 "mkdir -p /opt/7800quiz/certs"
+   scp D:\quiz\ca-ad.cer admindt@10.58.0.20:/opt/7800quiz/certs/agribank-ca-ad.crt
    ```
+   > ⚠️ Phải `mkdir -p` trước: thư mục `certs/` bị `.gitignore` chặn nên `git pull` KHÔNG tự tạo ra trên máy ảo, `scp` sẽ báo "No such file or directory" nếu thư mục đích chưa có sẵn. Tên file nguồn `.cer` hay đích `.crt` không quan trọng — nội dung Base-64 X.509 như nhau, `scp` cho phép đổi tên ngay lúc chép.
 3. **Tin cậy cho chính máy ảo** (để script `kiem-tra-mail-agribank.sh` chạy qua được bước 3):
    ```bash
    sudo cp /opt/7800quiz/certs/agribank-ca-ad.crt /usr/local/share/ca-certificates/agribank-ca-ad.crt
