@@ -60,6 +60,15 @@ const FILE_MANIFEST = join(THU_MUC_AUDIO, 'manifest.json');
 
 const CUM_CO_DINH = ['A', 'B', 'C', 'D'];
 
+// Đề bài vượt --arena-limit (mặc định 20s) được ĐỌC LẠI ở tốc độ x2 (Google
+// speakingRate=2.0) để rút ngắn còn ~1/2 thời lượng, đỡ bị Đấu trường cắt
+// ngang lúc đang đọc — không đổi arena-limit vì nhiều bộ đề dùng chung
+// questionDurationSec, đổi 1 nơi ảnh hưởng hết. Đáp án KHÔNG bị đọc nhanh
+// (Đấu trường không đọc đáp án — xem ArenaPage.tsx), InstantQuizPlayer vẫn
+// dùng đúng file này nên câu dài sẽ nghe nhanh hơn ở MỌI nơi, không riêng
+// Đấu trường — đã chốt đánh đổi này để khỏi phải sinh 2 bản cho cùng 1 câu.
+const RATE_TANG_TOC_CAU_DAI = 2;
+
 interface ThamSo {
   provider: string;
   voice: string;
@@ -123,6 +132,9 @@ interface MucManifest {
   bytes: number;
   provider: string;
   voice: string;
+  /** Hệ số speakingRate lúc sinh, CHỈ set khi đã tăng tốc câu quá dài cho Đấu
+   * trường (xem RATE_TANG_TOC_CAU_DAI) — vắng mặt/undefined = tốc độ bình thường. */
+  rate?: number;
 }
 type Manifest = Record<string, MucManifest>;
 
@@ -211,6 +223,51 @@ interface MucCanDoc {
   key: string;
   text: string;
   voice: string;
+}
+
+/**
+ * Sinh 1 file audio hoàn chỉnh cho `muc` (chuẩn hoá văn bản → gọi TTS → nén
+ * ffmpeg → đo thời lượng), ghi kết quả vào `manifest`. Dùng chung cho vòng
+ * sinh chính lẫn bước tăng tốc câu quá dài (RATE_TANG_TOC_CAU_DAI) bên dưới,
+ * để cả 2 nơi luôn chuẩn hoá/nén giống hệt nhau.
+ */
+async function sinhAudioChoMuc(
+  muc: MucCanDoc,
+  nhaCungCap: NhaCungCapTts,
+  opts: ThamSo,
+  manifest: Manifest,
+  rateOverride?: number,
+): Promise<number> {
+  const spellOut = !nhaCungCap.hoTroSsml;
+  const vanBanDaChuan = chuanHoaVanBanDeDoc(muc.text, { spellOut });
+  const fileDich = join(THU_MUC_AUDIO, `${muc.key}.mp3`);
+  const doan = tachDoanQuaDai(vanBanDaChuan, nhaCungCap.gioiHanKyTu);
+  const fileThoTmp = doan.map((_, i) =>
+    join(THU_MUC_AUDIO, `.tmp-${muc.key}-${i}.raw`),
+  );
+  for (let i = 0; i < doan.length; i++) {
+    await nhaCungCap.sinh(doan[i], fileThoTmp[i], {
+      voice: muc.voice,
+      rate: rateOverride ?? opts.rate,
+    });
+  }
+  const fileTmpDich = fileDich + '.tmp';
+  await nenVaGhi(fileThoTmp, fileTmpDich);
+  const thoiLuong = await docThoiLuong(fileTmpDich);
+  renameSync(fileTmpDich, fileDich);
+  for (const f of fileThoTmp) rmSync(f, { force: true });
+
+  const dur = Math.round(thoiLuong * 100) / 100;
+  manifest[muc.key] = {
+    preview: muc.text.slice(0, 60),
+    norm: vanBanDaChuan,
+    dur,
+    bytes: statSync(fileDich).size,
+    provider: opts.provider,
+    voice: muc.voice,
+    rate: rateOverride,
+  };
+  return dur;
 }
 
 async function main() {
@@ -336,6 +393,9 @@ async function main() {
     // themVaoKho() ở trên) — dùng thẳng, không tính lại theo hash của riêng
     // chuỗi này (nếu không đề bài và đáp án của CÙNG 1 câu có thể lệch giọng).
     const giongChoMuc = muc.voice;
+    // KHÔNG so rate ở đây — nếu file hiện có đã được tăng tốc (rate=2, xem
+    // Pass "tăng tốc câu dài" bên dưới), coi như vẫn "đủ nội dung" để giữ
+    // nguyên bản đã tối ưu, không ghi đè lại bằng bản tốc độ thường.
     const daCoDuNoiDung =
       !opts.force &&
       mucCu &&
@@ -356,30 +416,7 @@ async function main() {
     }
 
     try {
-      const doan = tachDoanQuaDai(vanBanDaChuan, nhaCungCap.gioiHanKyTu);
-      const fileThoTmp = doan.map((_, i) =>
-        join(THU_MUC_AUDIO, `.tmp-${muc.key}-${i}.raw`),
-      );
-      for (let i = 0; i < doan.length; i++) {
-        await nhaCungCap.sinh(doan[i], fileThoTmp[i], {
-          voice: giongChoMuc,
-          rate: opts.rate,
-        });
-      }
-      const fileTmpDich = fileDich + '.tmp';
-      await nenVaGhi(fileThoTmp, fileTmpDich);
-      const thoiLuong = await docThoiLuong(fileTmpDich);
-      renameSync(fileTmpDich, fileDich);
-      for (const f of fileThoTmp) rmSync(f, { force: true });
-
-      manifest[muc.key] = {
-        preview: muc.text.slice(0, 60),
-        norm: vanBanDaChuan,
-        dur: Math.round(thoiLuong * 100) / 100,
-        bytes: statSync(fileDich).size,
-        provider: opts.provider,
-        voice: giongChoMuc,
-      };
+      await sinhAudioChoMuc(muc, nhaCungCap, opts, manifest);
       daSinh++;
       if (daSinh % 10 === 0)
         console.log(`  ... đã sinh ${daSinh}/${danhSach.length - daBoQua}`);
@@ -422,10 +459,67 @@ async function main() {
     }
     if (canhBaoArena.length > 20)
       console.log(`   ... và ${canhBaoArena.length - 20} câu khác.`);
+
+    // ── Tăng tốc x2 các đề bài trên — rút ngắn còn ~1/2 thời lượng, ĐỔI CHUNG
+    // cho mọi nơi phát (không riêng Đấu trường, xem RATE_TANG_TOC_CAU_DAI).
+    const theoKey = new Map(danhSach.map((m) => [m.key, m]));
+    let daTangToc = 0,
+      daBoQuaTangToc = 0;
+    const vanConDaiSauTangToc: { key: string; dur: number }[] = [];
+    for (const c of canhBaoArena) {
+      if (manifest[c.key]?.rate === RATE_TANG_TOC_CAU_DAI) {
+        daBoQuaTangToc++; // đã tăng tốc từ lần chạy trước — khỏi gọi TTS lại
+        continue;
+      }
+      const muc = theoKey.get(c.key);
+      if (!muc) continue; // không nên xảy ra — mọi key trong canhBaoArena đều đến từ danhSach
+
+      if (opts.dryRun) {
+        console.log(
+          `[dry-run] sẽ tăng tốc x${RATE_TANG_TOC_CAU_DAI}: ${c.key}  (${c.dur.toFixed(1)}s)`,
+        );
+        daTangToc++;
+        continue;
+      }
+      try {
+        const durMoi = await sinhAudioChoMuc(
+          muc,
+          nhaCungCap,
+          opts,
+          manifest,
+          RATE_TANG_TOC_CAU_DAI,
+        );
+        daTangToc++;
+        if (durMoi > opts.arenaLimit)
+          vanConDaiSauTangToc.push({ key: c.key, dur: durMoi });
+      } catch (err) {
+        console.error(
+          `LỖI khi tăng tốc "${c.key}" ("${muc.text.slice(0, 40)}..."):`,
+          (err as Error).message,
+        );
+      }
+    }
+    if (!opts.dryRun && daTangToc > 0) ghiManifest(manifest);
+
     console.log(
-      `→ Gợi ý: đặt questionDurationSec ≥ ${Math.ceil(Math.max(...canhBaoArena.map((c) => c.dur)) + 5)}` +
-        ` giây cho các bộ đề chứa câu này, hoặc rút gọn nội dung câu hỏi.`,
+      `\nĐã tăng tốc x${RATE_TANG_TOC_CAU_DAI} cho ${daTangToc} đề bài quá dài` +
+        (daBoQuaTangToc > 0
+          ? ` (bỏ qua ${daBoQuaTangToc} đã tăng tốc từ lần chạy trước)`
+          : '') +
+        '.',
     );
+    if (vanConDaiSauTangToc.length > 0) {
+      vanConDaiSauTangToc.sort((a, b) => b.dur - a.dur);
+      console.log(
+        `⚠ ${vanConDaiSauTangToc.length} câu SAU KHI tăng tốc x${RATE_TANG_TOC_CAU_DAI} vẫn còn vượt ${opts.arenaLimit}s — ` +
+          `cân nhắc tăng questionDurationSec ≥ ${Math.ceil(Math.max(...vanConDaiSauTangToc.map((v) => v.dur)) + 5)}s ` +
+          `cho các bộ đề chứa câu này, hoặc rút gọn nội dung câu hỏi:`,
+      );
+      for (const v of vanConDaiSauTangToc.slice(0, 20))
+        console.log(`   [${v.key}] ${v.dur.toFixed(1)}s`);
+      if (vanConDaiSauTangToc.length > 20)
+        console.log(`   ... và ${vanConDaiSauTangToc.length - 20} câu khác.`);
+    }
   }
 
   // ── Dọn file mồ côi ────────────────────────────────────────────────────────

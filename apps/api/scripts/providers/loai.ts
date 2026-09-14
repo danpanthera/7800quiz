@@ -1,7 +1,12 @@
 // Kiểu chung cho mọi adapter nhà cung cấp TTS — xem 4 file cùng thư mục.
 export interface TuyChonSinhAmThanh {
   voice: string;
-  /** Tốc độ đọc — chỉ macos dùng (say -r); các provider khác bỏ qua. */
+  /**
+   * Hệ số tốc độ đọc — macos dùng qua `say -r` (từ/phút), google dùng qua
+   * `speakingRate` (hệ số nhân, 1.0 = bình thường, hợp lệ 0.25-4.0). Chỉ set
+   * khi cố tình tăng tốc (ví dụ câu quá dài cho Đấu trường — xem
+   * RATE_TANG_TOC_CAU_DAI ở sinh-giong-doc.ts); các provider khác bỏ qua.
+   */
   rate?: number;
 }
 
@@ -17,5 +22,9 @@ export interface NhaCungCapTts {
    * Sinh audio thô (WAV/AIFF/MP3 tuỳ provider) cho `text`, ghi ra `duongDanTho`.
    * KHÔNG nén ở đây — sinh-giong-doc.ts sẽ chạy ffmpeg nén/chuẩn hoá loudness sau.
    */
-  sinh(text: string, duongDanTho: string, tuyChon: TuyChonSinhAmThanh): Promise<void>;
+  sinh(
+    text: string,
+    duongDanTho: string,
+    tuyChon: TuyChonSinhAmThanh,
+  ): Promise<void>;
 }

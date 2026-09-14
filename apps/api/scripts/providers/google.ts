@@ -27,11 +27,15 @@ export const google: NhaCungCapTts = {
         body: JSON.stringify({
           input: { text },
           voice: { languageCode: 'vi-VN', name: tuyChon.voice },
-          audioConfig: { audioEncoding: 'MP3' },
+          audioConfig: {
+            audioEncoding: 'MP3',
+            ...(tuyChon.rate ? { speakingRate: tuyChon.rate } : {}),
+          },
         }),
       },
     );
-    if (!res.ok) throw new Error(`Google TTS lỗi (${res.status}): ${await res.text()}`);
+    if (!res.ok)
+      throw new Error(`Google TTS lỗi (${res.status}): ${await res.text()}`);
     const data = (await res.json()) as { audioContent: string };
     const { writeFile } = await import('node:fs/promises');
     await writeFile(duongDanTho, Buffer.from(data.audioContent, 'base64'));
