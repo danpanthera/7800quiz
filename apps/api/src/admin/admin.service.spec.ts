@@ -99,7 +99,11 @@ describe('AdminService.deleteReportsBulk', () => {
     const gamification = {
       recomputeUserProgress: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new AdminService(prisma as never, gamification as never, {} as never);
+    const service = new AdminService(
+      prisma as never,
+      gamification as never,
+      {} as never,
+    );
 
     const result = await service.deleteReportsBulk(['sub-1'], 'admin-1');
 
@@ -249,8 +253,20 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
     const prisma = {
       canBo: {
         findMany: jest.fn().mockResolvedValue([
-          { id: 'c1', cbCode: 'CB001', fullName: 'Nguyễn Văn A', userAD: 'nguyenvana', email: null },
-          { id: 'c2', cbCode: 'CB002', fullName: 'Trần Thị B', userAD: null, email: 'tranthib@congty.vn' },
+          {
+            id: 'c1',
+            cbCode: 'CB001',
+            fullName: 'Nguyễn Văn A',
+            userAD: 'nguyenvana',
+            email: null,
+          },
+          {
+            id: 'c2',
+            cbCode: 'CB002',
+            fullName: 'Trần Thị B',
+            userAD: null,
+            email: 'tranthib@congty.vn',
+          },
         ]),
       },
       user: {
@@ -307,8 +323,20 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
     const prisma = {
       canBo: {
         findMany: jest.fn().mockResolvedValue([
-          { id: 'c1', cbCode: 'CB001', fullName: 'Nguyễn Văn A', userAD: 'nguyenvana', email: null },
-          { id: 'c2', cbCode: 'CB002', fullName: 'Trần Thị B', userAD: 'tranthib', email: null },
+          {
+            id: 'c1',
+            cbCode: 'CB001',
+            fullName: 'Nguyễn Văn A',
+            userAD: 'nguyenvana',
+            email: null,
+          },
+          {
+            id: 'c2',
+            cbCode: 'CB002',
+            fullName: 'Trần Thị B',
+            userAD: 'tranthib',
+            email: null,
+          },
         ]),
       },
       user: {
@@ -324,9 +352,10 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
     const transporterGia = { close: jest.fn() };
     const mailService = {
       taoTransporter: jest.fn().mockReturnValue(transporterGia),
-      xacMinhKetNoi: jest
-        .fn()
-        .mockResolvedValue({ ok: false, loi: 'Không đăng nhập được vào hộp mail — kiểm tra lại mật khẩu hoặc thử lại sau.' }),
+      xacMinhKetNoi: jest.fn().mockResolvedValue({
+        ok: false,
+        loi: 'Không đăng nhập được vào hộp mail — kiểm tra lại mật khẩu hoặc thử lại sau.',
+      }),
       guiMatKhauTam: jest.fn(),
     };
     const service = new AdminService(
@@ -911,7 +940,11 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
             attempt: {
               violationCount: 0,
               violationSubmitted: false,
-              answers: [{ answeredMs: 1000 }, { answeredMs: 1500 }, { answeredMs: 2000 }],
+              answers: [
+                { answeredMs: 1000 },
+                { answeredMs: 1500 },
+                { answeredMs: 2000 },
+              ],
             },
           }),
         ]),
@@ -933,7 +966,11 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
             attempt: {
               violationCount: 0,
               violationSubmitted: false,
-              answers: [{ answeredMs: 500 }, { answeredMs: 500 }, { answeredMs: 500 }],
+              answers: [
+                { answeredMs: 500 },
+                { answeredMs: 500 },
+                { answeredMs: 500 },
+              ],
             },
           }),
         ]),
@@ -954,7 +991,11 @@ describe('AdminService.getReports — cờ suspiciousSpeed', () => {
             attempt: {
               violationCount: 0,
               violationSubmitted: false,
-              answers: [{ answeredMs: 15_000 }, { answeredMs: 20_000 }, { answeredMs: 18_000 }],
+              answers: [
+                { answeredMs: 15_000 },
+                { answeredMs: 20_000 },
+                { answeredMs: 18_000 },
+              ],
             },
           }),
         ]),
@@ -1010,7 +1051,10 @@ describe('AdminService.getAnswerCollusion', () => {
           {
             questionId: 'q1',
             selectedOptionIds: ['opt-sai-a'],
-            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+            submission: {
+              userId: 'user-1',
+              user: { fullName: 'Nguyễn Văn A' },
+            },
           },
           {
             questionId: 'q1',
@@ -1052,7 +1096,10 @@ describe('AdminService.getAnswerCollusion', () => {
           {
             questionId: 'q1',
             selectedOptionIds: ['opt-sai-a'],
-            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+            submission: {
+              userId: 'user-1',
+              user: { fullName: 'Nguyễn Văn A' },
+            },
           },
         ]),
       },
@@ -1072,7 +1119,10 @@ describe('AdminService.getAnswerCollusion', () => {
           {
             questionId: 'q1',
             selectedOptionIds: ['opt-dung'],
-            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+            submission: {
+              userId: 'user-1',
+              user: { fullName: 'Nguyễn Văn A' },
+            },
           },
           {
             questionId: 'q1',
@@ -1106,7 +1156,10 @@ describe('AdminService.getAnswerCollusion', () => {
           {
             questionId: 'q1',
             selectedOptionIds: ['a', 'c'],
-            submission: { userId: 'user-1', user: { fullName: 'Nguyễn Văn A' } },
+            submission: {
+              userId: 'user-1',
+              user: { fullName: 'Nguyễn Văn A' },
+            },
           },
           {
             questionId: 'q1',

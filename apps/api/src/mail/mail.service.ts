@@ -65,7 +65,11 @@ export class MailService {
   async guiMatKhauTam(
     transporter: nodemailer.Transporter,
     nguoiGuiEmail: string,
-    params: { nguoiNhanEmail: string; tenNguoiNhan: string; matKhauTam: string },
+    params: {
+      nguoiNhanEmail: string;
+      tenNguoiNhan: string;
+      matKhauTam: string;
+    },
   ): Promise<{ ok: true } | { ok: false; loi: string }> {
     try {
       await transporter.sendMail({

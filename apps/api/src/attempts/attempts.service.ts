@@ -475,7 +475,9 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (SOFT_VIOLATION_TYPES.has(type)) {
-      await this.prisma.attemptViolation.create({ data: { attemptId: id, type } });
+      await this.prisma.attemptViolation.create({
+        data: { attemptId: id, type },
+      });
       return {
         violationCount: attempt.violationCount,
         violationLimit,
@@ -496,7 +498,11 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       // ngưỡng gần như đồng thời (2 request song song), chỉ request nào thật sự
       // đổi được 1 dòng mới được gọi finalize(), tránh chấm bài 2 lần.
       const claimed = await this.prisma.quizAttempt.updateMany({
-        where: { id, status: AttemptStatus.IN_PROGRESS, violationSubmitted: false },
+        where: {
+          id,
+          status: AttemptStatus.IN_PROGRESS,
+          violationSubmitted: false,
+        },
         data: { violationSubmitted: true },
       });
       if (claimed.count === 1) {
@@ -666,13 +672,19 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
           id: true,
           userId: true,
           violationCount: true,
-          quizVersion: { select: { quiz: { select: { violationLimit: true } } } },
+          quizVersion: {
+            select: { quiz: { select: { violationLimit: true } } },
+          },
         },
       });
       for (const c of candidates) {
         if (c.violationCount < c.quizVersion.quiz.violationLimit) continue;
         const claimed = await this.prisma.quizAttempt.updateMany({
-          where: { id: c.id, status: AttemptStatus.IN_PROGRESS, violationSubmitted: false },
+          where: {
+            id: c.id,
+            status: AttemptStatus.IN_PROGRESS,
+            violationSubmitted: false,
+          },
           data: { violationSubmitted: true },
         });
         if (claimed.count === 1) await this.finalize(c.userId, c.id, false);

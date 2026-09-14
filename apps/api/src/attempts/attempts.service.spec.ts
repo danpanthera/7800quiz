@@ -738,7 +738,7 @@ describe('AttemptsService', () => {
     const result = await service.reportViolation(
       'user-1',
       attemptId,
-      'TAB_HIDDEN' as never,
+      'TAB_HIDDEN',
     );
 
     expect(result).toEqual({
@@ -769,7 +769,7 @@ describe('AttemptsService', () => {
     const result = await service.reportViolation(
       'user-1',
       attemptId,
-      'COPY_ATTEMPT' as never,
+      'COPY_ATTEMPT',
     );
 
     expect(result).toEqual({
@@ -793,7 +793,10 @@ describe('AttemptsService', () => {
       // Đọc lại từ DB sau khi updateMany đã đặt cờ này — xem giải thích trong
       // comment cạnh reportViolation()/finalize() về thứ tự xảy ra thật.
       violationSubmitted: true,
-      quizVersion: { snapshot, quiz: { violationLimit: 3, instantFeedback: false } },
+      quizVersion: {
+        snapshot,
+        quiz: { violationLimit: 3, instantFeedback: false },
+      },
       answers: [
         {
           questionId: 'question-1',
@@ -844,7 +847,7 @@ describe('AttemptsService', () => {
     const result = await service.reportViolation(
       'user-1',
       attemptId,
-      'WINDOW_BLUR' as never,
+      'WINDOW_BLUR',
     );
 
     expect(prisma.quizAttempt.updateMany).toHaveBeenCalledWith({
@@ -896,7 +899,7 @@ describe('AttemptsService', () => {
     const result = await service.reportViolation(
       'user-1',
       attemptId,
-      'TAB_HIDDEN' as never,
+      'TAB_HIDDEN',
     );
 
     expect(result).toEqual({
@@ -931,7 +934,7 @@ describe('AttemptsService', () => {
     const result = await service.reportViolation(
       'user-1',
       attemptId,
-      'DEVTOOLS_OPEN' as never,
+      'DEVTOOLS_OPEN',
     );
 
     expect(prisma.attemptViolation.create).toHaveBeenCalledWith({
@@ -966,7 +969,7 @@ describe('AttemptsService', () => {
     const result = await service.reportViolation(
       'user-1',
       attemptId,
-      'SCREENSHOT_ATTEMPT' as never,
+      'SCREENSHOT_ATTEMPT',
     );
 
     expect(result.violationCount).toBe(0);
@@ -1019,7 +1022,11 @@ describe('AttemptsService', () => {
         },
         data: { violationSubmitted: true },
       });
-      expect(finalizeSpy).toHaveBeenCalledWith('user-1', 'att-du-nguong', false);
+      expect(finalizeSpy).toHaveBeenCalledWith(
+        'user-1',
+        'att-du-nguong',
+        false,
+      );
     });
 
     it('không chấm bài nếu "giành quyền" thất bại (nơi khác đã xử lý trước)', async () => {

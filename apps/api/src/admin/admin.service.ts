@@ -1318,7 +1318,8 @@ export class AdminService {
         .filter((v): v is number => v !== null);
       const avgAnsweredMs =
         answeredMsList.length > 0
-          ? answeredMsList.reduce((sum, v) => sum + v, 0) / answeredMsList.length
+          ? answeredMsList.reduce((sum, v) => sum + v, 0) /
+            answeredMsList.length
           : null;
       const suspiciousSpeed =
         avgAnsweredMs !== null &&
@@ -1343,8 +1344,9 @@ export class AdminService {
         suspiciousSpeed,
         isBestForUser:
           s.score !== null &&
-          bestScoreByKey.get(`${s.userId}::${s.quizVersion?.quiz?.id ?? ''}`) ===
-            s.score,
+          bestScoreByKey.get(
+            `${s.userId}::${s.quizVersion?.quiz?.id ?? ''}`,
+          ) === s.score,
       };
     });
   }
@@ -1800,14 +1802,23 @@ export class AdminService {
         content: true,
         questionType: true,
         orderIndex: true,
-        options: { select: { id: true, content: true, isCorrect: true, orderIndex: true } },
+        options: {
+          select: {
+            id: true,
+            content: true,
+            isCorrect: true,
+            orderIndex: true,
+          },
+        },
       },
       orderBy: { orderIndex: 'asc' },
     });
     if (questions.length === 0) return [];
     const questionById = new Map(questions.map((q) => [q.id, q]));
     const optionContentById = new Map(
-      questions.flatMap((q) => q.options.map((o) => [o.id, o.content] as const)),
+      questions.flatMap((q) =>
+        q.options.map((o) => [o.id, o.content] as const),
+      ),
     );
 
     const answers = await this.prisma.submissionAnswer.findMany({
@@ -1815,22 +1826,32 @@ export class AdminService {
       select: {
         questionId: true,
         selectedOptionIds: true,
-        submission: { select: { userId: true, user: { select: { fullName: true } } } },
+        submission: {
+          select: { userId: true, user: { select: { fullName: true } } },
+        },
       },
     });
 
     const groups = new Map<
       string,
-      { questionId: string; optionIds: string[]; students: Map<string, string | null> }
+      {
+        questionId: string;
+        optionIds: string[];
+        students: Map<string, string | null>;
+      }
     >();
     for (const a of answers) {
       const q = questionById.get(a.questionId);
       if (!q) continue;
       const selected = Array.isArray(a.selectedOptionIds)
-        ? (a.selectedOptionIds as unknown[]).filter((v): v is string => typeof v === 'string')
+        ? (a.selectedOptionIds as unknown[]).filter(
+            (v): v is string => typeof v === 'string',
+          )
         : [];
       if (selected.length === 0) continue;
-      if (this.isAnswerCorrectForAnalytics(q.questionType, q.options, selected)) {
+      if (
+        this.isAnswerCorrectForAnalytics(q.questionType, q.options, selected)
+      ) {
         continue;
       }
 
@@ -1838,14 +1859,19 @@ export class AdminService {
       // ngờ). SINGLE/MULTIPLE: sắp xếp lại vì chỉ quan tâm ĐÃ CHỌN GÌ, thứ tự
       // tick chọn không có ý nghĩa.
       const normalized =
-        q.questionType === QuestionType.ORDERING ? selected : [...selected].sort();
+        q.questionType === QuestionType.ORDERING
+          ? selected
+          : [...selected].sort();
       const key = `${a.questionId}::${JSON.stringify(normalized)}`;
       const group = groups.get(key) ?? {
         questionId: a.questionId,
         optionIds: normalized,
         students: new Map<string, string | null>(),
       };
-      group.students.set(a.submission.userId, a.submission.user?.fullName ?? null);
+      group.students.set(
+        a.submission.userId,
+        a.submission.user?.fullName ?? null,
+      );
       groups.set(key, group);
     }
 
@@ -1861,10 +1887,12 @@ export class AdminService {
             (id) => optionContentById.get(id) ?? '?',
           ),
           studentCount: g.students.size,
-          students: Array.from(g.students.entries()).map(([userId, fullName]) => ({
-            userId,
-            fullName,
-          })),
+          students: Array.from(g.students.entries()).map(
+            ([userId, fullName]) => ({
+              userId,
+              fullName,
+            }),
+          ),
         };
       })
       .sort((a, b) => b.studentCount - a.studentCount);
@@ -1927,80 +1955,83 @@ export class AdminService {
     const now = new Date();
     const soon = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const staleThreshold = new Date(now.getTime() - STALE_ATTEMPT_MINUTES * 60 * 1000);
+    const staleThreshold = new Date(
+      now.getTime() - STALE_ATTEMPT_MINUTES * 60 * 1000,
+    );
 
-    const [nearDeadlineNoSubmission, recentFails, highViolations, staleAttempts] =
-      await Promise.all([
-        // Được giao trực tiếp (không phải giao theo phòng ban) và sắp hết hạn
-        // trong 3 ngày tới nhưng chưa có bài nào được chấm.
-        this.prisma.assignment.findMany({
-          where: {
-            status: 'ACTIVE',
-            userId: { not: null },
-            endAt: { gte: now, lte: soon },
-            attempts: { none: { status: 'GRADED' } },
-          },
-          select: {
-            id: true,
-            userId: true,
-            endAt: true,
-            user: { select: { fullName: true } },
-            quiz: { select: { title: true } },
-          },
-        }),
-        // Trượt bài trong 30 ngày gần nhất
-        this.prisma.submission.findMany({
-          where: {
-            status: 'GRADED',
-            isPassed: false,
-            submittedAt: { gte: last30Days },
-          },
-          select: {
-            userId: true,
-            score: true,
-            submittedAt: true,
-            user: { select: { fullName: true } },
-            quizVersion: { select: { quiz: { select: { title: true } } } },
-          },
-          orderBy: { submittedAt: 'desc' },
-        }),
-        // Bị ghi nhận từ 3 vi phạm trở lên trong 1 lần làm bài
-        this.prisma.quizAttempt.findMany({
-          where: { violationCount: { gte: 3 } },
-          select: {
-            userId: true,
-            violationCount: true,
-            user: { select: { fullName: true } },
-            assignment: { select: { quiz: { select: { title: true } } } },
-          },
-          orderBy: { violationCount: 'desc' },
-        }),
-        // Đang làm dở, còn hạn nộp, nhưng KHÔNG có bất kỳ lần lưu nào trong ít
-        // nhất STALE_ATTEMPT_MINUTES phút gần nhất — dấu hiệu có thể đã tắt
-        // JS/chặn request để né hệ thống giám sát vi phạm (nếu vậy, mọi cơ chế
-        // ghi nhận phía client đều vô hiệu, đây là tín hiệu DUY NHẤT phía server
-        // còn phát hiện được), hoặc đơn giản là đang rời máy đi làm việc khác.
-        this.prisma.quizAttempt.findMany({
-          where: {
-            status: 'IN_PROGRESS',
-            deadlineAt: { gt: now },
-            startedAt: { lte: staleThreshold },
-            OR: [
-              { lastSavedAt: null },
-              { lastSavedAt: { lte: staleThreshold } },
-            ],
-          },
-          select: {
-            userId: true,
-            startedAt: true,
-            lastSavedAt: true,
-            deadlineAt: true,
-            user: { select: { fullName: true } },
-            assignment: { select: { quiz: { select: { title: true } } } },
-          },
-          orderBy: { startedAt: 'asc' },
-        }),
-      ]);
+    const [
+      nearDeadlineNoSubmission,
+      recentFails,
+      highViolations,
+      staleAttempts,
+    ] = await Promise.all([
+      // Được giao trực tiếp (không phải giao theo phòng ban) và sắp hết hạn
+      // trong 3 ngày tới nhưng chưa có bài nào được chấm.
+      this.prisma.assignment.findMany({
+        where: {
+          status: 'ACTIVE',
+          userId: { not: null },
+          endAt: { gte: now, lte: soon },
+          attempts: { none: { status: 'GRADED' } },
+        },
+        select: {
+          id: true,
+          userId: true,
+          endAt: true,
+          user: { select: { fullName: true } },
+          quiz: { select: { title: true } },
+        },
+      }),
+      // Trượt bài trong 30 ngày gần nhất
+      this.prisma.submission.findMany({
+        where: {
+          status: 'GRADED',
+          isPassed: false,
+          submittedAt: { gte: last30Days },
+        },
+        select: {
+          userId: true,
+          score: true,
+          submittedAt: true,
+          user: { select: { fullName: true } },
+          quizVersion: { select: { quiz: { select: { title: true } } } },
+        },
+        orderBy: { submittedAt: 'desc' },
+      }),
+      // Bị ghi nhận từ 3 vi phạm trở lên trong 1 lần làm bài
+      this.prisma.quizAttempt.findMany({
+        where: { violationCount: { gte: 3 } },
+        select: {
+          userId: true,
+          violationCount: true,
+          user: { select: { fullName: true } },
+          assignment: { select: { quiz: { select: { title: true } } } },
+        },
+        orderBy: { violationCount: 'desc' },
+      }),
+      // Đang làm dở, còn hạn nộp, nhưng KHÔNG có bất kỳ lần lưu nào trong ít
+      // nhất STALE_ATTEMPT_MINUTES phút gần nhất — dấu hiệu có thể đã tắt
+      // JS/chặn request để né hệ thống giám sát vi phạm (nếu vậy, mọi cơ chế
+      // ghi nhận phía client đều vô hiệu, đây là tín hiệu DUY NHẤT phía server
+      // còn phát hiện được), hoặc đơn giản là đang rời máy đi làm việc khác.
+      this.prisma.quizAttempt.findMany({
+        where: {
+          status: 'IN_PROGRESS',
+          deadlineAt: { gt: now },
+          startedAt: { lte: staleThreshold },
+          OR: [{ lastSavedAt: null }, { lastSavedAt: { lte: staleThreshold } }],
+        },
+        select: {
+          userId: true,
+          startedAt: true,
+          lastSavedAt: true,
+          deadlineAt: true,
+          user: { select: { fullName: true } },
+          assignment: { select: { quiz: { select: { title: true } } } },
+        },
+        orderBy: { startedAt: 'asc' },
+      }),
+    ]);
 
     return {
       nearDeadlineNoSubmission: nearDeadlineNoSubmission.map((a) => ({
@@ -2664,7 +2695,13 @@ export class AdminService {
   ) {
     const canBoList = await this.prisma.canBo.findMany({
       where: { id: { in: ids } },
-      select: { id: true, cbCode: true, fullName: true, userAD: true, email: true },
+      select: {
+        id: true,
+        cbCode: true,
+        fullName: true,
+        userAD: true,
+        email: true,
+      },
     });
 
     // Chuẩn bị đường gửi mail TRƯỚC vòng lặp — xác minh đăng nhập ĐÚNG 1 LẦN.
