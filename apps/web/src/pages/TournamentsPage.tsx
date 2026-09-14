@@ -10,7 +10,7 @@ import api, { getErrorMessage } from '../lib/api'
 const { Title, Text } = Typography
 
 interface Quiz { id: string; title: string }
-interface TournamentTeam { id: string; name: string; seed: number; isEliminated: boolean }
+interface TournamentTeam { id: string; name: string; seed: number; isEliminated: boolean; eliminatedAtRound: number | null }
 interface TournamentMatch {
   id: string
   round: number
@@ -39,6 +39,11 @@ const STATUS_TAG: Record<string, { color: string; label: string }> = {
   FINISHED: { color: 'success', label: 'Đã kết thúc' },
 }
 
+// Mức XP thưởng theo hạng chung cuộc — phải khớp với TournamentService
+// (apps/api/src/tournament/tournament.service.ts) để chỉ hiển thị đúng số
+// hệ thống đã cộng, không phải số tự bịa ra ở màn hình.
+const XP_BY_PLACEMENT = { champion: 100, runnerUp: 50, thirdPlace: 30, consolation: 15 }
+
 function TournamentDetail({ tournament, onBack }: { tournament: Tournament; onBack: () => void }) {
   const qc = useQueryClient()
   const teamById = new Map(tournament.teams.map((t) => [t.id, t]))
@@ -62,6 +67,17 @@ function TournamentDetail({ tournament, onBack }: { tournament: Tournament; onBa
 
   const rounds = Array.from({ length: tournament.totalRounds }, (_, i) => i + 1)
   const champion = tournament.championTeamId ? teamById.get(tournament.championTeamId) : null
+  // Cách xác định hạng chung cuộc y hệt awardTournamentPrizes() ở BE: thua
+  // chung kết = á quân, thua bán kết (vòng totalRounds-1) = đồng hạng Ba (MVP
+  // không tổ chức trận tranh hạng Ba), thua sớm hơn = giải khuyến khích.
+  const semifinalRound = tournament.totalRounds - 1
+  const runnerUp = tournament.teams.find((t) => t.eliminatedAtRound === tournament.totalRounds)
+  const thirdPlaceTeams = semifinalRound >= 1
+    ? tournament.teams.filter((t) => t.eliminatedAtRound === semifinalRound)
+    : []
+  const consolationTeams = tournament.teams.filter(
+    (t) => t.eliminatedAtRound != null && t.eliminatedAtRound < semifinalRound,
+  )
 
   return (
     <div className="page-stack">
@@ -77,6 +93,42 @@ function TournamentDetail({ tournament, onBack }: { tournament: Tournament; onBa
       {champion && (
         <Card bordered={false} className="dash-hero" style={{ marginTop: 16 }}>
           <Space><TrophyOutlined style={{ fontSize: 24 }} /><Title level={3} style={{ color: '#fff', margin: 0 }}>Vô địch: {champion.name}</Title></Space>
+        </Card>
+      )}
+
+      {tournament.status === 'FINISHED' && (
+        <Card bordered={false} style={{ marginTop: 16 }}>
+          <Title level={5}>Kết quả chung cuộc — thưởng XP theo hạng</Title>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {champion && (
+              <Space>
+                <Tag color="gold">Vô địch</Tag>
+                <Text strong>{champion.name}</Text>
+                <Text type="secondary">+{XP_BY_PLACEMENT.champion} XP mỗi thành viên</Text>
+              </Space>
+            )}
+            {runnerUp && (
+              <Space>
+                <Tag>Á quân</Tag>
+                <Text strong>{runnerUp.name}</Text>
+                <Text type="secondary">+{XP_BY_PLACEMENT.runnerUp} XP mỗi thành viên</Text>
+              </Space>
+            )}
+            {thirdPlaceTeams.length > 0 && (
+              <Space>
+                <Tag>Đồng hạng Ba</Tag>
+                <Text strong>{thirdPlaceTeams.map((t) => t.name).join(' · ')}</Text>
+                <Text type="secondary">+{XP_BY_PLACEMENT.thirdPlace} XP mỗi thành viên</Text>
+              </Space>
+            )}
+            {consolationTeams.length > 0 && (
+              <Space>
+                <Tag>Giải khuyến khích</Tag>
+                <Text strong>{consolationTeams.map((t) => t.name).join(' · ')}</Text>
+                <Text type="secondary">+{XP_BY_PLACEMENT.consolation} XP mỗi thành viên</Text>
+              </Space>
+            )}
+          </Space>
         </Card>
       )}
 

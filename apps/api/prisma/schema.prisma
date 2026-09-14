@@ -754,6 +754,13 @@ enum XpSource {
   STREAK_BONUS
   BADGE_BONUS
   DAILY_QUESTION
+  // Thưởng theo THÀNH TÍCH CHUNG CUỘC của cả giải đấu loại trực tiếp — cộng
+  // THÊM vào ARENA_PARTICIPATE/ARENA_WIN đã cộng qua từng trận trong giải,
+  // chỉ cộng 1 lần khi Tournament chuyển FINISHED (xem tournament.service.ts).
+  TOURNAMENT_CHAMPION
+  TOURNAMENT_RUNNER_UP
+  TOURNAMENT_THIRD_PLACE
+  TOURNAMENT_CONSOLATION
   // Quà sinh nhật — cộng đúng 1 lần/năm, xem checkAndAwardBirthdayBonus() trong
   // gamification.service.ts. Cần CanBo.ngaySinh (nối qua User.username) mới có.
   BIRTHDAY_BONUS
@@ -904,12 +911,16 @@ enum TournamentStatus {
 }
 
 model TournamentTeam {
-  id           String   @id @default(uuid())
-  tournamentId String   @map("tournament_id")
-  name         String
-  seed         Int
-  isEliminated Boolean  @default(false) @map("is_eliminated")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id                String   @id @default(uuid())
+  tournamentId      String   @map("tournament_id")
+  name              String
+  seed              Int
+  isEliminated      Boolean  @default(false) @map("is_eliminated")
+  // Vòng mà đội này thua và bị loại (null = chưa loại, hoặc là đội vô địch).
+  // Dùng để suy ra hạng chung cuộc: thua ở vòng chung kết = á quân, thua ở
+  // bán kết (totalRounds - 1) = đồng hạng Ba, thua sớm hơn = giải khuyến khích.
+  eliminatedAtRound Int?     @map("eliminated_at_round")
+  createdAt         DateTime @default(now()) @map("created_at")
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 

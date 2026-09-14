@@ -3,19 +3,32 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { XpSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ArenaService } from '../arena/arena.service';
 import { ArenaHostModeDto } from '../arena/dto/create-arena.dto';
+import { GamificationService } from '../gamification/gamification.service';
 
 function isPowerOfTwo(n: number): boolean {
   return n >= 2 && (n & (n - 1)) === 0;
 }
+
+// Thưởng XP theo THÀNH TÍCH CHUNG CUỘC của cả giải — cộng THÊM vào
+// ARENA_PARTICIPATE/ARENA_WIN đã cộng qua từng trận trong giải, chỉ cộng 1
+// lần khi Tournament chuyển FINISHED. MVP không tổ chức trận tranh hạng Ba
+// (giữ đúng tinh thần đơn giản như luật bốc thăm hiện tại — không có "bye"),
+// nên 2 đội thua bán kết đồng hạng Ba, cùng mức thưởng.
+const XP_TOURNAMENT_CHAMPION = 100;
+const XP_TOURNAMENT_RUNNER_UP = 50;
+const XP_TOURNAMENT_THIRD_PLACE = 30;
+const XP_TOURNAMENT_CONSOLATION = 15;
 
 @Injectable()
 export class TournamentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly arenaService: ArenaService,
+    private readonly gamification: GamificationService,
   ) {}
 
   list() {
@@ -185,14 +198,14 @@ export class TournamentService {
       );
     const loser = teams.find((t) => t.id !== winner.id)!;
 
-    await this.prisma.$transaction(async (tx) => {
+    const justFinished = await this.prisma.$transaction(async (tx) => {
       await tx.tournamentMatch.update({
         where: { id: matchId },
         data: { winnerTeamId: winner.id, status: 'DONE' },
       });
       await tx.tournamentTeam.update({
         where: { id: loser.id },
-        data: { isEliminated: true },
+        data: { isEliminated: true, eliminatedAtRound: match.round },
       });
 
       const nextRound = match.round + 1;
@@ -201,7 +214,7 @@ export class TournamentService {
           where: { id: match.tournamentId },
           data: { status: 'FINISHED', championTeamId: winner.id },
         });
-        return;
+        return true;
       }
 
       const nextOrderInRound = Math.floor(match.orderInRound / 2);
@@ -229,9 +242,96 @@ export class TournamentService {
         where: { id: match.tournamentId },
         data: { currentRound: nextRound },
       });
+      return false;
     });
 
+    // Cộng XP thưởng theo hạng chung cuộc SAU khi transaction đã commit (theo
+    // đúng cách endSession() của Arena làm — awardXp là chuỗi query riêng,
+    // không lồng trong $transaction). completeMatch() không gọi lại được lần
+    // 2 cho cùng 1 trận (guard status !== 'RUNNING' ở đầu hàm ném lỗi ngay),
+    // nên tournament chỉ chuyển FINISHED đúng 1 lần — không cần cờ chống trùng.
+    if (justFinished) {
+      await this.awardTournamentPrizes(match.tournamentId);
+    }
+
     return this.getDetail(match.tournamentId);
+  }
+
+  // Thưởng theo THÀNH TÍCH CHUNG CUỘC của cả giải (khác với XP từng trận đã
+  // cộng qua Arena): Vô địch / Á quân / đồng hạng Ba (2 đội, MVP không tổ
+  // chức trận tranh hạng Ba) / Khuyến khích (mọi đội loại sớm hơn bán kết).
+  // Mỗi đội có thể đổi thành viên giữa các vòng (ai rảnh thì vào), nên lấy
+  // đúng người CÓ MẶT ở trận mà đội đó dừng lại — không cộng cho người từng
+  // khoác áo đội này nhưng vắng mặt trận quyết định.
+  private async awardTournamentPrizes(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUniqueOrThrow({
+      where: { id: tournamentId },
+      include: { teams: true, matches: true },
+    });
+    const semifinalRound = tournament.totalRounds - 1;
+
+    for (const team of tournament.teams) {
+      let source: XpSource;
+      let amount: number;
+      let noteLabel: string;
+      let decidingRound: number;
+
+      if (team.id === tournament.championTeamId) {
+        source = XpSource.TOURNAMENT_CHAMPION;
+        amount = XP_TOURNAMENT_CHAMPION;
+        noteLabel = 'Vô địch';
+        decidingRound = tournament.totalRounds;
+      } else if (team.eliminatedAtRound === tournament.totalRounds) {
+        source = XpSource.TOURNAMENT_RUNNER_UP;
+        amount = XP_TOURNAMENT_RUNNER_UP;
+        noteLabel = 'Á quân';
+        decidingRound = team.eliminatedAtRound;
+      } else if (
+        semifinalRound >= 1 &&
+        team.eliminatedAtRound === semifinalRound
+      ) {
+        source = XpSource.TOURNAMENT_THIRD_PLACE;
+        amount = XP_TOURNAMENT_THIRD_PLACE;
+        noteLabel = 'Đồng hạng Ba';
+        decidingRound = team.eliminatedAtRound;
+      } else if (
+        team.eliminatedAtRound != null &&
+        team.eliminatedAtRound < semifinalRound
+      ) {
+        source = XpSource.TOURNAMENT_CONSOLATION;
+        amount = XP_TOURNAMENT_CONSOLATION;
+        noteLabel = 'Giải khuyến khích';
+        decidingRound = team.eliminatedAtRound;
+      } else {
+        continue; // đội chưa từng vào trận nào hợp lệ (không nên xảy ra)
+      }
+
+      const decidingMatch = tournament.matches.find(
+        (m) =>
+          m.round === decidingRound &&
+          (m.team1Id === team.id || m.team2Id === team.id),
+      );
+      if (!decidingMatch?.arenaSessionId) continue;
+
+      const arenaTeam = await this.prisma.arenaTeam.findFirst({
+        where: {
+          arenaSessionId: decidingMatch.arenaSessionId,
+          name: team.name,
+        },
+        include: { members: true },
+      });
+      if (!arenaTeam) continue;
+
+      for (const member of arenaTeam.members) {
+        await this.gamification.awardXp(
+          member.userId,
+          amount,
+          source,
+          tournamentId,
+          `${noteLabel} giải đấu "${tournament.name}"`,
+        );
+      }
+    }
   }
 
   async delete(id: string) {
