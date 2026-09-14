@@ -155,21 +155,17 @@ export default function ArenaPage() {
     })
   }, [])
 
-  // Bắt đầu đọc khi chuyển pha chuẩn bị / câu hỏi mới.
+  // Bắt đầu đọc khi sang câu hỏi mới (không đọc gì trong pha chuẩn bị nữa —
+  // giữ `prepare` trong deps để effect vẫn chạy lại lúc chuyển pha, dọn tiếng
+  // đọc câu trước qua cleanup dungGiongDoc() bên dưới).
   useEffect(() => {
-    if (!narrationOn) return
-    if (prepare) {
-      void docLanLuot(['Lĩnh vực', prepare.subjectName ?? 'Chưa phân loại'], {
-        maxMs: Math.max(0, prepare.prepareSec * 1000 - 300),
-      })
-    } else if (currentQuestion) {
-      // Cùng công thức giọng-theo-câu-hỏi với InstantQuizPlayer — 1 câu hỏi
-      // luôn đọc cùng 1 giọng dù ở màn nào, và tái dùng đúng file audio đã sinh.
-      const giong = giongCuaCauHoi(currentQuestion.question.content)
-      void docLanLuot([{ text: currentQuestion.question.content, giong }], {
-        maxMs: currentQuestion.deadlineAtMs - currentQuestion.serverNowMs - 2000,
-      })
-    }
+    if (!narrationOn || !currentQuestion) return
+    // Cùng công thức giọng-theo-câu-hỏi với InstantQuizPlayer — 1 câu hỏi
+    // luôn đọc cùng 1 giọng dù ở màn nào, và tái dùng đúng file audio đã sinh.
+    const giong = giongCuaCauHoi(currentQuestion.question.content)
+    void docLanLuot([{ text: currentQuestion.question.content, giong }], {
+      maxMs: currentQuestion.deadlineAtMs - currentQuestion.serverNowMs - 2000,
+    })
     return () => dungGiongDoc()
   }, [prepare, currentQuestion, narrationOn])
 

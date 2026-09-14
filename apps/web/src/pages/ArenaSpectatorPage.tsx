@@ -107,12 +107,9 @@ export default function ArenaSpectatorPage() {
         setCurrentQuestion(null)
         setLastReveal(null)
         setBuzzedCount(0)
+        // Pha chuẩn bị không đọc gì nữa (đã bỏ audio "Lĩnh vực") — chỉ cần
+        // dừng tiếng đọc câu trước.
         dungGiongDoc()
-        if (narrationOnRef.current) {
-          void docLanLuot(['Lĩnh vực', p.subjectName ?? 'Chưa phân loại'], {
-            maxMs: Math.max(0, p.prepareSec * 1000 - 300),
-          })
-        }
       })
       sock.on('arena.question', (q: ArenaQuestionPayload) => {
         setPrepare(null)

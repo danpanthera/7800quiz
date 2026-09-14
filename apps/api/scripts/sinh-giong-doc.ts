@@ -1,4 +1,4 @@
-// Script sinh sẵn file audio giọng đọc thuyết minh (đề bài/đáp án/lĩnh vực) —
+// Script sinh sẵn file audio giọng đọc thuyết minh (đề bài/đáp án/nhãn A-B-C-D) —
 // PROD chạy mạng nội bộ không có Internet nên KHÔNG thể gọi TTS lúc chạy thật;
 // toàn bộ audio phải sinh sẵn ở máy DEV rồi mang lên server (DEPLOYMENT.md, Phụ lục E).
 //
@@ -14,8 +14,9 @@
 // --male-voice để tắt/đổi nữa: 3 hằng số đó PHẢI khớp TUYỆT ĐỐI với bản client
 // tự tính lúc phát (không có API nào cho client biết "câu này giọng gì"), nên
 // cố tình cố định ở 1 nơi duy nhất thay vì cho cấu hình rời rạc dễ lệch.
-// --voice ở trên chỉ áp dụng cho nhãn "A/B/C/D"/tên lĩnh vực (dùng chung toàn
-// hệ thống, không đổi theo câu).
+// --voice ở trên chỉ áp dụng cho nhãn "A/B/C/D" (dùng chung toàn hệ thống,
+// không đổi theo câu) — KHÔNG còn sinh audio tên lĩnh vực (đã bỏ đọc lĩnh
+// vực lúc phát, xem InstantQuizPlayer.tsx/ArenaPage.tsx/ArenaSpectatorPage.tsx).
 //
 // Xem toàn bộ tham số ở hàm parseArgs() bên dưới.
 import { PrismaClient } from '@prisma/client';
@@ -57,7 +58,7 @@ const THU_MUC_GOC = join(__dirname, '..', '..', '..'); // apps/api/scripts/.. ..
 const THU_MUC_AUDIO = join(THU_MUC_GOC, 'assets', 'giong-doc');
 const FILE_MANIFEST = join(THU_MUC_AUDIO, 'manifest.json');
 
-const CUM_CO_DINH = ['Lĩnh vực', 'A', 'B', 'C', 'D'];
+const CUM_CO_DINH = ['A', 'B', 'C', 'D'];
 
 interface ThamSo {
   provider: string;
@@ -225,12 +226,11 @@ async function main() {
 
   const nhaCungCap = NHA_CUNG_CAP[opts.provider];
   console.log(
-    `Provider: ${nhaCungCap.id} | Nhãn/lĩnh vực: ${opts.voice} | Đề bài/đáp án: ~50% giọng Nam theo câu` +
+    `Provider: ${nhaCungCap.id} | Nhãn A/B/C/D: ${opts.voice} | Đề bài/đáp án: ~50% giọng Nam theo câu` +
       `${opts.dryRun ? ' | [DRY-RUN]' : ''}`,
   );
 
   const prisma = new PrismaClient();
-  const subjects = await prisma.subject.findMany();
   const questions = await prisma.question.findMany({
     include: { options: true, subject: true, quiz: true },
   });
@@ -272,7 +272,7 @@ async function main() {
     if (!t) return;
     if (!kho.has(key)) kho.set(key, { text: t, voice });
   };
-  // Nhãn "A/B/C/D"/tên lĩnh vực: khoá THEO NỘI DUNG, dùng chung toàn hệ thống.
+  // Nhãn "A/B/C/D": khoá THEO NỘI DUNG, dùng chung toàn hệ thống.
   const themNhan = (text: string | null | undefined) =>
     themVaoKho(khoaGiongDoc((text ?? '').trim()), text, opts.voice);
   // Đề bài/đáp án của 1 câu hỏi: khoá THEO NỘI DUNG + GIỌNG — cùng 1 đáp án có
@@ -285,7 +285,6 @@ async function main() {
   };
 
   for (const c of CUM_CO_DINH) themNhan(c);
-  for (const s of subjects) themNhan(s.name);
 
   const cauHoiDaLoc = questions.filter(apDungBoLoc);
   for (const q of cauHoiDaLoc) {

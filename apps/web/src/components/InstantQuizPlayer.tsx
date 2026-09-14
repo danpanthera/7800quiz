@@ -252,7 +252,7 @@ export default function InstantQuizPlayer({
     return () => window.clearTimeout(advanceTimer.current)
   }, [revealedQuestionId, autoAdvance])
 
-  // Đọc lĩnh vực + đề + A/B/C/D khi sang câu mới — TÁCH RIÊNG khỏi effect
+  // Đọc đề + A/B/C/D khi sang câu mới — TÁCH RIÊNG khỏi effect
   // auto-advance ở trên (không dùng chung deps): 2 effect này độc lập, gộp
   // chung sẽ lặp lại đúng lỗi mà chú thích ở dòng 231-234 đã cảnh báo.
   useEffect(() => {
@@ -267,7 +267,6 @@ export default function InstantQuizPlayer({
     // đề bài lẫn mọi đáp án của câu, để nghe trọn 1 câu không lẫn Nam/Nữ.
     const giong = giongCuaCauHoi(currentQuestion.content)
     const doc: MucDocLanLuot[] = []
-    if (currentQuestion.subjectName) doc.push('Lĩnh vực', currentQuestion.subjectName)
     doc.push({ text: currentQuestion.content, giong })
     cacDapAn.forEach((noiDung, i) => {
       if (cumTuA[i]) doc.push(cumTuA[i])
