@@ -332,9 +332,15 @@ export default function QuizPlayerPage() {
   // định (violationLimit = 0) chỉ cảnh báo + lưu lại để đối chiếu sau, KHÔNG tự
   // động chấm rớt (tránh oan vô tình alt-tab). Nếu bộ đề bật ngưỡng, tới đúng lần
   // vi phạm thứ N server sẽ tự nộp bài — xem reportViolation()/finalize() ở API.
+  //
+  // auditMode là công tắc TỔNG cho toàn bộ nhóm kiểm tra dưới đây. TẮT (mặc định
+  // cho đề luyện tập/thi thử): không đăng ký bất kỳ listener nào — cán bộ được rời
+  // tab, chuyển cửa sổ, sao chép đề, bấm chuột phải thoải mái, không bị ghi nhận vi
+  // phạm dù violationLimit > 0. Chỉ khi BẬT audit mode các kiểm tra mới hoạt động.
   useEffect(() => {
     if (!attemptId || attemptQuery.data?.attempt.status !== 'IN_PROGRESS') return
-    const auditMode = Boolean(attemptQuery.data?.quiz.auditMode) && fullscreenSupported
+    const auditMode = Boolean(attemptQuery.data?.quiz.auditMode)
+    if (!auditMode) return
 
     const reportViolation = async (
       type:
@@ -503,7 +509,7 @@ export default function QuizPlayerPage() {
     window.addEventListener('touchstart', handleActivity)
     window.addEventListener('blur', handleBlur)
     window.addEventListener('focus', handleFocus)
-    if (auditMode) document.addEventListener('fullscreenchange', handleFullscreenChange)
+    if (fullscreenSupported) document.addEventListener('fullscreenchange', handleFullscreenChange)
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
       document.removeEventListener('copy', handleCopy)
@@ -515,7 +521,7 @@ export default function QuizPlayerPage() {
       window.removeEventListener('touchstart', handleActivity)
       window.removeEventListener('blur', handleBlur)
       window.removeEventListener('focus', handleFocus)
-      if (auditMode) document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      if (fullscreenSupported) document.removeEventListener('fullscreenchange', handleFullscreenChange)
       if (blurTimer !== undefined) window.clearTimeout(blurTimer)
       window.clearInterval(devtoolsPoller)
       window.clearInterval(idlePoller)

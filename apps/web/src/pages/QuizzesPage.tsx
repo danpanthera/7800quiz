@@ -364,21 +364,21 @@ export default function QuizzesPage() {
             <Switch />
           </Form.Item>
           <Form.Item
-            name="violationLimit"
-            label="Tự nộp bài khi vi phạm"
-            tooltip="Vi phạm = rời tab, chuyển sang cửa sổ khác, hoặc cố sao chép đề trong lúc làm bài. Chạm đúng số lần này thì hệ thống tự động nộp bài theo các câu đã lưu."
-            extra="0 = tắt (chỉ ghi nhận, không tự nộp). Nên đặt từ 3 trở lên để tránh oan khi lỡ tay hoặc có cuộc gọi đến trên điện thoại."
-          >
-            <InputNumber min={0} max={20} style={{ width: 140 }} />
-          </Form.Item>
-          <Form.Item
             name="auditMode"
             label="Chế độ giám sát nghiêm ngặt (audit)"
             valuePropName="checked"
-            tooltip="Bật: bắt buộc ở chế độ toàn màn hình trong suốt lúc thi — thoát toàn màn hình bị tính là 1 lần vi phạm (cộng dồn chung với ngưỡng tự nộp ở trên). Dùng cho kỳ thi chính thức."
+            tooltip="Công tắc TỔNG cho mọi hình thức kiểm tra khi làm bài: bắt buộc toàn màn hình, ghi nhận rời tab/chuyển cửa sổ/cố sao chép đề, chặn chuột phải. TẮT: bỏ qua toàn bộ, cán bộ được copy/ẩn màn hình/đổi chương trình thoải mái, kể cả khi ô 'Tự nộp bài khi vi phạm' bên dưới có đặt số. Dùng cho kỳ thi chính thức."
             extra="Mặc định TẮT cho đề luyện tập/thi thử."
           >
             <Switch />
+          </Form.Item>
+          <Form.Item
+            name="violationLimit"
+            label="Tự nộp bài khi vi phạm"
+            tooltip="Chỉ có tác dụng khi đã BẬT giám sát nghiêm ngặt ở trên. Vi phạm = rời tab, chuyển sang cửa sổ khác, hoặc cố sao chép đề trong lúc làm bài. Chạm đúng số lần này thì hệ thống tự động nộp bài theo các câu đã lưu."
+            extra="0 = tắt (chỉ ghi nhận, không tự nộp). Nên đặt từ 3 trở lên để tránh oan khi lỡ tay hoặc có cuộc gọi đến trên điện thoại."
+          >
+            <InputNumber min={0} max={20} style={{ width: 140 }} />
           </Form.Item>
           <Form.Item
             name="shuffleQuestions"
