@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button, Drawer, Dropdown, Layout, Menu, Tooltip, Typography, type MenuProps } from 'antd'
 import {
   AlertOutlined,
@@ -35,6 +36,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import api from '../lib/api'
 import { useAuth } from '../lib/useAuth'
 import conMatAiCap from '../assets/con-mat-ai-cap.jpeg'
 import { useDeviceType } from '../hooks/useDeviceType'
@@ -149,6 +151,43 @@ function getNavigation(role: UserRole, isItStaff: boolean): NavigationItem[] {
     : [...trainingNavigation, huongDan]
 }
 
+interface MyProgress {
+  level: number
+  levelName: string
+  xp: number
+  xpToNext: number
+  percentToNext: number
+}
+
+/**
+ * Huy hiệu cấp độ hiện trên header — xuyên suốt mọi trang, không chỉ ở trang
+ * chủ "Bài kiểm tra của tôi" — để cán bộ luôn thấy được XP/cấp độ của mình dù
+ * đang ở màn nào. Chỉ hiện cho vai trò Cán bộ (STAFF): Cán bộ đào tạo/Quản trị
+ * viên không có đường vào làm bài/luyện tập/Đấu trường với tư cách người chơi
+ * nên không tích XP, hiện huy hiệu cho họ chỉ gây rối mắt vô ích.
+ */
+function LevelBadge({ progress, loading }: { progress?: MyProgress; loading: boolean }) {
+  const navigate = useNavigate()
+  if (loading || !progress) return null
+  const ghiChu = progress.xpToNext
+    ? `${progress.xp} XP — còn ${progress.xpToNext} XP để lên Cấp ${progress.level + 1}`
+    : `${progress.xp} XP — đã đạt cấp cao nhất`
+  return (
+    <Tooltip title={ghiChu}>
+      <button
+        type="button"
+        className="portal-level-badge"
+        onClick={() => navigate('/my/quizzes')}
+        aria-label={`Cấp ${progress.level}, ${progress.levelName}, ${ghiChu}`}
+      >
+        <TrophyOutlined />
+        <span className="portal-level-badge-text">Cấp {progress.level} · {progress.levelName}</span>
+        <span className="portal-level-badge-text-short">Cấp {progress.level}</span>
+      </button>
+    </Tooltip>
+  )
+}
+
 function PortalBrand({ role }: { role: UserRole }) {
   return (
     <div className="portal-brand">
@@ -177,6 +216,14 @@ export default function AppLayout() {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [avatarModalOpen, setAvatarModalOpen] = useState(false)
   useScreenTimeReminder()
+
+  // Cùng queryKey với trang "Bài kiểm tra của tôi" (MyQuizzesPage) — dùng
+  // chung cache của react-query, không tốn thêm lần gọi API khi cả 2 cùng mở.
+  const progressQuery = useQuery<MyProgress>({
+    queryKey: ['my-progress'],
+    queryFn: () => api.get('/me/progress').then((r) => r.data),
+    enabled: user?.role === 'STAFF',
+  })
 
   // Đóng Drawer khi đổi route — cập nhật state ngay trong lúc render (theo khuyến nghị của React
   // cho việc "điều chỉnh state theo thay đổi của prop") thay vì dùng useEffect, tránh 1 nhịp render
@@ -232,7 +279,7 @@ export default function AppLayout() {
     {
       key: 'avatar',
       icon: <SmileOutlined />,
-      label: 'Đổi ảnh đại diện',
+      label: 'Hồ sơ cá nhân',
       onClick: () => setAvatarModalOpen(true),
     },
     { type: 'divider' as const },
@@ -296,6 +343,10 @@ export default function AppLayout() {
           )}
 
           <Text className="portal-page-context">{pageTitle}</Text>
+
+          {user.role === 'STAFF' && (
+            <LevelBadge progress={progressQuery.data} loading={progressQuery.isLoading} />
+          )}
 
           <ThemeToggle />
 
