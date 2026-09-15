@@ -7,6 +7,7 @@ import {
 import {
   AssignmentStatus,
   AttemptViolationType,
+  AuthSource,
   Prisma,
   QuestionType,
   UserRole,
@@ -110,6 +111,7 @@ export class AdminService {
     'email',
     'phoneNumber',
     'userAD',
+    'dangNhapBangAD',
     'userIPCAS',
     'maCbtd',
     'cccd',
@@ -238,6 +240,7 @@ export class AdminService {
       departmentId: string | null;
       isActive: boolean;
       userAD: string | null;
+      dangNhapBangAD: boolean;
     },
     previousCbCode?: string,
     previousUserAD?: string | null,
@@ -285,22 +288,38 @@ export class AdminService {
     }
 
     if (!user) {
-      const initialPassword = sinhMatKhauTam();
+      // Bật "Đăng nhập bằng AD" thì không cần mật khẩu tạm chờ IT cấp — đăng
+      // nhập ngay bằng đúng mật khẩu AD. passwordHash vẫn phải có giá trị
+      // (cột NOT NULL) nhưng là chuỗi ngẫu nhiên không ai biết, không bao giờ
+      // được so khớp (xem authSource AD ở auth.service.ts).
+      const dungAD = canBo.dangNhapBangAD;
+      const initialPassword = dungAD ? null : sinhMatKhauTam();
       await tx.user.create({
         data: {
           username,
           fullName: canBo.fullName,
           email: canBo.email ?? undefined,
-          passwordHash: await bcrypt.hash(initialPassword, 10),
+          passwordHash: await bcrypt.hash(initialPassword ?? sinhMatKhauTam(), 10),
           initialPassword,
           role: 'STAFF',
           isActive: canBo.isActive,
-          mustChangePassword: true,
+          authSource: dungAD ? 'AD' : 'LOCAL',
+          mustChangePassword: !dungAD,
           departmentId: canBo.departmentId ?? undefined,
         },
       });
       return;
     }
+
+    const authSourceMoi: AuthSource = canBo.dangNhapBangAD ? 'AD' : 'LOCAL';
+    // Chuyển từ AD về nội bộ: passwordHash cũ (nếu có) là chuỗi ngẫu nhiên
+    // không ai biết (tài khoản trước giờ chỉ đăng nhập qua AD) hoặc mật khẩu
+    // nội bộ cũ đã lâu không dùng — cấp lại mật khẩu tạm mới để IT đọc và
+    // giao cho cán bộ, giống hệt luồng reset mật khẩu thông thường. Chuyển từ
+    // nội bộ sang AD thì không cần đổi gì về mật khẩu, chỉ đổi cách xác thực.
+    const chuyenVeNoiBo =
+      user.authSource === 'AD' && authSourceMoi === 'LOCAL';
+    const initialPasswordMoi = chuyenVeNoiBo ? sinhMatKhauTam() : undefined;
 
     await tx.user.update({
       where: { id: user.id },
@@ -310,6 +329,14 @@ export class AdminService {
         email: canBo.email ?? undefined,
         isActive: canBo.isActive,
         departmentId: canBo.departmentId ?? undefined,
+        authSource: authSourceMoi,
+        ...(initialPasswordMoi !== undefined
+          ? {
+              initialPassword: initialPasswordMoi,
+              passwordHash: await bcrypt.hash(initialPasswordMoi, 10),
+              mustChangePassword: true,
+            }
+          : {}),
       },
     });
   }
@@ -2586,6 +2613,7 @@ export class AdminService {
     email?: string;
     phoneNumber?: string;
     userAD?: string;
+    dangNhapBangAD?: boolean;
     userIPCAS?: string;
     maCbtd?: string;
     cccd?: string;

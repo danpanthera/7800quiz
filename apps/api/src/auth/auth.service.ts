@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AttemptStatus, AttemptViolationType } from '@prisma/client';
@@ -16,6 +17,7 @@ import { mkdir, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { AVATARS_DIR, AVATARS_URL_PREFIX } from '../common/uploads-dir';
 import { sinhMatKhauTam } from '../common/mat-khau-tam.util';
+import { LdapAuthService } from './ldap.service';
 
 // Việc 15 — khóa tài khoản tạm: sai mật khẩu (hoặc sai mã 2 lớp) liên tiếp đủ
 // ngưỡng thì khóa trong LOCK_MINUTES phút. Bổ sung cho giới hạn tốc độ theo IP
@@ -55,6 +57,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly ldapAuthService: LdapAuthService,
   ) {}
 
   async login(dto: LoginDto, meta: LoginMeta = {}) {
@@ -76,13 +79,24 @@ export class AuthService {
         include: { department: { include: { parent: true } } },
       });
       if (canBo) {
-        // Mật khẩu tạm sinh RIÊNG cho người này (không còn hằng số chung) —
-        // lưu dạng chữ rõ ở initialPassword để cán bộ IT đọc lại được ở trang
-        // Quản lý cán bộ; người vừa gõ ở request này chưa thể biết mật khẩu
-        // này nên KHÔNG đăng nhập được ngay, phải chờ IT cấp lại.
-        const initialPassword = sinhMatKhauTam();
-        const passwordHash = await bcrypt.hash(initialPassword, 10);
         const username = canBo.userAD?.trim() || canBo.cbCode;
+        // Cán bộ được bật "Đăng nhập bằng AD": không cần mật khẩu tạm chờ IT
+        // cấp — họ đăng nhập ngay bằng đúng mật khẩu AD hiện có. passwordHash
+        // vẫn phải có giá trị (cột NOT NULL) nhưng là chuỗi ngẫu nhiên không
+        // ai biết và không bao giờ được so khớp (xem nhánh authSource AD bên
+        // dưới), initialPassword để trống, không bắt đổi mật khẩu nội bộ.
+        //
+        // Ngược lại (đăng nhập nội bộ, như trước giờ): mật khẩu tạm sinh
+        // RIÊNG cho người này, lưu dạng chữ rõ ở initialPassword để cán bộ IT
+        // đọc lại được ở trang Quản lý cán bộ; người vừa gõ ở request này
+        // chưa thể biết mật khẩu này nên KHÔNG đăng nhập được ngay, phải chờ
+        // IT cấp lại.
+        const dungAD = canBo.dangNhapBangAD;
+        const initialPassword = dungAD ? null : sinhMatKhauTam();
+        const passwordHash = await bcrypt.hash(
+          initialPassword ?? sinhMatKhauTam(),
+          10,
+        );
         user = await this.prisma.user.create({
           data: {
             username,
@@ -92,7 +106,8 @@ export class AuthService {
             initialPassword,
             role: 'STAFF',
             isActive: true,
-            mustChangePassword: true,
+            authSource: dungAD ? 'AD' : 'LOCAL',
+            mustChangePassword: !dungAD,
             departmentId: canBo.departmentId ?? undefined,
           },
           include: { department: { include: { parent: true } } },
@@ -108,10 +123,29 @@ export class AuthService {
 
     this.assertNotLocked(user.lockedUntil);
 
-    const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!isMatch) {
-      await this.registerFailedAttempt(user.id);
-      throw new UnauthorizedException('Sai mật khẩu');
+    if (user.authSource === 'AD') {
+      const ketQua = await this.ldapAuthService.binhBangMatKhauAD(
+        user.username,
+        dto.password,
+      );
+      if (!ketQua.ok) {
+        if (ketQua.lyDo === 'saiMatKhau') {
+          await this.registerFailedAttempt(user.id);
+          throw new UnauthorizedException('Sai mật khẩu');
+        }
+        // Lỗi hạ tầng phía AD/RODC — không phải lỗi người dùng, không tính
+        // vào bộ đếm khoá tài khoản, và (fail-closed đã chốt) KHÔNG được lùi
+        // về so khớp mật khẩu nội bộ.
+        throw new ServiceUnavailableException(
+          'Không kết nối được máy chủ xác thực AD, vui lòng thử lại sau',
+        );
+      }
+    } else {
+      const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!isMatch) {
+        await this.registerFailedAttempt(user.id);
+        throw new UnauthorizedException('Sai mật khẩu');
+      }
     }
 
     await this.clearFailedAttempts(user.id);

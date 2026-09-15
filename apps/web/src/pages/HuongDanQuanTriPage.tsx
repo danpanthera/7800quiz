@@ -70,6 +70,7 @@ const CAC_MUC: MucHuongDan[] = [
         <ul>
           <li><b>Mã CB</b> bắt buộc và phải đúng <b>9 chữ số</b>; <b>Họ tên</b> bắt buộc.</li>
           <li><b>User AD</b> là tên đăng nhập của cán bộ. Bỏ trống thì hệ thống lấy mã CB làm tên đăng nhập.</li>
+          <li>Bật <b>Đăng nhập bằng AD</b> thì cán bộ đó vào hệ thống bằng đúng mật khẩu Windows/AD của họ (phải điền User AD trước), không cần chờ cấp mật khẩu tạm. Chỉ nên bật khi đã được duyệt và có kiểm tra nội bộ (đường mạng tới máy chủ AD).</li>
           <li>Không chọn phòng ban cụ thể thì cán bộ được gắn thẳng vào chi nhánh.</li>
           <li>Tài khoản đăng nhập được tạo kèm một <b>mật khẩu tạm ngẫu nhiên riêng</b> cho từng người (không còn mật khẩu mặc định dùng chung), hiện ở cột <b>Mật khẩu tạm</b> trong danh sách để đọc cho cán bộ; bắt buộc đổi ở lần đăng nhập đầu, đổi xong cột này tự trống.</li>
         </ul>

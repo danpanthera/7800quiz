@@ -39,7 +39,7 @@ function deptPriority(name: string, code: string): number {
 
 interface CanBoItem {
   id: string; cbCode: string; fullName: string; username?: string;
-  email?: string; phoneNumber?: string; userAD?: string; userIPCAS?: string;
+  email?: string; phoneNumber?: string; userAD?: string; dangNhapBangAD?: boolean; userIPCAS?: string;
   maCbtd?: string; cccd?: string; ngayCapCmt?: string; noiCapCmt?: string;
   ngaySinh?: string; gioiTinh?: string; departmentId?: string;
   department?: { id: string; name: string; code: string; parent?: { id: string; name: string; code: string } | null };
@@ -186,7 +186,7 @@ export default function CanBoPage() {
     setEditing(null)
     setFormUnitId(undefined)
     form.resetFields()
-    form.setFieldsValue({ isActive: true, isItStaff: false })
+    form.setFieldsValue({ isActive: true, isItStaff: false, dangNhapBangAD: false })
     setModalOpen(true)
   }
 
@@ -202,6 +202,7 @@ export default function CanBoPage() {
       fullName: record.fullName,
       email: record.email,
       userAD: record.userAD,
+      dangNhapBangAD: record.dangNhapBangAD,
       gioiTinh: record.gioiTinh,
       position: record.position,
       isActive: record.isActive,
@@ -326,6 +327,12 @@ export default function CanBoPage() {
       ),
     },
     { title: 'UserAD', dataIndex: 'userAD', width: 130 },
+    {
+      title: 'Đăng nhập', dataIndex: 'dangNhapBangAD', width: 110,
+      render: (v: boolean) => v
+        ? <Tag color="blue">Bằng AD</Tag>
+        : <Tag>Nội bộ</Tag>,
+    },
     {
       title: 'Mật khẩu tạm', dataIndex: 'initialPassword', width: 150,
       render: (v: string | null | undefined) => v
@@ -470,6 +477,12 @@ export default function CanBoPage() {
               : '-',
           },
           { label: 'Chức vụ', render: (record) => record.position ?? '-' },
+          {
+            label: 'Đăng nhập',
+            render: (record) => record.dangNhapBangAD
+              ? <Tag color="blue">Bằng AD</Tag>
+              : <Tag>Nội bộ</Tag>,
+          },
         ]}
         cardActions={renderCanBoActions}
       />
@@ -508,6 +521,18 @@ export default function CanBoPage() {
             <Col span={12}>
               <Form.Item name="userAD" label="User AD (tên đăng nhập)">
                 <Input placeholder="Dùng để đăng nhập" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item
+                name="dangNhapBangAD"
+                label="Đăng nhập bằng AD"
+                valuePropName="checked"
+                extra="Bật thì cán bộ đăng nhập bằng đúng mật khẩu AD/Windows của họ (qua RODC nội bộ ngân hàng) thay vì mật khẩu nội bộ — cần điền User AD ở trên thì mới có tác dụng. Tắt (mặc định) thì đăng nhập như từ trước tới nay."
+              >
+                <Switch checkedChildren="Bằng AD" unCheckedChildren="Nội bộ" />
               </Form.Item>
             </Col>
           </Row>

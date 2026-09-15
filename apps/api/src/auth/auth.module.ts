@@ -11,6 +11,7 @@ import {
 import { AuthService } from './auth.service';
 import { getJwtSecret } from './jwt-secret';
 import { JwtStrategy } from './jwt.strategy';
+import { LdapAuthService } from './ldap.service';
 import { LoginThrottlerGuard } from './login-throttler.guard';
 import { RolesGuard } from './roles.guard';
 
@@ -30,7 +31,13 @@ import { RolesGuard } from './roles.guard';
     MulterModule.register({ limits: { fileSize: 5 * 1024 * 1024 } }),
   ],
   controllers: [AuthController, SecurityController, AdminSecurityController],
-  providers: [AuthService, JwtStrategy, RolesGuard, LoginThrottlerGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RolesGuard,
+    LoginThrottlerGuard,
+    LdapAuthService,
+  ],
   exports: [JwtModule, RolesGuard],
 })
 export class AuthModule {}
