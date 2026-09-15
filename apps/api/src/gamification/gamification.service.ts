@@ -509,6 +509,7 @@ export class GamificationService {
           where: { questions: { some: { subjectId: condition.subjectId } } },
           select: {
             versions: {
+              where: { isPersonalized: false },
               orderBy: { version: 'desc' },
               take: 1,
               select: { id: true },
@@ -687,7 +688,7 @@ export class GamificationService {
         for (const sub of mySubmissions) {
           if (!sub.submittedAt) continue;
           const latestVersion = await this.prisma.quizVersion.findFirst({
-            where: { quizId: sub.quizId },
+            where: { quizId: sub.quizId, isPersonalized: false },
             orderBy: { version: 'desc' },
             select: { id: true },
           });
@@ -746,6 +747,7 @@ export class GamificationService {
           select: {
             id: true,
             versions: {
+              where: { isPersonalized: false },
               orderBy: { version: 'desc' },
               take: 1,
               select: { id: true },

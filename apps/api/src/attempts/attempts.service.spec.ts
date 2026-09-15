@@ -1,5 +1,6 @@
 import { AttemptsService } from './attempts.service';
-import { AttemptStatus } from '@prisma/client';
+import { AttemptStatus, Prisma } from '@prisma/client';
+import { Logger } from '@nestjs/common';
 
 const attemptId = 'ad9d0b6e-482e-44f1-9c83-e24f9401855c';
 const assignmentId = 'eb113a13-e77c-4a73-a693-3ae543492d20';
@@ -221,6 +222,469 @@ describe('AttemptsService', () => {
 
     expect(prisma.quizAttempt.count).not.toHaveBeenCalled();
     expect(result.quiz.questions[0].subjectName).toBe('Tín dụng');
+  });
+
+  describe('Đổi bộ câu hỏi khi thi lại (retake)', () => {
+    it('maxAttempts=1 (mặc định) → không tìm lần thi trước, hành vi y hệt trước khi có tính năng đổi câu', async () => {
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest.fn().mockResolvedValue(null), // chỉ activeAttempt được hỏi
+          count: jest.fn().mockResolvedValue(0),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'version-1',
+            version: 1,
+            snapshot,
+            isPersonalized: false,
+          }),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 1 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      await service.start('user-1', { id: attemptId, assignmentId });
+
+      // Đúng 1 lần gọi findFirst — chỉ cho activeAttempt, KHÔNG có lần thứ 2 đi
+      // tìm lần thi trước (maxAttempts===1 không thể có retake).
+      expect(prisma.quizAttempt.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('maxAttempts=2, CHƯA có lần GRADED nào trước đó → vẫn dùng bản chung (ensureSnapshot lọc isPersonalized:false), không tạo bộ cá nhân hoá', async () => {
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null) // activeAttempt
+            .mockResolvedValueOnce(null), // previousAttempt — chưa từng thi
+          count: jest.fn().mockResolvedValue(0),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        question: { findMany: jest.fn() },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'version-1',
+            version: 1,
+            snapshot,
+            isPersonalized: false,
+          }),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 2 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      await service.start('user-1', { id: attemptId, assignmentId });
+
+      expect(prisma.quizVersion.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { quizId: 'quiz-1', isPersonalized: false },
+        }),
+      );
+      expect(prisma.question.findMany).not.toHaveBeenCalled();
+    });
+
+    it('maxAttempts=2, đã có 1 lần GRADED trước đó → tạo bộ câu cá nhân hoá, tránh trùng câu cũ khi ngân hàng đủ', async () => {
+      const previousSnapshot = {
+        quiz: snapshot.quiz,
+        questions: [{ ...snapshot.questions[0], id: 'bank-old-1' }],
+      };
+      const bankPoolCauMoi = [
+        {
+          id: 'bank-new-1',
+          content: 'Câu mới 1',
+          imageUrl: null,
+          explanation: null,
+          questionType: 'SINGLE',
+          orderIndex: 0,
+          points: 10,
+          subjectId: 'subject-1',
+          subject: { id: 'subject-1', name: 'Tín dụng' },
+          options: [
+            {
+              id: 'opt-new-1-a',
+              content: 'Đúng',
+              isCorrect: true,
+              orderIndex: 1,
+            },
+            {
+              id: 'opt-new-1-b',
+              content: 'Sai',
+              isCorrect: false,
+              orderIndex: 2,
+            },
+          ],
+        },
+      ];
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null) // activeAttempt: không có
+            .mockResolvedValueOnce({
+              quizVersion: { snapshot: previousSnapshot },
+            }), // previousAttempt: 1 lần GRADED trước
+          count: jest.fn().mockResolvedValue(1), // 1/2 lần GRADED, còn được thi
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        question: {
+          findMany: jest
+            .fn()
+            .mockResolvedValueOnce([{ subjectId: 'subject-1' }]) // committed — suy tỷ lệ trộn
+            .mockResolvedValueOnce(bankPoolCauMoi), // pool ngân hàng cho slot subject-1
+        },
+        quiz: { findUniqueOrThrow: jest.fn().mockResolvedValue(snapshot.quiz) },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({ version: 1 }),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) =>
+              Promise.resolve({ id: 'version-2', ...data }),
+            ),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 2 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      const result = await service.start('user-1', {
+        id: attemptId,
+        assignmentId,
+      });
+
+      expect(prisma.quizVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ isPersonalized: true }),
+        }),
+      );
+      const chosenIds = result.quiz.questions.map((q) => q.id);
+      expect(chosenIds).not.toContain('bank-old-1');
+      expect(chosenIds).toContain('bank-new-1');
+    });
+
+    it('ngân hàng không còn câu MỚI nào cho 1 lĩnh vực → bù bằng đúng câu cũ của lĩnh vực đó, không throw', async () => {
+      const previousSnapshot = {
+        quiz: snapshot.quiz,
+        questions: [{ ...snapshot.questions[0], id: 'bank-old-1' }],
+      };
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({
+              quizVersion: { snapshot: previousSnapshot },
+            }),
+          count: jest.fn().mockResolvedValue(1),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        question: {
+          findMany: jest
+            .fn()
+            .mockResolvedValueOnce([{ subjectId: 'subject-1' }]) // committed
+            .mockResolvedValueOnce([]), // pool ngân hàng — KHÔNG còn câu mới nào
+        },
+        quiz: { findUniqueOrThrow: jest.fn().mockResolvedValue(snapshot.quiz) },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({ version: 1 }),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) =>
+              Promise.resolve({ id: 'version-2', ...data }),
+            ),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 2 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      const result = await service.start('user-1', {
+        id: attemptId,
+        assignmentId,
+      });
+
+      expect(result.quiz.questions).toHaveLength(1);
+      expect(result.quiz.questions[0].id).toBe('bank-old-1');
+    });
+
+    it('ngân hàng cạn cả câu mới lẫn câu cũ → vẫn cho thi với số câu ít hơn yêu cầu, có log cảnh báo', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const previousSnapshot = { quiz: snapshot.quiz, questions: [] }; // không có câu cũ lĩnh vực này để bù
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({
+              quizVersion: { snapshot: previousSnapshot },
+            }),
+          count: jest.fn().mockResolvedValue(1),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        question: {
+          findMany: jest
+            .fn()
+            .mockResolvedValueOnce([
+              { subjectId: 'subject-1' },
+              { subjectId: 'subject-1' },
+            ]) // committed: count=2
+            .mockResolvedValueOnce([]), // pool ngân hàng rỗng hoàn toàn
+        },
+        quiz: { findUniqueOrThrow: jest.fn().mockResolvedValue(snapshot.quiz) },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({ version: 1 }),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) =>
+              Promise.resolve({ id: 'version-2', ...data }),
+            ),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 2 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      const result = await service.start('user-1', {
+        id: attemptId,
+        assignmentId,
+      });
+
+      expect(result.quiz.questions).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('chỉ đủ 0/2'),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('đụng P2002 khi tạo QuizVersion (đua race lúc nhiều người thi lại cùng lúc) → tự thử lại, không lỗi cho user', async () => {
+      const previousSnapshot = {
+        quiz: snapshot.quiz,
+        questions: [{ ...snapshot.questions[0], id: 'bank-old-1' }],
+      };
+      // P2002 giả lập ĐÚNG kiểu lỗi thật của Prisma — bắt buộc dùng instanceof
+      // Prisma.PrismaClientKnownRequestError như code thật đang kiểm tra (theo
+      // đúng mẫu ở arena.service.spec.ts).
+      const prismaError = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`quiz_id`,`version`)',
+        { code: 'P2002', clientVersion: '6.19.3' },
+      );
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({
+              quizVersion: { snapshot: previousSnapshot },
+            }),
+          count: jest.fn().mockResolvedValue(1),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        question: {
+          findMany: jest
+            .fn()
+            .mockResolvedValueOnce([{ subjectId: 'subject-1' }])
+            .mockResolvedValueOnce([]), // bank rỗng — không quan trọng cho phép thử này
+        },
+        quiz: { findUniqueOrThrow: jest.fn().mockResolvedValue(snapshot.quiz) },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({ version: 1 }),
+          create: jest
+            .fn()
+            .mockRejectedValueOnce(prismaError)
+            .mockResolvedValueOnce({
+              id: 'version-2',
+              quizId: 'quiz-1',
+              version: 2,
+              isPersonalized: true,
+              snapshot: {},
+            }),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 2 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      await expect(
+        service.start('user-1', { id: attemptId, assignmentId }),
+      ).resolves.toBeDefined();
+      expect(prisma.quizVersion.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('đề không phân lĩnh vực (subjectId null) → 1 slot duy nhất, lọc đúng "không có lĩnh vực" thay vì lấy toàn bộ ngân hàng', async () => {
+      const previousSnapshot = {
+        quiz: snapshot.quiz,
+        questions: [
+          { ...snapshot.questions[0], id: 'bank-old-1', subjectId: null },
+        ],
+      };
+      const bankPoolCauMoi = [
+        {
+          id: 'bank-new-1',
+          content: 'Câu mới',
+          imageUrl: null,
+          explanation: null,
+          questionType: 'SINGLE',
+          orderIndex: 0,
+          points: 10,
+          subjectId: null,
+          subject: null,
+          options: [
+            { id: 'opt-a', content: 'Đúng', isCorrect: true, orderIndex: 1 },
+            { id: 'opt-b', content: 'Sai', isCorrect: false, orderIndex: 2 },
+          ],
+        },
+      ];
+      const prisma = {
+        quizAttempt: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({
+              quizVersion: { snapshot: previousSnapshot },
+            }),
+          count: jest.fn().mockResolvedValue(1),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) => Promise.resolve({ ...data })),
+        },
+        question: {
+          findMany: jest
+            .fn()
+            .mockResolvedValueOnce([{ subjectId: null }]) // committed — không phân lĩnh vực
+            .mockResolvedValueOnce(bankPoolCauMoi),
+        },
+        quiz: { findUniqueOrThrow: jest.fn().mockResolvedValue(snapshot.quiz) },
+        quizVersion: {
+          findFirst: jest.fn().mockResolvedValue({ version: 1 }),
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) =>
+              Promise.resolve({ id: 'version-2', ...data }),
+            ),
+        },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const assignments = {
+        getForUser: jest.fn().mockResolvedValue([
+          {
+            id: assignmentId,
+            quizId: 'quiz-1',
+            quiz: { ...snapshot.quiz, maxAttempts: 2 },
+          },
+        ]),
+      };
+      const service = new AttemptsService(
+        prisma as never,
+        assignments as never,
+        {} as never,
+      );
+
+      const result = await service.start('user-1', {
+        id: attemptId,
+        assignmentId,
+      });
+
+      expect(prisma.question.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: { isBank: true, approvalStatus: 'APPROVED', subjectId: null },
+        }),
+      );
+      expect(result.quiz.questions[0].id).toBe('bank-new-1');
+    });
   });
 
   it('bổ sung lĩnh vực cho snapshot cũ thiếu key, không ghi đè QuizVersion', async () => {

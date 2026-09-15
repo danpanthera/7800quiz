@@ -150,9 +150,36 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const { version, snapshot: rawSnapshot } = await this.ensureSnapshot(
-      assignment.quizId,
-    );
+    // Thi lại (maxAttempts != 1) mà đã có ít nhất 1 lần GRADED trước đó cho
+    // ĐÚNG lượt giao bài này: đổi sang bộ câu cá nhân hoá, tránh trùng câu của
+    // lần thi liền trước. Lần đầu tiên của bất kỳ ai vẫn dùng chung bản chuẩn
+    // qua ensureSnapshot() như cũ — công bằng + không tốn tài nguyên khi quiz
+    // không ai thi lại.
+    let previousSnapshot: QuizSnapshot | null = null;
+    if (maxAttempts !== 1) {
+      const previousAttempt = await this.prisma.quizAttempt.findFirst({
+        where: {
+          userId,
+          assignmentId: assignment.id,
+          status: AttemptStatus.GRADED,
+        },
+        orderBy: { startedAt: 'desc' },
+        select: { quizVersion: { select: { snapshot: true } } },
+      });
+      if (
+        previousAttempt &&
+        this.isSnapshot(previousAttempt.quizVersion.snapshot)
+      ) {
+        previousSnapshot = previousAttempt.quizVersion.snapshot;
+      }
+    }
+
+    const { version, snapshot: rawSnapshot } = previousSnapshot
+      ? await this.buildPersonalizedSnapshot(
+          assignment.quizId,
+          previousSnapshot,
+        )
+      : await this.ensureSnapshot(assignment.quizId);
     const snapshot = await this.withSubjectNames(rawSnapshot);
     const startedAt = new Date();
     const durationDeadline = new Date(
@@ -719,13 +746,16 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
     return attempt;
   }
 
+  // Bản CHUẨN dùng chung cho lần thi ĐẦU TIÊN của mọi người — luôn lọc
+  // isPersonalized:false để không bao giờ vô tình tái sử dụng 1 bản cá nhân
+  // hoá của người khác (xem buildPersonalizedSnapshot() bên dưới).
   private async ensureSnapshot(quizId: string) {
-    const latestVersion = await this.prisma.quizVersion.findFirst({
-      where: { quizId },
+    const latestCanonical = await this.prisma.quizVersion.findFirst({
+      where: { quizId, isPersonalized: false },
       orderBy: { version: 'desc' },
     });
-    if (latestVersion && this.isSnapshot(latestVersion.snapshot)) {
-      return { version: latestVersion, snapshot: latestVersion.snapshot };
+    if (latestCanonical && this.isSnapshot(latestCanonical.snapshot)) {
+      return { version: latestCanonical, snapshot: latestCanonical.snapshot };
     }
 
     const [quiz, questions] = await Promise.all([
@@ -748,33 +778,174 @@ export class AttemptsService implements OnModuleInit, OnModuleDestroy {
         durationMin: quiz.durationMin,
         passScore: quiz.passScore,
       },
-      questions: questions.map((question) => ({
-        id: question.id,
-        content: question.content,
-        imageUrl: question.imageUrl,
-        explanation: question.explanation,
-        questionType: question.questionType,
-        orderIndex: question.orderIndex,
-        points: question.points,
-        subjectId: question.subjectId,
-        subjectName: question.subject?.name ?? null,
-        options: question.options.map((option) => ({
-          id: option.id,
-          content: option.content,
-          isCorrect: option.isCorrect,
-          orderIndex: option.orderIndex,
-        })),
+      questions: questions.map((question) =>
+        this.mapQuestionToSnapshot(question),
+      ),
+    };
+    const version = await this.createVersion(quizId, snapshot, false);
+    return { version, snapshot };
+  }
+
+  // Tạo bộ câu CÁ NHÂN HOÁ cho 1 lượt thi lại — rút ngẫu nhiên câu MỚI từ Ngân
+  // hàng câu hỏi theo đúng tỷ lệ lĩnh vực suy ra từ bộ câu ĐÃ CHỐT hiện tại của
+  // quiz (Question.quizId), ưu tiên tối đa các câu KHÔNG có trong previousSnapshot.
+  // Best-effort: nếu ngân hàng không đủ câu mới, bù bằng câu cũ đúng lĩnh vực đó
+  // — KHÔNG BAO GIỜ chặn thi lại dù ngân hàng cạn kiệt.
+  private async buildPersonalizedSnapshot(
+    quizId: string,
+    previousSnapshot: QuizSnapshot,
+  ) {
+    const committed = await this.prisma.question.findMany({
+      where: { quizId },
+      select: { subjectId: true },
+    });
+    const slotCounts = new Map<string | null, number>();
+    for (const question of committed) {
+      slotCounts.set(
+        question.subjectId,
+        (slotCounts.get(question.subjectId) ?? 0) + 1,
+      );
+    }
+
+    const previousIds = new Set(previousSnapshot.questions.map((q) => q.id));
+    const picked: SnapshotQuestion[] = [];
+
+    for (const [subjectId, count] of slotCounts) {
+      if (count <= 0) continue;
+      // Dùng thẳng subjectId (KHÔNG bỏ qua khi null như pickRandomToQuiz) —
+      // Prisma tự sinh đúng "subject_id IS NULL", nên mỗi câu trong ngân hàng
+      // chỉ khớp ĐÚNG 1 slot, tự nhiên không trùng chéo giữa các slot.
+      const pool = await this.prisma.question.findMany({
+        where: { isBank: true, approvalStatus: 'APPROVED', subjectId },
+        include: {
+          options: { orderBy: { orderIndex: 'asc' } },
+          subject: { select: { id: true, name: true } },
+        },
+      });
+
+      const poolNew = this.shuffle(
+        pool
+          .filter((question) => !previousIds.has(question.id))
+          .map((question) => this.mapQuestionToSnapshot(question)),
+      );
+      const poolRepeat = this.shuffle(
+        previousSnapshot.questions.filter(
+          (question) => (question.subjectId ?? null) === subjectId,
+        ),
+      );
+
+      const chosen = [...poolNew, ...poolRepeat].slice(0, count);
+      if (chosen.length < count) {
+        this.logger.warn(
+          `buildPersonalizedSnapshot: quiz ${quizId} lĩnh vực ${subjectId ?? '(chưa phân loại)'} ` +
+            `chỉ đủ ${chosen.length}/${count} câu (ngân hàng cạn cả câu mới lẫn câu cũ) — vẫn cho thi.`,
+        );
+      }
+      picked.push(...chosen);
+    }
+
+    // Lấy metadata quiz FRESH (không tái dùng previousSnapshot.quiz đóng băng)
+    // — nhất quán với việc tỷ lệ lĩnh vực cũng suy từ bộ câu hiện tại.
+    const quiz = await this.prisma.quiz.findUniqueOrThrow({
+      where: { id: quizId },
+    });
+    const snapshot: QuizSnapshot = {
+      quiz: {
+        id: quiz.id,
+        title: quiz.title,
+        description: quiz.description,
+        topic: quiz.topic,
+        durationMin: quiz.durationMin,
+        passScore: quiz.passScore,
+      },
+      questions: picked.map((question, index) => ({
+        ...question,
+        orderIndex: index,
       })),
     };
-    const version = await this.prisma.quizVersion.create({
-      data: {
-        quizId,
-        version: (latestVersion?.version ?? 0) + 1,
-        snapshot: snapshot as unknown as Prisma.InputJsonValue,
-      },
-    });
-
+    const version = await this.createVersion(quizId, snapshot, true);
     return { version, snapshot };
+  }
+
+  private mapQuestionToSnapshot(question: {
+    id: string;
+    content: string;
+    imageUrl: string | null;
+    explanation: string | null;
+    questionType: string;
+    orderIndex: number;
+    points: number;
+    subjectId: string | null;
+    subject: { name: string } | null;
+    options: {
+      id: string;
+      content: string;
+      isCorrect: boolean;
+      orderIndex: number;
+    }[];
+  }): SnapshotQuestion {
+    return {
+      id: question.id,
+      content: question.content,
+      imageUrl: question.imageUrl,
+      explanation: question.explanation,
+      questionType: question.questionType,
+      orderIndex: question.orderIndex,
+      points: question.points,
+      subjectId: question.subjectId,
+      subjectName: question.subject?.name ?? null,
+      options: question.options.map((option) => ({
+        id: option.id,
+        content: option.content,
+        isCorrect: option.isCorrect,
+        orderIndex: option.orderIndex,
+      })),
+    };
+  }
+
+  // Đánh số version tiếp theo và tạo QuizVersion — tự retry khi đụng unique
+  // constraint [quizId,version] (P2002). Trước đây race này rất hiếm (chỉ lúc
+  // quiz hoàn toàn mới); từ khi có bộ câu cá nhân hoá, MỌI lần thi lại đều tạo
+  // 1 version mới nên tần suất đụng độ tăng hẳn — không dùng transaction/lock
+  // phức tạp, retry đơn giản là đủ ở quy mô người dùng của hệ thống này.
+  private async createVersion(
+    quizId: string,
+    snapshot: QuizSnapshot,
+    isPersonalized: boolean,
+  ) {
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const latest = await this.prisma.quizVersion.findFirst({
+        where: { quizId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      try {
+        return await this.prisma.quizVersion.create({
+          data: {
+            quizId,
+            version: (latest?.version ?? 0) + 1,
+            snapshot: snapshot as unknown as Prisma.InputJsonValue,
+            isPersonalized,
+          },
+        });
+      } catch (err) {
+        const isConflict =
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002';
+        if (!isConflict || attempt === MAX_RETRIES - 1) throw err;
+      }
+    }
+    throw new Error('Không thể tạo QuizVersion sau nhiều lần thử');
+  }
+
+  private shuffle<T>(items: T[]): T[] {
+    const shuffled = [...items];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
   }
 
   // Bổ sung lĩnh vực cho snapshot CŨ (tạo trước khi tính năng này ra đời) bằng

@@ -137,7 +137,15 @@ model QuizVersion {
   quizId    String   @map("quiz_id")
   version   Int      @default(1)
   snapshot  Json // toàn bộ nội dung quiz tại thời điểm version này
-  createdAt DateTime @default(now()) @map("created_at")
+  // true = bản đề CÁ NHÂN HOÁ tạo riêng cho 1 lượt thi lại (retake) — rút ngẫu
+  // nhiên câu MỚI từ Ngân hàng câu hỏi theo đúng tỷ lệ lĩnh vực hiện tại của bộ
+  // đề. false (mặc định) = bản CHUẨN dùng chung cho lần thi ĐẦU TIÊN của mọi
+  // người. Mọi nơi cần biết "nội dung hiện hành của quiz" (điều kiện huy hiệu,
+  // ensureSnapshot...) PHẢI lọc isPersonalized:false — KHÔNG suy luận qua thứ tự
+  // version, vì version rác {snapshot:{}} có thể tồn tại với số nhỏ hơn bản
+  // thật (xem AttemptsService.buildPersonalizedSnapshot()).
+  isPersonalized Boolean  @default(false) @map("is_personalized")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   quiz        Quiz          @relation(fields: [quizId], references: [id])
   submissions Submission[]
