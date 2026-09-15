@@ -74,7 +74,7 @@ export default function CanBoPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [pageSize, setPageSize] = useState(50)
   const [resetResultOpen, setResetResultOpen] = useState(false)
-  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; details: { fullName: string; cbCode: string; ok: boolean; initialPassword?: string; mailSent?: boolean; mailError?: string }[] } | null>(null)
+  const [resetResult, setResetResult] = useState<{ reset: number; noAccount: number; skippedAD: number; details: { fullName: string; cbCode: string; ok: boolean; initialPassword?: string; mailSent?: boolean; mailError?: string; skippedAD?: boolean }[] } | null>(null)
   // ids đang chờ reset — khác null thì mở modal nhập mật khẩu hộp mail (dùng
   // đúng 1 lần để gửi, KHÔNG lưu lại — xem admin.service.ts:resetCanBoPasswords)
   const [resetTarget, setResetTarget] = useState<string[] | null>(null)
@@ -186,7 +186,8 @@ export default function CanBoPage() {
     setEditing(null)
     setFormUnitId(undefined)
     form.resetFields()
-    form.setFieldsValue({ isActive: true, isItStaff: false, dangNhapBangAD: false })
+    // Mặc định BẬT — riêng 7800quiz (3800quiz mặc định tắt, xem schema.prisma)
+    form.setFieldsValue({ isActive: true, isItStaff: false, dangNhapBangAD: true })
     setModalOpen(true)
   }
 
@@ -530,7 +531,7 @@ export default function CanBoPage() {
                 name="dangNhapBangAD"
                 label="Đăng nhập bằng AD"
                 valuePropName="checked"
-                extra="Bật thì cán bộ đăng nhập bằng đúng mật khẩu AD/Windows của họ (qua RODC nội bộ ngân hàng) thay vì mật khẩu nội bộ — cần điền User AD ở trên thì mới có tác dụng. Tắt (mặc định) thì đăng nhập như từ trước tới nay."
+                extra="Bật (mặc định) thì cán bộ đăng nhập bằng đúng mật khẩu AD/Windows của họ (qua RODC nội bộ ngân hàng) thay vì mật khẩu nội bộ — cần điền User AD ở trên thì mới có tác dụng. Tắt thì đăng nhập bằng mật khẩu nội bộ như trước giờ."
               >
                 <Switch checkedChildren="Bằng AD" unCheckedChildren="Nội bộ" />
               </Form.Item>
@@ -631,6 +632,7 @@ export default function CanBoPage() {
             <p>
               ✅ Reset thành công: <strong>{resetResult.reset}</strong> tài khoản{' '}
               {resetResult.noAccount > 0 && <>| ⚠️ Không có tài khoản: <strong>{resetResult.noAccount}</strong></>}
+              {resetResult.skippedAD > 0 && <>| 🔒 Tài khoản AD (bỏ qua, mật khẩu nội bộ không áp dụng): <strong>{resetResult.skippedAD}</strong></>}
             </p>
             <p style={{ color: '#888', fontSize: 12 }}>Mỗi người 1 mật khẩu tạm ngẫu nhiên riêng — đọc/copy ở cột bên dưới cho cán bộ, sẽ phải đổi lại sau lần đăng nhập đầu tiên. Nếu lỡ đóng bảng này, vẫn xem lại được ở cột "Mật khẩu tạm" trong danh sách cán bộ.</p>
             <Table
@@ -648,9 +650,11 @@ export default function CanBoPage() {
                 },
                 {
                   title: 'Kết quả', dataIndex: 'ok', width: 120,
-                  render: (ok: boolean) => ok
-                    ? <Tag color="green">Đã reset</Tag>
-                    : <Tag color="orange">Chưa có TK</Tag>,
+                  render: (ok: boolean, r) => r.skippedAD
+                    ? <Tag color="blue">Tài khoản AD</Tag>
+                    : ok
+                      ? <Tag color="green">Đã reset</Tag>
+                      : <Tag color="orange">Chưa có TK</Tag>,
                 },
                 {
                   title: 'Gửi mail', dataIndex: 'mailSent', width: 160,

@@ -315,8 +315,7 @@ export class AdminService {
     // Chuyển từ AD về nội bộ: passwordHash cũ (nếu có) là chuỗi ngẫu nhiên
     // không ai biết (tài khoản trước giờ chỉ đăng nhập qua AD) hoặc mật khẩu
     // nội bộ cũ đã lâu không dùng — cấp lại mật khẩu tạm mới để IT đọc và
-    // giao cho cán bộ, giống hệt luồng reset mật khẩu thông thường. Chuyển từ
-    // nội bộ sang AD thì không cần đổi gì về mật khẩu, chỉ đổi cách xác thực.
+    // giao cho cán bộ, giống hệt luồng reset mật khẩu thông thường.
     const chuyenVeNoiBo =
       user.authSource === 'AD' && authSourceMoi === 'LOCAL';
     const initialPasswordMoi = chuyenVeNoiBo ? sinhMatKhauTam() : undefined;
@@ -330,13 +329,20 @@ export class AdminService {
         isActive: canBo.isActive,
         departmentId: canBo.departmentId ?? undefined,
         authSource: authSourceMoi,
-        ...(initialPasswordMoi !== undefined
-          ? {
-              initialPassword: initialPasswordMoi,
-              passwordHash: await bcrypt.hash(initialPasswordMoi, 10),
-              mustChangePassword: true,
-            }
-          : {}),
+        // Tài khoản AD KHÔNG BAO GIỜ được bắt đổi mật khẩu nội bộ — màn hình
+        // đó đòi nhập đúng "mật khẩu cũ" khớp passwordHash, mà với tài khoản
+        // AD giá trị đó là chuỗi ngẫu nhiên không ai biết → kẹt cứng, không
+        // ai vào được nữa (đã xảy ra thật với tài khoản test). Phải tắt cờ
+        // này ngay khi bật AD, không chỉ lúc tạo mới (nhánh !user ở trên).
+        ...(authSourceMoi === 'AD'
+          ? { mustChangePassword: false, initialPassword: null }
+          : initialPasswordMoi !== undefined
+            ? {
+                initialPassword: initialPasswordMoi,
+                passwordHash: await bcrypt.hash(initialPasswordMoi, 10),
+                mustChangePassword: true,
+              }
+            : {}),
       },
     });
   }
@@ -2774,6 +2780,7 @@ export class AdminService {
 
     let reset = 0;
     const noAccount: string[] = [];
+    let skippedAD = 0;
     // Mỗi người 1 mật khẩu tạm RIÊNG (không còn hằng số chung) — trả kèm
     // trong response để cán bộ IT đọc ngay cho người dùng; đồng thời lưu vào
     // initialPassword để còn xem lại sau ở trang Quản lý cán bộ nếu lỡ đóng
@@ -2785,6 +2792,7 @@ export class AdminService {
       initialPassword?: string;
       mailSent?: boolean;
       mailError?: string;
+      skippedAD?: boolean;
     }[] = [];
 
     for (const cb of canBoList) {
@@ -2794,6 +2802,20 @@ export class AdminService {
       if (!user) {
         noAccount.push(cb.fullName);
         details.push({ fullName: cb.fullName, cbCode: cb.cbCode, ok: false });
+        continue;
+      }
+      // Tài khoản AD: mật khẩu tạm nội bộ vô nghĩa (không dùng để đăng nhập)
+      // và nguy hiểm — bật mustChangePassword sẽ bắt đổi 1 mật khẩu mà chính
+      // người dùng không biết, khoá luôn không vào được nữa. Bỏ qua, không
+      // đụng gì tới tài khoản này.
+      if (user.authSource === 'AD') {
+        skippedAD++;
+        details.push({
+          fullName: cb.fullName,
+          cbCode: cb.cbCode,
+          ok: false,
+          skippedAD: true,
+        });
         continue;
       }
       const initialPassword = sinhMatKhauTam();
@@ -2847,11 +2869,16 @@ export class AdminService {
       data: {
         userId: actorUserId,
         action: 'RESET_CAN_BO_PASSWORDS',
-        meta: { canBoIds: ids, reset, noAccount: noAccount.length },
+        meta: {
+          canBoIds: ids,
+          reset,
+          noAccount: noAccount.length,
+          skippedAD,
+        },
       },
     });
 
-    return { reset, noAccount: noAccount.length, details };
+    return { reset, noAccount: noAccount.length, skippedAD, details };
   }
 
   /**

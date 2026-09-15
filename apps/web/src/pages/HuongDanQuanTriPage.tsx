@@ -84,7 +84,7 @@ const CAC_MUC: MucHuongDan[] = [
 
         <Title level={5}>Reset mật khẩu và xoá cán bộ</Title>
         <ul>
-          <li><b>Reset mật khẩu</b> (từng người hoặc tích chọn nhiều người): sinh <b>mật khẩu tạm ngẫu nhiên mới</b> cho từng người, hiện ngay trong bảng kết quả (có nút copy) và vẫn xem lại được ở cột <b>Mật khẩu tạm</b>; cán bộ bắt buộc đổi ở lần đăng nhập kế tiếp. Bảng kết quả phân biệt <i>Đã reset</i> và <i>Chưa có TK</i>.</li>
+          <li><b>Reset mật khẩu</b> (từng người hoặc tích chọn nhiều người): sinh <b>mật khẩu tạm ngẫu nhiên mới</b> cho từng người, hiện ngay trong bảng kết quả (có nút copy) và vẫn xem lại được ở cột <b>Mật khẩu tạm</b>; cán bộ bắt buộc đổi ở lần đăng nhập kế tiếp. Bảng kết quả phân biệt <i>Đã reset</i>, <i>Chưa có TK</i> và <i>Tài khoản AD</i> (tự động bỏ qua — tài khoản AD không có mật khẩu nội bộ để reset).</li>
           <li><b>Reset cứng huy hiệu/cấp độ</b> (trong nút <b>…</b>): đưa XP, cấp độ, huy hiệu về mốc ban đầu nhưng <b>giữ nguyên</b> bài nộp và lượt thi.</li>
           <li><b>Xoá thường</b> sẽ thất bại nếu cán bộ đã có lịch sử làm bài — hệ thống cố tình chặn lại như vậy để tránh mất dữ liệu, không phải lỗi.</li>
         </ul>

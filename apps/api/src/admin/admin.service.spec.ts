@@ -244,9 +244,41 @@ describe('AdminService — ghi nhật ký cho thao tác nhạy cảm với Cán 
       data: {
         userId: 'admin-1',
         action: 'RESET_CAN_BO_PASSWORDS',
-        meta: { canBoIds: ['c1'], reset: 1, noAccount: 0 },
+        meta: { canBoIds: ['c1'], reset: 1, noAccount: 0, skippedAD: 0 },
       },
     });
+  });
+
+  it('resetCanBoPasswords bỏ qua tài khoản AD — không đụng mật khẩu, không bắt đổi mật khẩu', async () => {
+    const prisma = {
+      canBo: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'c1',
+            cbCode: 'CB001',
+            fullName: 'Nguyễn Văn A',
+            userAD: 'nguyenvana',
+          },
+        ]),
+      },
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'user-1', authSource: 'AD' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new AdminService(prisma as never, {} as never, {} as never);
+
+    const result = await service.resetCanBoPasswords(['c1'], 'admin-1');
+
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(result.reset).toBe(0);
+    expect(result.skippedAD).toBe(1);
+    expect(result.details[0]).toEqual(
+      expect.objectContaining({ fullName: 'Nguyễn Văn A', skippedAD: true }),
+    );
   });
 
   it('resetCanBoPasswords kèm mailPassword: gửi mail cho từng người, email rơi về userAD@agribank.com.vn khi CanBo chưa có email', async () => {
@@ -434,7 +466,7 @@ describe('AdminService — đồng bộ Đăng nhập bằng AD khi lưu Cán b�
     });
   });
 
-  it('updateCanBo bật dangNhapBangAD cho User đã có (đang LOCAL) → chỉ đổi authSource, không đụng mật khẩu', async () => {
+  it('updateCanBo bật dangNhapBangAD cho User đã có (đang LOCAL) → đổi authSource, tắt luôn bắt-đổi-mật-khẩu, không đụng passwordHash', async () => {
     const tx = buildTx({
       user: {
         findUnique: jest
@@ -472,10 +504,15 @@ describe('AdminService — đồng bộ Đăng nhập bằng AD khi lưu Cán b�
 
     expect(tx.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
-      data: expect.objectContaining({ authSource: 'AD' }),
+      data: expect.objectContaining({
+        authSource: 'AD',
+        mustChangePassword: false,
+        initialPassword: null,
+      }),
     });
+    // Chuyển sang AD KHÔNG được đụng passwordHash — mật khẩu nội bộ cũ (nếu
+    // có) giữ nguyên, chỉ đơn giản là không còn được dùng để xác thực nữa.
     const dataDaGoi = tx.user.update.mock.calls[0][0].data;
-    expect(dataDaGoi.initialPassword).toBeUndefined();
     expect(dataDaGoi.passwordHash).toBeUndefined();
   });
 
